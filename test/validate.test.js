@@ -53,3 +53,8 @@ test('score facts use MuseScore default tempo until an authored tempo takes effe
   assert.equal(facts.tempo, 120);
   assert.equal(facts.scoreDurationSeconds, 6);
 });
+
+test('score facts apply direction tempo changes at their MusicXML offsets', () => {
+  const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><direction><offset>2</offset><sound tempo="60"/></direction><note><duration>4</duration></note></measure></part></score-partwise>`);
+  assert.equal(facts.scoreDurationSeconds, 3);
+});

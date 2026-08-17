@@ -48,13 +48,14 @@ export function createApp(overrides = {}) {
   });
 
   app.post('/v1/render', async (request, response) => {
+    if (!request.is('application/json')) return response.status(415).json({ error: { code: 'render_json_required', message: 'Render requests must use application/json so formats and constraints can be specified.' } });
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
     const validation = validateMusicXml(input.musicxml);
     if (!validation.valid) return response.status(422).json({ status: 'failed_not_charged', error: { code: failureCodes.validation, message: 'MusicXML validation failed.', errors: validation.errors }, payment: { status: 'not_charged' } });
-    const formats = request.is('application/json') ? request.body.formats ?? [] : [];
-    if (!Array.isArray(formats) || formats.some((format) => !supportedFormats.includes(format)) || new Set(formats).size !== formats.length) return response.status(400).json({ error: { code: 'invalid_formats', message: `formats must be a unique array drawn from: ${supportedFormats.join(', ')}.` } });
-    const constraints = request.is('application/json') && request.body.constraints_check ? request.body.constraints_check : {};
+    const formats = request.body.formats;
+    if (!Array.isArray(formats) || formats.length === 0 || formats.some((format) => !supportedFormats.includes(format)) || new Set(formats).size !== formats.length) return response.status(400).json({ error: { code: 'invalid_formats', message: `formats must be a non-empty unique array drawn from: ${supportedFormats.join(', ')}.` } });
+    const constraints = request.body.constraints_check ?? {};
     if (typeof constraints !== 'object' || Array.isArray(constraints)) return response.status(400).json({ error: { code: 'invalid_constraints', message: 'constraints_check must be an object.' } });
     const facts = scoreFacts(input.musicxml);
     const priceUsd = facts.partCount > config.multiInstrumentPartBoundary ? config.renderMultiPriceUsd : config.renderSoloPriceUsd;

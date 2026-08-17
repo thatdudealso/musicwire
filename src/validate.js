@@ -35,8 +35,16 @@ export function scoreFacts(xml) {
     for (const measure of part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []) {
       let cursor = 0;
       let maximum = 0;
-      const tokens = measure.matchAll(/<divisions>\s*(\d+)\s*<\/divisions>|<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["'][^>]*>|<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>|<(note|backup|forward)\b[\s\S]*?<\/\4>/gi);
+      const tokens = measure.matchAll(/<direction\b[\s\S]*?<\/direction>|<divisions>\s*(\d+)\s*<\/divisions>|<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["'][^>]*>|<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>|<(note|backup|forward)\b[\s\S]*?<\/\4>/gi);
       for (const token of tokens) {
+        if (token[0].startsWith('<direction')) {
+          const tempo = tempoInDirection(token[0]);
+          if (tempo) {
+            const offset = Number(token[0].match(/<offset\b[^>]*>\s*(-?\d+)\s*<\/offset>/i)?.[1] ?? 0) / divisions;
+            tempoEvents.set(Number(Math.max(0, partQuarters + cursor + offset).toFixed(6)), tempo);
+          }
+          continue;
+        }
         if (token[1]) { divisions = Math.max(1, Number(token[1])); continue; }
         if (token[2] || token[3]) { tempoEvents.set(Number((partQuarters + cursor).toFixed(6)), Number(token[2] ?? token[3])); continue; }
         const duration = Number(token[0].match(/<duration>\s*(\d+)\s*<\/duration>/i)?.[1] ?? 0) / divisions;
@@ -58,4 +66,10 @@ export function scoreFacts(xml) {
     if (end > start) scoreDurationSeconds += (end - start) * 60 / Math.max(1, events[index][1]);
   }
   return { partCount, tempo: events[0][1], key: { fifths: keyFifths, mode }, scoreDurationSeconds };
+}
+
+function tempoInDirection(direction) {
+  return Number(direction.match(/<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["'][^>]*>/i)?.[1]
+    ?? direction.match(/<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>/i)?.[1]
+    ?? 0);
 }

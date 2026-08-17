@@ -33,6 +33,32 @@ curl http://localhost:8787/v1/jobs/JOB_ID
 
 `POST /v1/validate` accepts raw `application/xml` bytes or a JSON `musicxml` string. `POST /v1/render` accepts the same JSON string plus optional `formats` and `constraints_check`. Client filesystem paths and compressed input are rejected.
 
+## Request and response schemas
+
+All JSON request bodies use UTF-8 strings. Render requests must be JSON and name at least one requested artifact format.
+
+```json
+// POST /v1/validate
+{ "musicxml": "<score-partwise version=\"4.0\">...</score-partwise>" }
+
+// 200 or 422 validation response
+{ "valid": true, "errors": [{ "line": 1, "measure": "2", "message": "...", "fix_hint": "..." }], "price_usd": "0.10", "payment": { "provider": "stub", "status": "configured_for_phase_2", "charge_eligible": true } }
+
+// POST /v1/render
+{ "musicxml": "<score-partwise version=\"4.0\">...</score-partwise>", "formats": ["pdf", "svg", "mp3"], "constraints_check": { "tempo": 84, "duration_seconds": 30, "key_fifths": -1, "mode": "minor" } }
+
+// 202 render response
+{ "job_id": "uuid", "status": "queued", "estimated_seconds": 30, "price_usd": "0.25", "payment": { "status": "pending_qc", "capture_policy": "capture_only_after_qc_pass" }, "poll_url": "/v1/jobs/uuid" }
+
+// GET /v1/jobs/{id}
+{ "job_id": "uuid", "status": "completed", "facts": { "partCount": 1, "tempo": 84, "key": { "fifths": -1, "mode": "minor" }, "scoreDurationSeconds": 30 }, "qc": { "status": "passed" }, "error": null, "payment": { "status": "capture_stubbed" }, "expires_at": "2026-01-01T00:00:00.000Z", "artifacts": [{ "name": "score.pdf", "sha256": "hex", "bytes": 1234, "url": "/v1/artifacts/uuid/score.pdf?expires=...&token=..." }] }
+
+// Error envelope: 400, 413, 415, 422, or 429 as appropriate
+{ "error": { "code": "invalid_formats", "message": "..." } }
+```
+
+Artifact URLs are signed, expire with the job retention window, and return the named binary artifact. Failed render jobs use `status: "failed_not_charged"` and include a typed `error` plus `payment.status: "not_charged"`.
+
 ## API contract
 
 | Endpoint | Price when x402 lands | Result |
