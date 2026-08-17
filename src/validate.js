@@ -7,7 +7,7 @@ export function validateMusicXml(xml) {
   const errors = [];
   if (typeof xml !== 'string' || xml.length === 0) return { valid: false, errors: [issue('', '', null, 'MusicXML must be a non-empty string or byte body.', 'Send raw application/xml bytes or JSON {"musicxml":"..."}; filesystem paths are never accepted.')] };
   if (/<!DOCTYPE|<!ENTITY|<\?xml-stylesheet/i.test(xml)) errors.push(issue(xml, '<!', null, 'DOCTYPE, entities, and stylesheets are not accepted.', 'Remove external declarations. Musicwire parses XML without entity or network access.'));
-  if (!/<score-partwise\b[^>]*version=["']4(?:\.0|\.1)?["']/i.test(xml)) errors.push(issue(xml, '<score-partwise', null, 'Expected a MusicXML 4.0 score-partwise root.', 'Use <score-partwise version="4.0"> as the document root.'));
+  if (!/^\uFEFF?\s*(?:<\?xml\b[\s\S]*?\?>\s*)?(?:(?:<!--[\s\S]*?-->)|(?:<\?(?!xml\b)[\s\S]*?\?>))*\s*<score-partwise\b[^>]*\bversion=["']4(?:\.0|\.1)?["']/i.test(xml)) errors.push(issue(xml, '<score-partwise', null, 'Expected a MusicXML 4.0 score-partwise root.', 'Use <score-partwise version="4.0"> as the document root.'));
   const parsed = XMLValidator.validate(xml, { allowBooleanAttributes: false, unpairedTags: [] });
   if (parsed !== true) errors.push({ line: parsed.err.line, measure: null, message: parsed.err.msg, fix_hint: 'Correct the XML syntax and submit a complete MusicXML document.' });
   if (!/<part-list\b/i.test(xml)) errors.push(issue(xml, '<score-partwise', null, 'Missing part-list.', 'Add a part-list containing one score-part for every part.'));
@@ -50,7 +50,7 @@ export function scoreFacts(xml) {
     scoreQuarters = Math.max(scoreQuarters, partQuarters);
   }
   const events = [...tempoEvents.entries()].sort((a, b) => a[0] - b[0]);
-  if (events.length === 0 || events[0][0] > 0) events.unshift([0, events[0]?.[1] ?? 90]);
+  if (events.length === 0 || events[0][0] > 0) events.unshift([0, 120]);
   let scoreDurationSeconds = 0;
   for (let index = 0; index < events.length; index += 1) {
     const start = Math.min(scoreQuarters, events[index][0]);

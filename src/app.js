@@ -137,13 +137,17 @@ function publicJob(job, artifactStore) {
 }
 
 function rateLimit(limiter, config) {
+  let lastSweepAt = 0;
   return (request, response, next) => {
     const key = request.ip ?? 'unknown';
     const now = Date.now();
-    for (const [ip, timestamps] of limiter) {
-      const active = timestamps.filter((time) => now - time < 60_000);
-      if (active.length === 0) limiter.delete(ip);
-      else if (active.length !== timestamps.length) limiter.set(ip, active);
+    if (now - lastSweepAt >= 60_000) {
+      for (const [ip, timestamps] of limiter) {
+        const active = timestamps.filter((time) => now - time < 60_000);
+        if (active.length === 0) limiter.delete(ip);
+        else if (active.length !== timestamps.length) limiter.set(ip, active);
+      }
+      lastSweepAt = now;
     }
     const current = limiter.get(key)?.filter((time) => now - time < 60_000) ?? [];
     if (current.length >= config.requestsPerMinute) return response.status(429).json({ error: { code: 'rate_limited', message: 'Too many requests. Retry after one minute.' } });

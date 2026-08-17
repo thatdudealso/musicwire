@@ -22,6 +22,12 @@ test('rejects external entity declarations before XML parsing', () => {
   assert.match(result.errors[0].message, /DOCTYPE/);
 });
 
+test('rejects documents whose root is not a MusicXML score-partwise element', () => {
+  const result = validateMusicXml(`<wrapper><score-partwise version="4.0"><part-list/><part id="P1"><measure number="1"><note><duration>1</duration></note></measure></part></score-partwise></wrapper>`);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.message === 'Expected a MusicXML 4.0 score-partwise root.'));
+});
+
 test('constraint mismatches are deterministic and payment cannot capture before QC', async () => {
   const facts = scoreFacts(validScore);
   assert.deepEqual(compareConstraints(facts, { tempo: 120, key_fifths: -1, mode: 'minor' }), ['tempo', 'key_fifths', 'mode']);
@@ -40,4 +46,10 @@ test('score facts incorporate tempo and division changes, while audio allows a b
   assert.equal(facts.scoreDurationSeconds, 6);
   assert.equal(checkAudioDuration(6, 8, 2).ok, true);
   assert.equal(checkAudioDuration(6, 8.61, 2).code, 'audio_duration_mismatch');
+});
+
+test('score facts use MuseScore default tempo until an authored tempo takes effect', () => {
+  const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><note><duration>4</duration></note></measure><measure number="2"><sound tempo="60"/><note><duration>4</duration></note></measure></part></score-partwise>`);
+  assert.equal(facts.tempo, 120);
+  assert.equal(facts.scoreDurationSeconds, 6);
 });

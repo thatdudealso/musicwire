@@ -27,7 +27,7 @@ export const config = {
   maxRenderRssKb: integer('MAX_RENDER_RSS_KB', 1_024_000),
   artifactRetentionDays: integer('ARTIFACT_RETENTION_DAYS', 30),
   multiInstrumentPartBoundary: integer('MULTI_INSTRUMENT_PART_BOUNDARY', 1),
-  maxConcurrentRenders: integer('MAX_CONCURRENT_RENDERS', 2),
+  maxConcurrentRenders: integer('MAX_CONCURRENT_RENDERS', 1),
   audioTailAllowanceSeconds: decimal('AUDIO_TAIL_ALLOWANCE_SECONDS', 2),
   healthCacheSeconds: integer('HEALTH_CACHE_SECONDS', 30),
   validatePriceUsd: process.env.VALIDATE_PRICE_USD ?? '0.10',
