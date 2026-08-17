@@ -115,7 +115,12 @@ export class Renderer {
           const cpu = execFileSync('/bin/ps', ['-o', 'cputime=', '-p', String(child.pid)], { encoding: 'utf8' }).trim();
           const seconds = cpu.split(':').reverse().reduce((total, piece, index) => total + Number(piece) * (60 ** index), 0);
           if (seconds > this.config.maxRenderCpuSeconds) { cpuExceeded = true; child.kill('SIGKILL'); }
-        } catch { /* macOS has no /proc; Docker enforces memory cgroup. */ }
+        } catch {
+          if (child.exitCode === null && child.signalCode === null) {
+            cpuExceeded = true;
+            child.kill('SIGKILL');
+          }
+        }
       }, 250);
       child.stdout.on('data', (data) => { stdout += data; });
       child.stderr.on('data', (data) => { stderr += data; });

@@ -115,6 +115,12 @@ test('score facts reject playback expansion beyond the configured limit', () => 
   assert.match(facts.durationModelError, /playback modeling limit/);
 });
 
+test('score facts reject replayed tempo events beyond the configured limit', () => {
+  const score = `<score-partwise version="4.0"><part id="P1"><measure number="1"><direction><offset>0</offset><sound tempo="60"/></direction><direction><offset>1</offset><sound tempo="90"/></direction><barline location="left"><repeat direction="forward"/></barline><note><duration>1</duration></note></measure><measure number="2"><note><duration>1</duration></note><barline location="right"><repeat direction="backward"/></barline></measure></part></score-partwise>`;
+  const facts = scoreFacts(score, 20, 3);
+  assert.match(facts.durationModelError, /tempo modeling limit/);
+});
+
 test('score facts apply tuplet ratios to type-based durations', () => {
   const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><note><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note></measure></part></score-partwise>`);
   assert.ok(Math.abs(facts.scoreDurationSeconds - (1 / 3)) < 1e-9);

@@ -134,3 +134,20 @@ test('render rejects audio whose repeat expansion exceeds the configured limit',
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
+
+test('render rejects audio whose replayed tempo events exceed the configured limit', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-tempo-event-limit-'));
+  const server = createApp({ dataDirectory, maxPlaybackMeasures: 20, maxPlaybackTempoEvents: 1 }).listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const repeated = musicxml
+    .replace('<measure number="1">', '<measure number="1"><barline location="left"><repeat direction="forward"/></barline>')
+    .replace('<barline location="right"><bar-style>', '<barline location="right"><repeat direction="backward"/><bar-style>');
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml: repeated, formats: ['mp3'] }) });
+    assert.equal(response.status, 422);
+    assert.equal((await response.json()).error.code, 'score_duration_model_unsupported');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
