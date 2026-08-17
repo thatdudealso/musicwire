@@ -59,8 +59,8 @@ export function createApp(overrides = {}) {
     if (!validation.valid) return response.status(422).json({ status: 'failed_not_charged', error: { code: failureCodes.validation, message: 'MusicXML validation failed.', errors: validation.errors }, payment: { status: 'not_charged' } });
     const formats = request.body.formats;
     if (!Array.isArray(formats) || formats.length === 0 || formats.some((format) => !supportedFormats.includes(format)) || new Set(formats).size !== formats.length) return response.status(400).json({ error: { code: 'invalid_formats', message: `formats must be a non-empty unique array drawn from: ${supportedFormats.join(', ')}.` } });
-    const constraints = request.body.constraints_check ?? {};
-    if (typeof constraints !== 'object' || Array.isArray(constraints)) return response.status(400).json({ error: { code: 'invalid_constraints', message: 'constraints_check must be an object.' } });
+    const constraints = request.body.constraints_check === undefined ? {} : request.body.constraints_check;
+    if (constraints === null || typeof constraints !== 'object' || Array.isArray(constraints)) return response.status(400).json({ error: { code: 'invalid_constraints', message: 'constraints_check must be an object.' } });
     const constraintError = invalidNumericConstraint(constraints);
     if (constraintError) return response.status(400).json({ error: { code: 'invalid_constraints', message: constraintError } });
     const facts = scoreFacts(input.musicxml);

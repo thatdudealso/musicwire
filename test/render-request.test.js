@@ -22,6 +22,12 @@ test('render requires JSON and at least one output format before queuing', async
     const malformedConstraint = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { duration_seconds: 'not-a-number' } }) });
     assert.equal(malformedConstraint.status, 400);
     assert.equal((await malformedConstraint.json()).error.code, 'invalid_constraints');
+    const nullConstraint = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: null }) });
+    assert.equal(nullConstraint.status, 400);
+    assert.equal((await nullConstraint.json()).error.code, 'invalid_constraints');
+    const navigation = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90" dacapo="yes"/>'), formats: ['mp3'] }) });
+    assert.equal(navigation.status, 422);
+    assert.equal((await navigation.json()).error.code, 'score_duration_model_unsupported');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });

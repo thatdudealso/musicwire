@@ -1,4 +1,4 @@
-import { XMLValidator } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
 const lineOf = (xml, needle) => xml.slice(0, Math.max(0, xml.indexOf(needle))).split('\n').length;
 const issue = (xml, needle, measure, message, fixHint) => ({ line: lineOf(xml, needle), measure, message, fix_hint: fixHint });
@@ -6,20 +6,21 @@ const issue = (xml, needle, measure, message, fixHint) => ({ line: lineOf(xml, n
 export function validateMusicXml(xml) {
   const errors = [];
   if (typeof xml !== 'string' || xml.length === 0) return { valid: false, errors: [issue('', '', null, 'MusicXML must be a non-empty string or byte body.', 'Send raw application/xml bytes or JSON {"musicxml":"..."}; filesystem paths are never accepted.')] };
-  if (/<!DOCTYPE|<!ENTITY|<\?xml-stylesheet/i.test(xml)) errors.push(issue(xml, '<!', null, 'DOCTYPE, entities, and stylesheets are not accepted.', 'Remove external declarations. Musicwire parses XML without entity or network access.'));
-  if (!/^\uFEFF?\s*(?:<\?xml\b[\s\S]*?\?>\s*)?(?:(?:<!--[\s\S]*?-->)|(?:<\?(?!xml\b)[\s\S]*?\?>))*\s*<score-partwise\b[^>]*\bversion=["']4(?:\.0|\.1)?["']/i.test(xml)) errors.push(issue(xml, '<score-partwise', null, 'Expected a MusicXML 4.0 score-partwise root.', 'Use <score-partwise version="4.0"> as the document root.'));
+  const forbiddenDeclaration = /<!DOCTYPE|<!ENTITY|<\?xml-stylesheet/i.test(xml);
+  if (forbiddenDeclaration) errors.push(issue(xml, '<!', null, 'DOCTYPE, entities, and stylesheets are not accepted.', 'Remove external declarations. Musicwire parses XML without entity or network access.'));
   const parsed = XMLValidator.validate(xml, { allowBooleanAttributes: false, unpairedTags: [] });
   if (parsed !== true) errors.push({ line: parsed.err.line, measure: null, message: parsed.err.msg, fix_hint: 'Correct the XML syntax and submit a complete MusicXML document.' });
-  const semanticXml = withoutNonElements(xml);
-  if (!/<part-list\b/i.test(semanticXml)) errors.push(issue(xml, '<score-partwise', null, 'Missing part-list.', 'Add a part-list containing one score-part for every part.'));
-  const parts = [...semanticXml.matchAll(/<part(?=\s|>)[^>]*id=["']([^"']+)["'][^>]*>/gi)];
+  const root = parsed === true && !forbiddenDeclaration ? new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(xml)['score-partwise'] : null;
+  if (!root || !['4.0', '4.1'].includes(root['@_version'])) errors.push(issue(xml, '<score-partwise', null, 'Expected a MusicXML 4.0 score-partwise root.', 'Use <score-partwise version="4.0"> as the document root.'));
+  if (!root) return { valid: false, errors };
+  if (!root['part-list']) errors.push(issue(xml, '<score-partwise', null, 'Missing part-list.', 'Add a part-list containing one score-part for every part.'));
+  const parts = arrayOf(root.part);
   if (parts.length === 0) errors.push(issue(xml, '<score-partwise', null, 'Missing score part.', 'Add at least one <part id="P1"> with one or more measures.'));
-  for (const part of parts) {
-    const afterPart = semanticXml.slice(part.index);
-    if (!/<measure\b/i.test(afterPart)) errors.push(issue(xml, part[0], null, `Part ${part[1]} has no measures.`, 'Add one or more numbered measures to each part.'));
+  for (const [index, part] of parts.entries()) {
+    const measures = arrayOf(part.measure);
+    if (measures.length === 0) errors.push(issue(xml, '<part', null, `Part ${index + 1} has no measures.`, 'Add one or more numbered measures to each part.'));
+    else if (!measures.some(hasDurationOrType)) errors.push(issue(xml, '<measure', null, `Part ${index + 1} has no note durations.`, 'Add duration and type elements to notes.'));
   }
-  const measures = [...semanticXml.matchAll(/<measure\b[^>]*number=["']?([^"' >]+)["']?[^>]*>/gi)];
-  if (measures.length > 0 && !/<(duration|type)\b/i.test(semanticXml)) errors.push(issue(xml, measures[0][0], measures[0][1], 'Score has no note durations.', 'Add duration and type elements to notes.'));
   return { valid: errors.length === 0, errors };
 }
 
@@ -36,6 +37,7 @@ export function scoreFacts(xml) {
 }
 
 function partDuration(part) {
+  if (/<sound\b[^>]*\b(?:dacapo|dalsegno|tocoda)\s*=/i.test(part)) return { tempo: 120, seconds: 0, durationModelError: 'Audio rendering does not support navigation-based playback duration modeling.' };
   let divisions = 1;
   const measures = (part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []).map((measure) => {
     const data = measureData(measure, divisions);
@@ -132,7 +134,9 @@ function durationInQuarters(event, divisions) {
   const type = event.match(/<type>\s*(whole|half|quarter|eighth|16th|32nd|64th|128th|256th)\s*<\/type>/i)?.[1]?.toLowerCase();
   const quarters = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125, '64th': 0.0625, '128th': 0.03125, '256th': 0.015625 }[type] ?? 0;
   const dots = event.match(/<dot\b[^>]*\/?\s*>/gi)?.length ?? 0;
-  return quarters * (2 - 2 ** -dots);
+  const actualNotes = Number(event.match(/<time-modification>[\s\S]*?<actual-notes>\s*(\d+)\s*<\/actual-notes>/i)?.[1] ?? 1);
+  const normalNotes = Number(event.match(/<time-modification>[\s\S]*?<normal-notes>\s*(\d+)\s*<\/normal-notes>/i)?.[1] ?? 1);
+  return quarters * (2 - 2 ** -dots) * normalNotes / actualNotes;
 }
 
 function tempoInDirection(direction) {
@@ -143,4 +147,15 @@ function tempoInDirection(direction) {
 
 function withoutNonElements(xml) {
   return xml.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>/g, '');
+}
+
+function arrayOf(value) {
+  return value === undefined ? [] : Array.isArray(value) ? value : [value];
+}
+
+function hasDurationOrType(value) {
+  if (Array.isArray(value)) return value.some(hasDurationOrType);
+  if (!value || typeof value !== 'object') return false;
+  if ('duration' in value || 'type' in value) return true;
+  return Object.values(value).some(hasDurationOrType);
 }

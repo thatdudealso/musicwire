@@ -34,6 +34,13 @@ test('does not treat comments as MusicXML semantic elements', () => {
   assert.ok(result.errors.some((error) => error.message === 'Missing part-list.'));
 });
 
+test('requires a real part-list and measures in each parsed part', () => {
+  const result = validateMusicXml(`<score-partwise version="4.0"><part-listening/><part id="P1"/><part id="P2"><measure number="1"><note><duration>1</duration></note></measure></part></score-partwise>`);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.message === 'Missing part-list.'));
+  assert.ok(result.errors.some((error) => error.message === 'Part 1 has no measures.'));
+});
+
 test('constraint mismatches are deterministic and payment cannot capture before QC', async () => {
   const facts = scoreFacts(validScore);
   assert.deepEqual(compareConstraints(facts, { tempo: 120, key_fifths: -1, mode: 'minor' }), ['tempo', 'key_fifths', 'mode']);
@@ -86,4 +93,9 @@ test('semantic and fact extraction ignore CDATA and processing instructions', ()
 test('score facts expand ordinary forward and backward repeats', () => {
   const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><sound tempo="60"/><barline location="left"><repeat direction="forward"/></barline><note><duration>4</duration></note></measure><measure number="2"><note><duration>4</duration></note><barline location="right"><repeat direction="backward"/></barline></measure></part></score-partwise>`);
   assert.equal(facts.scoreDurationSeconds, 16);
+});
+
+test('score facts apply tuplet ratios to type-based durations', () => {
+  const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><note><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note></measure></part></score-partwise>`);
+  assert.ok(Math.abs(facts.scoreDurationSeconds - (1 / 3)) < 1e-9);
 });

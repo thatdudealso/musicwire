@@ -31,7 +31,7 @@ curl -X POST http://localhost:8787/v1/render \
 curl http://localhost:8787/v1/jobs/JOB_ID
 ```
 
-`POST /v1/validate` accepts raw `application/xml` bytes or a JSON `musicxml` string. `POST /v1/render` accepts the same JSON string plus optional `formats` and `constraints_check`. Client filesystem paths and compressed input are rejected.
+`POST /v1/validate` accepts raw `application/xml` bytes or a JSON `musicxml` string. `POST /v1/render` requires JSON with a non-empty `formats` array and accepts optional `constraints_check`. Client filesystem paths and compressed input are rejected.
 
 ## Request and response schemas
 
