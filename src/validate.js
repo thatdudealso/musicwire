@@ -37,7 +37,7 @@ export function scoreFacts(xml) {
 }
 
 function partDuration(part) {
-  if (/<sound\b[^>]*\b(?:dacapo|dalsegno|tocoda)\s*=/i.test(part)) return { tempo: 120, seconds: 0, durationModelError: 'Audio rendering does not support navigation-based playback duration modeling.' };
+  if (/<sound\b[^>]*\b(?:dacapo|dalsegno|tocoda|fine|forward-repeat|segno|coda|eyeglasses)\s*=/i.test(part)) return { tempo: 120, seconds: 0, durationModelError: 'Audio rendering does not support navigation-based playback duration modeling.' };
   let divisions = 1;
   const measures = (part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []).map((measure) => {
     const data = measureData(measure, divisions);

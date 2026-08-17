@@ -28,6 +28,12 @@ test('render requires JSON and at least one output format before queuing', async
     const navigation = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90" dacapo="yes"/>'), formats: ['mp3'] }) });
     assert.equal(navigation.status, 422);
     assert.equal((await navigation.json()).error.code, 'score_duration_model_unsupported');
+    const fineNavigation = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90" fine="yes"/>'), formats: ['mp3'] }) });
+    assert.equal(fineNavigation.status, 422);
+    assert.equal((await fineNavigation.json()).error.code, 'score_duration_model_unsupported');
+    const invalidMode = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { mode: 'dorian' } }) });
+    assert.equal(invalidMode.status, 400);
+    assert.equal((await invalidMode.json()).error.code, 'invalid_constraints');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });

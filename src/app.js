@@ -186,6 +186,7 @@ function invalidNumericConstraint(constraints) {
     if (field in constraints && (typeof constraints[field] !== 'number' || !Number.isFinite(constraints[field]) || constraints[field] <= 0)) return `${field} must be a finite positive number.`;
   }
   if ('key_fifths' in constraints && (typeof constraints.key_fifths !== 'number' || !Number.isFinite(constraints.key_fifths) || !Number.isInteger(constraints.key_fifths))) return 'key_fifths must be a finite integer.';
+  if ('mode' in constraints && !['major', 'minor'].includes(constraints.mode)) return 'mode must be "major" or "minor".';
   return null;
 }
 
