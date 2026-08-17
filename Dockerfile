@@ -2,6 +2,7 @@ FROM node:22-bookworm-slim AS runtime
 
 ARG TARGETARCH
 ARG MSCORE_RELEASE="4.7.2.260525085"
+ENV MS_BASIC_LICENSE="/opt/musescore/share/mscore-4.7/sound/MS Basic_License.md"
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg fontconfig libasound2 libegl1 libgl1 libnss3 libxkbcommon0 libxkbcommon-x11-0 libxrender1 xauth xvfb \
@@ -11,6 +12,7 @@ RUN apt-get update \
   && chmod +x /tmp/mscore.AppImage \
   && /tmp/mscore.AppImage --appimage-extract \
   && mv squashfs-root /opt/musescore \
+  && test -f "$MS_BASIC_LICENSE" \
   && rm /tmp/mscore.AppImage
 
 WORKDIR /app
@@ -23,7 +25,6 @@ ENV NODE_ENV=production \
   MSCORE_ARCH= \
   FFMPEG_BIN=ffmpeg \
   FFPROBE_BIN=ffprobe \
-  MS_BASIC_LICENSE="/opt/musescore/usr/share/mscore-4.0/sound/MS Basic_License.md" \
   MUSICWIRE_DATA_DIR=/var/lib/musicwire/data
 
 RUN mkdir -p /var/lib/musicwire/data && chown -R node:node /app /var/lib/musicwire

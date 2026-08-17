@@ -42,7 +42,7 @@ export function scoreFacts(xml) {
 }
 
 function partDuration(part) {
-  if (/<sound\b[^>]*\b(?:dacapo|dalsegno|tocoda|fine|forward-repeat|segno|coda|eyeglasses)\s*=/i.test(part)) return { tempo: 120, seconds: 0, durationModelError: 'Audio rendering does not support navigation-based playback duration modeling.' };
+  if (hasUnsupportedNavigation(part)) return { tempo: 120, seconds: 0, durationModelError: 'Audio rendering does not support navigation-based playback duration modeling.' };
   let divisions = 1;
   const measures = (part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []).map((measure) => {
     const data = measureData(measure, divisions);
@@ -67,6 +67,11 @@ function partDuration(part) {
     if (end > start) seconds += (end - start) * 60 / Math.max(1, events[index][1]);
   }
   return { tempo: events[0][1], seconds };
+}
+
+function hasUnsupportedNavigation(part) {
+  if (/<sound\b[^>]*\b(?:dacapo|dalsegno|tocoda|fine|forward-repeat|segno|coda|eyeglasses)\s*=/i.test(part) || /<(?:segno|coda)\b/i.test(part)) return true;
+  return [...part.matchAll(/<words\b[^>]*>([\s\S]*?)<\/words>/gi)].some((match) => /\bd\s*\.?\s*c\.?|\bda\s+capo\b|\bd\s*\.?\s*s\.?|\bdal\s+segno\b|\bto\s+coda\b|\bfine\b/i.test(match[1]));
 }
 
 function measureData(measure, initialDivisions) {
