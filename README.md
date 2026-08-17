@@ -35,7 +35,7 @@ curl http://localhost:8787/v1/jobs/JOB_ID
 
 ## Request and response schemas
 
-All JSON request bodies use UTF-8 strings. Render requests must be JSON and name at least one requested artifact format.
+MusicXML supplied in a JSON request body must be a UTF-8 string. Render requests must be JSON and name at least one requested artifact format.
 
 ```json
 // POST /v1/validate
@@ -61,7 +61,7 @@ Artifact URLs are signed, expire with the job retention window, and return the n
 
 ## API contract
 
-| Endpoint | Price when x402 lands | Result |
+| Endpoint | Price | Result |
 | --- | ---: | --- |
 | `GET /v1/compose-guide` | Free | Static, versioned BYO-LLM authoring guide. |
 | `POST /v1/validate` | $0.05 | `{valid, errors:[{line, measure, message, fix_hint}]}`. |
