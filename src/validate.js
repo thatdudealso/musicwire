@@ -29,19 +29,19 @@ export function validateMusicXml(xml) {
   return { valid: errors.length === 0, errors };
 }
 
-export function scoreFacts(xml) {
+export function scoreFacts(xml, maxPlaybackMeasures = 20_000) {
   const semanticXml = withoutNonElements(xml);
   const partCount = [...semanticXml.matchAll(/<part(?=\s|>)[^>]*id=["'][^"']+["'][^>]*>/gi)].length;
   const keyFifths = Number((semanticXml.match(/<fifths>\s*(-?\d+)\s*<\/fifths>/i)?.[1]) ?? 0);
   const mode = semanticXml.match(/<mode>\s*(major|minor)\s*<\/mode>/i)?.[1] ?? 'major';
   const parts = semanticXml.match(/<part(?=\s|>)[\s\S]*?<\/part>/gi) ?? [];
-  const partFacts = parts.map(partDuration);
+  const partFacts = parts.map((part) => partDuration(part, maxPlaybackMeasures));
   const longest = partFacts.reduce((current, candidate) => candidate.seconds > current.seconds ? candidate : current, { tempo: 120, seconds: 0 });
   const durationModelError = partFacts.find((part) => part.durationModelError)?.durationModelError;
   return { partCount, tempo: longest.tempo, key: { fifths: keyFifths, mode }, scoreDurationSeconds: longest.seconds, ...(durationModelError ? { durationModelError } : {}) };
 }
 
-function partDuration(part) {
+function partDuration(part, maxPlaybackMeasures) {
   if (hasUnsupportedNavigation(part)) return { tempo: 120, seconds: 0, durationModelError: 'Audio rendering does not support navigation-based playback duration modeling.' };
   let divisions = 1;
   const measures = (part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []).map((measure) => {
@@ -49,21 +49,14 @@ function partDuration(part) {
     divisions = data.divisions;
     return data;
   });
-  const sequence = repeatSequence(measures);
-  if (sequence.error) return { tempo: 120, seconds: 0, durationModelError: sequence.error };
-  const tempoEvents = new Map();
-  let partQuarters = 0;
-  for (const index of sequence.indices) {
-    const measure = measures[index];
-    for (const [position, tempo] of measure.tempoEvents) tempoEvents.set(Number((partQuarters + position).toFixed(6)), tempo);
-    partQuarters += measure.quarters;
-  }
-  const events = [...tempoEvents.entries()].sort((a, b) => a[0] - b[0]);
+  const playback = playbackFacts(measures, maxPlaybackMeasures);
+  if (playback.error) return { tempo: 120, seconds: 0, durationModelError: playback.error };
+  const events = [...playback.tempoEvents.entries()].sort((a, b) => a[0] - b[0]);
   if (events.length === 0 || events[0][0] > 0) events.unshift([0, 120]);
   let seconds = 0;
   for (let index = 0; index < events.length; index += 1) {
-    const start = Math.min(partQuarters, events[index][0]);
-    const end = Math.min(partQuarters, events[index + 1]?.[0] ?? partQuarters);
+    const start = Math.min(playback.quarters, events[index][0]);
+    const end = Math.min(playback.quarters, events[index + 1]?.[0] ?? playback.quarters);
     if (end > start) seconds += (end - start) * 60 / Math.max(1, events[index][1]);
   }
   return { tempo: events[0][1], seconds };
@@ -100,32 +93,42 @@ function measureData(measure, initialDivisions) {
   return { divisions, quarters: maximum, tempoEvents, forward: repeatMarker(measure, 'forward'), backward: repeatMarker(measure, 'backward'), hasEnding: /<ending\b/i.test(measure) };
 }
 
-function repeatSequence(measures) {
+function playbackFacts(measures, maxPlaybackMeasures) {
   if (measures.some((measure) => measure.hasEnding)) return { error: 'Audio rendering does not support ending-based repeat duration modeling.' };
   if (measures.some((measure) => measure.forward?.invalid || measure.backward?.invalid)) return { error: 'Audio rendering has an unsupported repeat count.' };
-  const indices = [];
+  const limit = Math.max(1, Number.isSafeInteger(maxPlaybackMeasures) ? maxPlaybackMeasures : 20_000);
+  const tempoEvents = new Map();
   const repeats = new Map();
   let repeatStart = null;
-  for (let index = 0; index < measures.length; index += 1) {
+  let forwardOpen = false;
+  let quarters = 0;
+  let playedMeasures = 0;
+  for (let index = 0; index < measures.length;) {
+    if (playedMeasures >= limit) return { error: `Audio rendering exceeds the ${limit}-measure playback modeling limit.` };
     const measure = measures[index];
-    indices.push(index);
+    playedMeasures += 1;
+    for (const [position, tempo] of measure.tempoEvents) tempoEvents.set(Number((quarters + position).toFixed(6)), tempo);
+    quarters += measure.quarters;
     if (measure.forward) {
       const start = measure.forward.location === 'right' ? index + 1 : index;
-      if (repeatStart !== null && repeatStart !== start) return { error: 'Audio rendering does not support nested repeat duration modeling.' };
+      if (forwardOpen && repeatStart !== start) return { error: 'Audio rendering does not support nested repeat duration modeling.' };
       repeatStart = start;
+      forwardOpen = true;
     }
-    if (!measure.backward) continue;
-    const start = repeatStart ?? 0;
-    const key = `${start}:${index}`;
-    const played = repeats.get(key) ?? 1;
-    if (played < measure.backward.times) {
-      repeats.set(key, played + 1);
-      index = start - 1;
-    } else {
-      repeatStart = null;
+    if (measure.backward) {
+      const start = repeatStart ?? 0;
+      const key = `${start}:${index}`;
+      const played = repeats.get(key) ?? 1;
+      if (played < measure.backward.times) {
+        repeats.set(key, played + 1);
+        index = start;
+        continue;
+      }
+      forwardOpen = false;
     }
+    index += 1;
   }
-  return { indices };
+  return { quarters, tempoEvents };
 }
 
 function repeatMarker(measure, direction) {

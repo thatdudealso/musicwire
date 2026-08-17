@@ -63,7 +63,7 @@ export function createApp(overrides = {}) {
     if (constraints === null || typeof constraints !== 'object' || Array.isArray(constraints)) return response.status(400).json({ error: { code: 'invalid_constraints', message: 'constraints_check must be an object.' } });
     const constraintError = invalidNumericConstraint(constraints);
     if (constraintError) return response.status(400).json({ error: { code: 'invalid_constraints', message: constraintError } });
-    const facts = scoreFacts(input.musicxml);
+    const facts = scoreFacts(input.musicxml, config.maxPlaybackMeasures);
     const requiresDurationModel = formats.some((format) => format === 'mp3' || format === 'wav') || 'tempo' in constraints || 'duration_seconds' in constraints;
     if (requiresDurationModel && (facts.scoreDurationSeconds <= 0 || facts.durationModelError)) return response.status(422).json({ status: 'failed_not_charged', error: { code: facts.durationModelError ? failureCodes.durationModel : failureCodes.scoreDuration, message: facts.durationModelError ?? 'Audio rendering and tempo or duration constraints require a positive computable score duration.' }, payment: { status: 'not_charged' } });
     const priceUsd = facts.partCount > config.multiInstrumentPartBoundary ? config.renderMultiPriceUsd : config.renderSoloPriceUsd;

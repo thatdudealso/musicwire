@@ -36,6 +36,7 @@ export const config = {
   multiInstrumentPartBoundary: integer('MULTI_INSTRUMENT_PART_BOUNDARY', 1),
   maxConcurrentRenders: integer('MAX_CONCURRENT_RENDERS', 1),
   maxPendingRenders: integer('MAX_PENDING_RENDERS', 20),
+  maxPlaybackMeasures: integer('MAX_PLAYBACK_MEASURES', 20_000),
   audioTailAllowanceSeconds: decimal('AUDIO_TAIL_ALLOWANCE_SECONDS', 2),
   healthCacheSeconds: integer('HEALTH_CACHE_SECONDS', 30),
   validatePriceUsd: process.env.VALIDATE_PRICE_USD ?? '0.10',

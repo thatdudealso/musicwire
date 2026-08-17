@@ -104,6 +104,17 @@ test('score facts expand ordinary forward and backward repeats', () => {
   assert.equal(facts.scoreDurationSeconds, 16);
 });
 
+test('score facts retain an explicit forward repeat start for later endings', () => {
+  const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><sound tempo="60"/><note><duration>4</duration></note></measure><measure number="2"><barline location="left"><repeat direction="forward"/></barline><note><duration>4</duration></note></measure><measure number="3"><note><duration>4</duration></note><barline location="right"><repeat direction="backward"/></barline></measure><measure number="4"><note><duration>4</duration></note></measure><measure number="5"><note><duration>4</duration></note><barline location="right"><repeat direction="backward"/></barline></measure></part></score-partwise>`);
+  assert.equal(facts.scoreDurationSeconds, 44);
+});
+
+test('score facts reject playback expansion beyond the configured limit', () => {
+  const score = `<score-partwise version="4.0"><part id="P1"><measure number="1"><barline location="left"><repeat direction="forward"/></barline><note><duration>1</duration></note></measure><measure number="2"><note><duration>1</duration></note><barline location="right"><repeat direction="backward" times="16"/></barline></measure></part></score-partwise>`;
+  const facts = scoreFacts(score, 4);
+  assert.match(facts.durationModelError, /playback modeling limit/);
+});
+
 test('score facts apply tuplet ratios to type-based durations', () => {
   const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><note><type>quarter</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note></measure></part></score-partwise>`);
   assert.ok(Math.abs(facts.scoreDurationSeconds - (1 / 3)) < 1e-9);
