@@ -42,13 +42,13 @@ All JSON request bodies use UTF-8 strings. Render requests must be JSON and name
 { "musicxml": "<score-partwise version=\"4.0\">...</score-partwise>" }
 
 // 200 or 422 validation response
-{ "valid": true, "errors": [{ "line": 1, "measure": "2", "message": "...", "fix_hint": "..." }], "price_usd": "0.10", "payment": { "provider": "stub", "status": "configured_for_phase_2", "charge_eligible": true } }
+{ "valid": true, "errors": [{ "line": 1, "measure": "2", "message": "...", "fix_hint": "..." }], "price_usd": "0.05", "payment": { "provider": "stub", "status": "configured_for_phase_2", "charge_eligible": true } }
 
 // POST /v1/render
 { "musicxml": "<score-partwise version=\"4.0\">...</score-partwise>", "formats": ["pdf", "svg", "mp3"], "constraints_check": { "tempo": 84, "duration_seconds": 30, "key_fifths": -1, "mode": "minor" } }
 
 // 202 render response
-{ "job_id": "uuid", "status": "queued", "estimated_seconds": 30, "price_usd": "0.25", "payment": { "status": "pending_qc", "capture_policy": "capture_only_after_qc_pass" }, "poll_url": "/v1/jobs/uuid" }
+{ "job_id": "uuid", "status": "queued", "estimated_seconds": 30, "price_usd": "0.10", "payment": { "status": "pending_qc", "capture_policy": "capture_only_after_qc_pass" }, "poll_url": "/v1/jobs/uuid" }
 
 // GET /v1/jobs/{id}
 { "job_id": "uuid", "status": "completed", "facts": { "partCount": 1, "tempo": 84, "key": { "fifths": -1, "mode": "minor" }, "scoreDurationSeconds": 30 }, "qc": { "status": "passed" }, "error": null, "payment": { "status": "capture_stubbed" }, "expires_at": "2026-01-01T00:00:00.000Z", "artifacts": [{ "name": "score.pdf", "sha256": "hex", "bytes": 1234, "url": "/v1/artifacts/uuid/score.pdf?expires=...&token=..." }] }
@@ -64,8 +64,8 @@ Artifact URLs are signed, expire with the job retention window, and return the n
 | Endpoint | Price when x402 lands | Result |
 | --- | ---: | --- |
 | `GET /v1/compose-guide` | Free | Static, versioned BYO-LLM authoring guide. |
-| `POST /v1/validate` | $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`. |
-| `POST /v1/render` | $0.25 solo, $0.50 multi-part | Returns `job_id` and `estimated_seconds`. |
+| `POST /v1/validate` | $0.05 | `{valid, errors:[{line, measure, message, fix_hint}]}`. |
+| `POST /v1/render` | $0.10 solo, $0.25 multi-part | Returns `job_id` and `estimated_seconds`. |
 | `GET /v1/jobs/{id}` | Free | Status, QC outcome, hashes, and signed artifact URLs. |
 | `GET /health`, `GET /manifest` | Free | Renderer readiness and machine-readable service contract. |
 

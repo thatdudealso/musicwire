@@ -40,9 +40,9 @@ export const config = {
   maxPlaybackTempoEvents: integer('MAX_PLAYBACK_TEMPO_EVENTS', 20_000),
   audioTailAllowanceSeconds: decimal('AUDIO_TAIL_ALLOWANCE_SECONDS', 2),
   healthCacheSeconds: integer('HEALTH_CACHE_SECONDS', 30),
-  validatePriceUsd: process.env.VALIDATE_PRICE_USD ?? '0.10',
-  renderSoloPriceUsd: process.env.RENDER_SOLO_PRICE_USD ?? '0.25',
-  renderMultiPriceUsd: process.env.RENDER_MULTI_PRICE_USD ?? '0.50',
+  validatePriceUsd: process.env.VALIDATE_PRICE_USD ?? '0.05',
+  renderSoloPriceUsd: process.env.RENDER_SOLO_PRICE_USD ?? '0.10',
+  renderMultiPriceUsd: process.env.RENDER_MULTI_PRICE_USD ?? '0.25',
   requestsPerMinute: integer('REQUESTS_PER_MINUTE', 60),
 };
 

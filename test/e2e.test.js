@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { createApp } from '../src/app.js';
 
 const mscoreBin = process.env.MSCORE_BIN ?? (fs.existsSync('/Applications/MuseScore 4.app/Contents/MacOS/mscore') ? '/Applications/MuseScore 4.app/Contents/MacOS/mscore' : null);
-const shouldRun = process.env.MUSICWIRE_E2E === '1' && mscoreBin;
+const hasCommand = (command) => spawnSync(command, ['-version'], { stdio: 'ignore' }).status === 0;
+const shouldRun = process.env.MUSICWIRE_E2E === '1' && mscoreBin && hasCommand('ffprobe') && hasCommand('ffmpeg');
 
-test('real MuseScore pipeline returns content-addressed artifacts and NOTICE', { skip: shouldRun ? false : 'Set MUSICWIRE_E2E=1 and MSCORE_BIN to run a real renderer test.' }, async () => {
+test('real MuseScore pipeline returns content-addressed artifacts and NOTICE', { skip: shouldRun ? false : 'Set MUSICWIRE_E2E=1 and make MuseScore, ffprobe, and ffmpeg available to run a real renderer test.' }, async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-e2e-'));
   const app = createApp({ dataDirectory, mscoreBin, mscoreArch: process.platform === 'darwin' ? 'arm64' : '', maxRenderSeconds: 90 });
   const server = app.listen(0);

@@ -8,6 +8,29 @@ import { createApp } from '../src/app.js';
 
 const musicxml = fs.readFileSync(new URL('./fixtures/two-bar-piano.musicxml', import.meta.url), 'utf8');
 
+test('public API publishes the Phase 1 prices', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-prices-'));
+  const server = createApp({ dataDirectory, renderer: { render: async () => ({ ok: false, error: { code: 'test_renderer' } }) } }).listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const multiPartMusicxml = musicxml
+    .replace('</part-list>', '<score-part id="P2"><part-name>Flute</part-name></score-part></part-list>')
+    .replace('</score-partwise>', '<part id="P2"><measure number="1"><attributes><divisions>1</divisions></attributes><note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration></note></measure></part></score-partwise>');
+  const render = (score) => fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml: score, formats: ['pdf'] }) });
+  try {
+    const manifest = await (await fetch(`${base}/manifest`)).json();
+    assert.equal(manifest.endpoints.validate.price_usd, '0.05');
+    assert.deepEqual(manifest.endpoints.render.price_usd, { solo: '0.10', multi_instrument: '0.25', part_boundary: 1 });
+    const validation = await (await fetch(`${base}/v1/validate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml }) })).json();
+    assert.equal(validation.price_usd, '0.05');
+    assert.equal((await (await render(musicxml)).json()).price_usd, '0.10');
+    assert.equal((await (await render(multiPartMusicxml)).json()).price_usd, '0.25');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 test('render requires JSON and at least one output format before queuing', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-render-request-'));
   const server = createApp({ dataDirectory }).listen(0);
