@@ -64,7 +64,8 @@ export function createApp(overrides = {}) {
     const constraintError = invalidNumericConstraint(constraints);
     if (constraintError) return response.status(400).json({ error: { code: 'invalid_constraints', message: constraintError } });
     const facts = scoreFacts(input.musicxml);
-    if (formats.some((format) => format === 'mp3' || format === 'wav') && (facts.scoreDurationSeconds <= 0 || facts.durationModelError)) return response.status(422).json({ status: 'failed_not_charged', error: { code: facts.durationModelError ? failureCodes.durationModel : failureCodes.scoreDuration, message: facts.durationModelError ?? 'Audio rendering requires a positive computable score duration.' }, payment: { status: 'not_charged' } });
+    const requiresDurationModel = formats.some((format) => format === 'mp3' || format === 'wav') || 'tempo' in constraints || 'duration_seconds' in constraints;
+    if (requiresDurationModel && (facts.scoreDurationSeconds <= 0 || facts.durationModelError)) return response.status(422).json({ status: 'failed_not_charged', error: { code: facts.durationModelError ? failureCodes.durationModel : failureCodes.scoreDuration, message: facts.durationModelError ?? 'Audio rendering and tempo or duration constraints require a positive computable score duration.' }, payment: { status: 'not_charged' } });
     const priceUsd = facts.partCount > config.multiInstrumentPartBoundary ? config.renderMultiPriceUsd : config.renderSoloPriceUsd;
     const idempotencyKey = request.get('Idempotency-Key');
     const existing = store.getByIdempotencyKey(idempotencyKey);

@@ -35,6 +35,9 @@ test('render requires JSON and at least one output format before queuing', async
     const wordsNavigation = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90"/><direction><direction-type><words>D.C. al Fine</words></direction-type></direction>'), formats: ['mp3'] }) });
     assert.equal(wordsNavigation.status, 422);
     assert.equal((await wordsNavigation.json()).error.code, 'score_duration_model_unsupported');
+    const constrainedNavigation = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90"/><direction><direction-type><words>Fine</words></direction-type></direction>'), formats: ['pdf'], constraints_check: { tempo: 90 } }) });
+    assert.equal(constrainedNavigation.status, 422);
+    assert.equal((await constrainedNavigation.json()).error.code, 'score_duration_model_unsupported');
     const invalidMode = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { mode: 'dorian' } }) });
     assert.equal(invalidMode.status, 400);
     assert.equal((await invalidMode.json()).error.code, 'invalid_constraints');
