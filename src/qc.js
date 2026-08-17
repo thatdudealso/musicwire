@@ -11,6 +11,7 @@ export const failureCodes = {
   audioInvalid: 'audio_invalid',
   audioSilent: 'audio_silent',
   duration: 'audio_duration_mismatch',
+  scoreDuration: 'score_duration_unavailable',
   constraints: 'constraints_mismatch',
   interrupted: 'render_interrupted',
 };

@@ -19,7 +19,12 @@ export function createApp(overrides = {}) {
   const app = express();
   const limiter = new Map();
   const queue = createRenderQueue(config.maxConcurrentRenders, (id) => processJob(id, { store, renderer, payments }));
+  const readinessProbe = overrides.readinessProbe ?? (() => Promise.all([
+    commandReady(config.mscoreBin, config.mscoreArch ? [`-${config.mscoreArch}`, config.mscoreBin, '--version'] : ['--version'], config.mscoreArch ? 'arch' : config.mscoreBin),
+    commandReady(config.ffprobeBin, ['-version']),
+  ]));
   let readiness = null;
+  let readinessCheck = null;
   store.recoverInterruptedJobs();
   app.disable('x-powered-by');
   app.use(rateLimit(limiter, config));
@@ -28,11 +33,10 @@ export function createApp(overrides = {}) {
 
   app.get('/health', async (_request, response) => {
     if (!readiness || Date.now() - readiness.checkedAt >= config.healthCacheSeconds * 1_000) {
-      const [rendererReady, ffprobeReady] = await Promise.all([
-        commandReady(config.mscoreBin, config.mscoreArch ? [`-${config.mscoreArch}`, config.mscoreBin, '--version'] : ['--version'], config.mscoreArch ? 'arch' : config.mscoreBin),
-        commandReady(config.ffprobeBin, ['-version']),
-      ]);
-      readiness = { checkedAt: Date.now(), rendererReady, ffprobeReady };
+      readinessCheck ??= readinessProbe().then(([rendererReady, ffprobeReady]) => {
+        readiness = { checkedAt: Date.now(), rendererReady, ffprobeReady };
+      }).finally(() => { readinessCheck = null; });
+      await readinessCheck;
     }
     response.status(readiness.rendererReady && readiness.ffprobeReady ? 200 : 503).json({ ok: readiness.rendererReady && readiness.ffprobeReady, renderer: { ready: readiness.rendererReady, executable: config.mscoreBin }, ffprobe: { ready: readiness.ffprobeReady, executable: config.ffprobeBin } });
   });
@@ -60,6 +64,7 @@ export function createApp(overrides = {}) {
     const constraintError = invalidNumericConstraint(constraints);
     if (constraintError) return response.status(400).json({ error: { code: 'invalid_constraints', message: constraintError } });
     const facts = scoreFacts(input.musicxml);
+    if (formats.some((format) => format === 'mp3' || format === 'wav') && facts.scoreDurationSeconds <= 0) return response.status(422).json({ status: 'failed_not_charged', error: { code: failureCodes.scoreDuration, message: 'Audio rendering requires a positive computable score duration.' }, payment: { status: 'not_charged' } });
     const priceUsd = facts.partCount > config.multiInstrumentPartBoundary ? config.renderMultiPriceUsd : config.renderSoloPriceUsd;
     const now = new Date();
     const job = {

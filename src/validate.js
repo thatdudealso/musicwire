@@ -24,10 +24,11 @@ export function validateMusicXml(xml) {
 }
 
 export function scoreFacts(xml) {
-  const partCount = [...xml.matchAll(/<part\b[^>]*id=["'][^"']+["'][^>]*>/gi)].length;
-  const keyFifths = Number((xml.match(/<fifths>\s*(-?\d+)\s*<\/fifths>/i)?.[1]) ?? 0);
-  const mode = xml.match(/<mode>\s*(major|minor)\s*<\/mode>/i)?.[1] ?? 'major';
-  const parts = xml.match(/<part(?=\s|>)[\s\S]*?<\/part>/gi) ?? [];
+  const semanticXml = xml.replace(/<!--[\s\S]*?-->/g, '');
+  const partCount = [...semanticXml.matchAll(/<part(?=\s|>)[^>]*id=["'][^"']+["'][^>]*>/gi)].length;
+  const keyFifths = Number((semanticXml.match(/<fifths>\s*(-?\d+)\s*<\/fifths>/i)?.[1]) ?? 0);
+  const mode = semanticXml.match(/<mode>\s*(major|minor)\s*<\/mode>/i)?.[1] ?? 'major';
+  const parts = semanticXml.match(/<part(?=\s|>)[\s\S]*?<\/part>/gi) ?? [];
   const longest = parts.map(partDuration).reduce((current, candidate) => candidate.seconds > current.seconds ? candidate : current, { tempo: 120, seconds: 0 });
   return { partCount, tempo: longest.tempo, key: { fifths: keyFifths, mode }, scoreDurationSeconds: longest.seconds };
 }
@@ -51,7 +52,7 @@ function partDuration(part) {
       }
       if (token[1]) { divisions = Math.max(1, Number(token[1])); continue; }
       if (token[2] || token[3]) { tempoEvents.set(Number((partQuarters + cursor).toFixed(6)), Number(token[2] ?? token[3])); continue; }
-      const duration = Number(token[0].match(/<duration>\s*(\d+)\s*<\/duration>/i)?.[1] ?? 0) / divisions;
+      const duration = durationInQuarters(token[0], divisions);
       if (token[4].toLowerCase() === 'backup') cursor = Math.max(0, cursor - duration);
       else if (token[4].toLowerCase() === 'note' && /<chord\s*\/?\s*>/i.test(token[0])) continue;
       else cursor += duration;
@@ -68,6 +69,16 @@ function partDuration(part) {
     if (end > start) seconds += (end - start) * 60 / Math.max(1, events[index][1]);
   }
   return { tempo: events[0][1], seconds };
+}
+
+function durationInQuarters(event, divisions) {
+  const encoded = event.match(/<duration>\s*(\d+)\s*<\/duration>/i)?.[1];
+  if (encoded !== undefined) return Number(encoded) / divisions;
+  if (/^<note\b/i.test(event) && /<grace\b[^>]*\/?\s*>/i.test(event)) return 0;
+  const type = event.match(/<type>\s*(whole|half|quarter|eighth|16th|32nd|64th|128th|256th)\s*<\/type>/i)?.[1]?.toLowerCase();
+  const quarters = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125, '64th': 0.0625, '128th': 0.03125, '256th': 0.015625 }[type] ?? 0;
+  const dots = event.match(/<dot\b[^>]*\/?\s*>/gi)?.length ?? 0;
+  return quarters * (2 - 2 ** -dots);
 }
 
 function tempoInDirection(direction) {

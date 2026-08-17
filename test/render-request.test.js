@@ -27,3 +27,28 @@ test('render requires JSON and at least one output format before queuing', async
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
+
+test('health coalesces concurrent readiness checks', async () => {
+  let probes = 0;
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-health-'));
+  const server = createApp({ dataDirectory, readinessProbe: async () => { probes += 1; await pending; return [true, true]; } }).listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const requests = [fetch(`${base}/health`), fetch(`${base}/health`)];
+    await new Promise((resolve) => {
+      const waitForProbe = () => { if (probes === 1) resolve(); else setImmediate(waitForProbe); };
+      waitForProbe();
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(probes, 1);
+    release();
+    const responses = await Promise.all(requests);
+    assert.deepEqual(responses.map((response) => response.status), [200, 200]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});

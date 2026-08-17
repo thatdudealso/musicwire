@@ -70,3 +70,9 @@ test('score facts use the longest independently timed part', () => {
   assert.equal(facts.tempo, 60);
   assert.equal(facts.scoreDurationSeconds, 4);
 });
+
+test('score facts ignore commented parts and derive dotted note types', () => {
+  const facts = scoreFacts(`<score-partwise version="4.0"><!-- <part id="P2"><measure number="1"><sound tempo="1"/><note><duration>100</duration></note></measure></part> --><part id="P1"><measure number="1"><note><type>quarter</type><dot/></note></measure></part></score-partwise>`);
+  assert.equal(facts.partCount, 1);
+  assert.equal(facts.scoreDurationSeconds, 0.75);
+});
