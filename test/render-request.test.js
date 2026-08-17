@@ -41,6 +41,9 @@ test('render requires JSON and at least one output format before queuing', async
     const invalidMode = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { mode: 'dorian' } }) });
     assert.equal(invalidMode.status, 400);
     assert.equal((await invalidMode.json()).error.code, 'invalid_constraints');
+    const unknownConstraint = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { duration: 30 } }) });
+    assert.equal(unknownConstraint.status, 400);
+    assert.equal((await unknownConstraint.json()).error.code, 'invalid_constraints');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });

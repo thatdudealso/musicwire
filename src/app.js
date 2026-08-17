@@ -213,6 +213,8 @@ function createRenderQueue(maxConcurrentRenders, maxPendingRenders, run) {
 }
 
 function invalidNumericConstraint(constraints) {
+  const unsupported = Object.keys(constraints).find((field) => !['tempo', 'duration_seconds', 'key_fifths', 'mode'].includes(field));
+  if (unsupported) return `${unsupported} is not a supported constraint.`;
   for (const field of ['tempo', 'duration_seconds']) {
     if (field in constraints && (typeof constraints[field] !== 'number' || !Number.isFinite(constraints[field]) || constraints[field] <= 0)) return `${field} must be a finite positive number.`;
   }
