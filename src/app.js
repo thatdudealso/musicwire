@@ -57,6 +57,8 @@ export function createApp(overrides = {}) {
     if (!Array.isArray(formats) || formats.length === 0 || formats.some((format) => !supportedFormats.includes(format)) || new Set(formats).size !== formats.length) return response.status(400).json({ error: { code: 'invalid_formats', message: `formats must be a non-empty unique array drawn from: ${supportedFormats.join(', ')}.` } });
     const constraints = request.body.constraints_check ?? {};
     if (typeof constraints !== 'object' || Array.isArray(constraints)) return response.status(400).json({ error: { code: 'invalid_constraints', message: 'constraints_check must be an object.' } });
+    const constraintError = invalidNumericConstraint(constraints);
+    if (constraintError) return response.status(400).json({ error: { code: 'invalid_constraints', message: constraintError } });
     const facts = scoreFacts(input.musicxml);
     const priceUsd = facts.partCount > config.multiInstrumentPartBoundary ? config.renderMultiPriceUsd : config.renderSoloPriceUsd;
     const now = new Date();
@@ -172,6 +174,14 @@ function createRenderQueue(maxConcurrentRenders, run) {
     }
   };
   return { enqueue(id) { pending.push(id); drain(); } };
+}
+
+function invalidNumericConstraint(constraints) {
+  for (const field of ['tempo', 'duration_seconds']) {
+    if (field in constraints && (typeof constraints[field] !== 'number' || !Number.isFinite(constraints[field]) || constraints[field] <= 0)) return `${field} must be a finite positive number.`;
+  }
+  if ('key_fifths' in constraints && (typeof constraints.key_fifths !== 'number' || !Number.isFinite(constraints.key_fifths) || !Number.isInteger(constraints.key_fifths))) return 'key_fifths must be a finite integer.';
+  return null;
 }
 
 async function commandReady(binary, args, executable = binary) {

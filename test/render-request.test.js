@@ -19,6 +19,9 @@ test('render requires JSON and at least one output format before queuing', async
     const empty = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: [] }) });
     assert.equal(empty.status, 400);
     assert.equal((await empty.json()).error.code, 'invalid_formats');
+    const malformedConstraint = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { duration_seconds: 'not-a-number' } }) });
+    assert.equal(malformedConstraint.status, 400);
+    assert.equal((await malformedConstraint.json()).error.code, 'invalid_constraints');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });

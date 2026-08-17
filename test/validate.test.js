@@ -28,6 +28,12 @@ test('rejects documents whose root is not a MusicXML score-partwise element', ()
   assert.ok(result.errors.some((error) => error.message === 'Expected a MusicXML 4.0 score-partwise root.'));
 });
 
+test('does not treat comments as MusicXML semantic elements', () => {
+  const result = validateMusicXml(`<score-partwise version="4.0"><!-- <part-list/> --><part id="P1"><measure number="1"><note><duration>1</duration></note></measure></part></score-partwise>`);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.message === 'Missing part-list.'));
+});
+
 test('constraint mismatches are deterministic and payment cannot capture before QC', async () => {
   const facts = scoreFacts(validScore);
   assert.deepEqual(compareConstraints(facts, { tempo: 120, key_fifths: -1, mode: 'minor' }), ['tempo', 'key_fifths', 'mode']);
@@ -57,4 +63,10 @@ test('score facts use MuseScore default tempo until an authored tempo takes effe
 test('score facts apply direction tempo changes at their MusicXML offsets', () => {
   const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><direction><offset>2</offset><sound tempo="60"/></direction><note><duration>4</duration></note></measure></part></score-partwise>`);
   assert.equal(facts.scoreDurationSeconds, 3);
+});
+
+test('score facts use the longest independently timed part', () => {
+  const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><sound tempo="60"/><note><duration>4</duration></note></measure></part><part id="P2"><measure number="1"><attributes><divisions>1</divisions></attributes><sound tempo="120"/><note><duration>4</duration></note></measure></part></score-partwise>`);
+  assert.equal(facts.tempo, 60);
+  assert.equal(facts.scoreDurationSeconds, 4);
 });
