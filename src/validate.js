@@ -13,10 +13,15 @@ export function validateMusicXml(xml) {
   const root = parsed === true && !forbiddenDeclaration ? new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(xml)['score-partwise'] : null;
   if (!root || !['4.0', '4.1'].includes(root['@_version'])) errors.push(issue(xml, '<score-partwise', null, 'Expected a MusicXML 4.0 score-partwise root.', 'Use <score-partwise version="4.0"> as the document root.'));
   if (!root) return { valid: false, errors };
-  if (!root['part-list']) errors.push(issue(xml, '<score-partwise', null, 'Missing part-list.', 'Add a part-list containing one score-part for every part.'));
+  const hasPartList = Object.hasOwn(root, 'part-list');
+  const declaredParts = arrayOf(root['part-list']?.['score-part']);
+  if (!hasPartList) errors.push(issue(xml, '<score-partwise', null, 'Missing part-list.', 'Add a part-list containing one score-part for every part.'));
+  else if (declaredParts.length === 0) errors.push(issue(xml, '<part-list', null, 'Part-list must declare at least one score-part.', 'Add one <score-part id="P1"> declaration for every rendered part.'));
+  const declaredPartIds = new Set(declaredParts.map((part) => part?.['@_id']).filter((id) => typeof id === 'string' && id.length > 0));
   const parts = arrayOf(root.part);
   if (parts.length === 0) errors.push(issue(xml, '<score-partwise', null, 'Missing score part.', 'Add at least one <part id="P1"> with one or more measures.'));
   for (const [index, part] of parts.entries()) {
+    if (!declaredPartIds.has(part?.['@_id'])) errors.push(issue(xml, '<part', null, `Part ${index + 1} is not declared in part-list.`, 'Add a matching <score-part> declaration with the same id.'));
     const measures = arrayOf(part.measure);
     if (measures.length === 0) errors.push(issue(xml, '<part', null, `Part ${index + 1} has no measures.`, 'Add one or more numbered measures to each part.'));
     else if (!measures.some(hasDurationOrType)) errors.push(issue(xml, '<measure', null, `Part ${index + 1} has no note durations.`, 'Add duration and type elements to notes.'));

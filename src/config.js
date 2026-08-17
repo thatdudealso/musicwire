@@ -10,6 +10,13 @@ const decimal = (name, fallback) => {
   return value === undefined ? fallback : Number.parseFloat(value);
 };
 
+const developmentArtifactSigningSecret = 'development-only-change-before-deploy';
+const artifactSigningSecret = process.env.ARTIFACT_SIGNING_SECRET ?? developmentArtifactSigningSecret;
+
+if (process.env.NODE_ENV === 'production' && (!artifactSigningSecret.trim() || artifactSigningSecret === developmentArtifactSigningSecret)) {
+  throw new Error('ARTIFACT_SIGNING_SECRET must be explicitly set to a non-development value in production.');
+}
+
 export const config = {
   port: integer('PORT', 8787),
   dataDirectory: process.env.MUSICWIRE_DATA_DIR ?? path.resolve('data'),
@@ -19,7 +26,7 @@ export const config = {
   ffmpegBin: process.env.FFMPEG_BIN ?? 'ffmpeg',
   soundfontPath: process.env.MS_BASIC_SOUNDFONT ?? '',
   soundfontLicensePath: process.env.MS_BASIC_LICENSE ?? '',
-  artifactSigningSecret: process.env.ARTIFACT_SIGNING_SECRET ?? 'development-only-change-before-deploy',
+  artifactSigningSecret,
   maxUploadBytes: integer('MAX_UPLOAD_BYTES', 1_000_000),
   maxDecompressedBytes: integer('MAX_DECOMPRESSED_BYTES', 1_000_000),
   maxRenderSeconds: integer('MAX_RENDER_SECONDS', 60),
@@ -28,6 +35,7 @@ export const config = {
   artifactRetentionDays: integer('ARTIFACT_RETENTION_DAYS', 30),
   multiInstrumentPartBoundary: integer('MULTI_INSTRUMENT_PART_BOUNDARY', 1),
   maxConcurrentRenders: integer('MAX_CONCURRENT_RENDERS', 1),
+  maxPendingRenders: integer('MAX_PENDING_RENDERS', 20),
   audioTailAllowanceSeconds: decimal('AUDIO_TAIL_ALLOWANCE_SECONDS', 2),
   healthCacheSeconds: integer('HEALTH_CACHE_SECONDS', 30),
   validatePriceUsd: process.env.VALIDATE_PRICE_USD ?? '0.10',

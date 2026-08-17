@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { createApp } from '../src/app.js';
 
@@ -60,6 +61,44 @@ test('health coalesces concurrent readiness checks', async () => {
     const responses = await Promise.all(requests);
     assert.deepEqual(responses.map((response) => response.status), [200, 200]);
   } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('production startup requires a non-development artifact signing secret', () => {
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', "import './src/config.js'"], {
+    cwd: process.cwd(),
+    env: { ...process.env, NODE_ENV: 'production', ARTIFACT_SIGNING_SECRET: '' },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /ARTIFACT_SIGNING_SECRET/);
+});
+
+test('render rejects requests once the pending backlog is full', async () => {
+  let releaseRender;
+  const renderStarted = new Promise((resolve) => { releaseRender = resolve; });
+  let started;
+  const startedRender = new Promise((resolve) => { started = resolve; });
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-render-backlog-'));
+  const server = createApp({
+    dataDirectory,
+    maxPendingRenders: 1,
+    renderer: { render: async () => { started(); await renderStarted; return { ok: false, error: { code: 'test_renderer' } }; } },
+  }).listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const request = () => fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'] }) });
+  try {
+    assert.equal((await request()).status, 202);
+    await startedRender;
+    assert.equal((await request()).status, 202);
+    const overloaded = await request();
+    assert.equal(overloaded.status, 503);
+    assert.equal((await overloaded.json()).error.code, 'render_queue_full');
+  } finally {
+    releaseRender();
+    await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }

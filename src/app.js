@@ -18,7 +18,7 @@ export function createApp(overrides = {}) {
   const renderer = overrides.renderer ?? new Renderer(config, artifactStore);
   const app = express();
   const limiter = new Map();
-  const queue = createRenderQueue(config.maxConcurrentRenders, (id) => processJob(id, { store, renderer, payments }));
+  const queue = createRenderQueue(config.maxConcurrentRenders, config.maxPendingRenders, (id) => processJob(id, { store, renderer, payments }));
   const readinessProbe = overrides.readinessProbe ?? (() => Promise.all([
     commandReady(config.mscoreBin, config.mscoreArch ? [`-${config.mscoreArch}`, config.mscoreBin, '--version'] : ['--version'], config.mscoreArch ? 'arch' : config.mscoreBin),
     commandReady(config.ffprobeBin, ['-version']),
@@ -66,22 +66,31 @@ export function createApp(overrides = {}) {
     const facts = scoreFacts(input.musicxml);
     if (formats.some((format) => format === 'mp3' || format === 'wav') && (facts.scoreDurationSeconds <= 0 || facts.durationModelError)) return response.status(422).json({ status: 'failed_not_charged', error: { code: facts.durationModelError ? failureCodes.durationModel : failureCodes.scoreDuration, message: facts.durationModelError ?? 'Audio rendering requires a positive computable score duration.' }, payment: { status: 'not_charged' } });
     const priceUsd = facts.partCount > config.multiInstrumentPartBoundary ? config.renderMultiPriceUsd : config.renderSoloPriceUsd;
-    const now = new Date();
-    const job = {
-      id: crypto.randomUUID(),
-      inputXml: input.musicxml,
-      formats,
-      constraints,
-      facts,
-      priceUsd,
-      payment: await payments.createPendingCharge({ jobId: 'pending', priceUsd }),
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + config.artifactRetentionDays * 86_400_000).toISOString(),
-    };
-    job.payment.job_id = job.id;
-    const record = store.create(job, request.get('Idempotency-Key'));
-    if (record.id === job.id) queue.enqueue(record.id);
-    response.status(202).json({ job_id: record.id, status: record.state, estimated_seconds: Math.min(config.maxRenderSeconds, 15 + record.formats.length * 5), price_usd: record.price_usd, payment: { status: record.payment.status, capture_policy: 'capture_only_after_qc_pass' }, poll_url: `/v1/jobs/${record.id}` });
+    if (!queue.reserve()) return response.status(503).json({ error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' } });
+    let reservationConsumed = false;
+    try {
+      const now = new Date();
+      const job = {
+        id: crypto.randomUUID(),
+        inputXml: input.musicxml,
+        formats,
+        constraints,
+        facts,
+        priceUsd,
+        payment: await payments.createPendingCharge({ jobId: 'pending', priceUsd }),
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + config.artifactRetentionDays * 86_400_000).toISOString(),
+      };
+      job.payment.job_id = job.id;
+      const record = store.create(job, request.get('Idempotency-Key'));
+      if (record.id === job.id) queue.enqueue(record.id);
+      else queue.release();
+      reservationConsumed = true;
+      response.status(202).json({ job_id: record.id, status: record.state, estimated_seconds: Math.min(config.maxRenderSeconds, 15 + record.formats.length * 5), price_usd: record.price_usd, payment: { status: record.payment.status, capture_policy: 'capture_only_after_qc_pass' }, poll_url: `/v1/jobs/${record.id}` });
+    } catch (error) {
+      if (!reservationConsumed) queue.release();
+      throw error;
+    }
   });
 
   app.get('/v1/jobs/:id', (request, response) => {
@@ -165,10 +174,12 @@ function rateLimit(limiter, config) {
   };
 }
 
-function createRenderQueue(maxConcurrentRenders, run) {
+function createRenderQueue(maxConcurrentRenders, maxPendingRenders, run) {
   const pending = [];
   let active = 0;
+  let reserved = 0;
   const limit = Math.max(1, Number.isSafeInteger(maxConcurrentRenders) ? maxConcurrentRenders : 1);
+  const pendingLimit = Math.max(0, Number.isSafeInteger(maxPendingRenders) ? maxPendingRenders : 0);
   const drain = () => {
     while (active < limit && pending.length > 0) {
       const id = pending.shift();
@@ -178,7 +189,19 @@ function createRenderQueue(maxConcurrentRenders, run) {
       });
     }
   };
-  return { enqueue(id) { pending.push(id); drain(); } };
+  return {
+    reserve() {
+      if (pending.length + reserved >= pendingLimit) return false;
+      reserved += 1;
+      return true;
+    },
+    release() { reserved = Math.max(0, reserved - 1); },
+    enqueue(id) {
+      reserved = Math.max(0, reserved - 1);
+      pending.push(id);
+      drain();
+    },
+  };
 }
 
 function invalidNumericConstraint(constraints) {

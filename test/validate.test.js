@@ -41,6 +41,15 @@ test('requires a real part-list and measures in each parsed part', () => {
   assert.ok(result.errors.some((error) => error.message === 'Part 1 has no measures.'));
 });
 
+test('requires declared score-part identifiers for every rendered part', () => {
+  const emptyList = validateMusicXml(`<score-partwise version="4.0"><part-list/><part id="P1"><measure number="1"><note><duration>1</duration></note></measure></part></score-partwise>`);
+  assert.equal(emptyList.valid, false);
+  assert.ok(emptyList.errors.some((error) => error.message === 'Part-list must declare at least one score-part.'));
+  const undeclaredPart = validateMusicXml(`<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P2"><measure number="1"><note><duration>1</duration></note></measure></part></score-partwise>`);
+  assert.equal(undeclaredPart.valid, false);
+  assert.ok(undeclaredPart.errors.some((error) => error.message === 'Part 1 is not declared in part-list.'));
+});
+
 test('constraint mismatches are deterministic and payment cannot capture before QC', async () => {
   const facts = scoreFacts(validScore);
   assert.deepEqual(compareConstraints(facts, { tempo: 120, key_fifths: -1, mode: 'minor' }), ['tempo', 'key_fifths', 'mode']);
