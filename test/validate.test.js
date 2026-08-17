@@ -76,3 +76,14 @@ test('score facts ignore commented parts and derive dotted note types', () => {
   assert.equal(facts.partCount, 1);
   assert.equal(facts.scoreDurationSeconds, 0.75);
 });
+
+test('semantic and fact extraction ignore CDATA and processing instructions', () => {
+  const xml = `<score-partwise version="4.0"><![CDATA[<part-list/><part id="P2"><measure number="1"><sound tempo="1"/><note><duration>100</duration></note></measure></part>]]><?fake <part-list/>?><part id="P1"><measure number="1"><note><duration>1</duration></note></measure></part></score-partwise>`;
+  assert.equal(validateMusicXml(xml).valid, false);
+  assert.equal(scoreFacts(xml).partCount, 1);
+});
+
+test('score facts expand ordinary forward and backward repeats', () => {
+  const facts = scoreFacts(`<score-partwise version="4.0"><part id="P1"><measure number="1"><attributes><divisions>1</divisions></attributes><sound tempo="60"/><barline location="left"><repeat direction="forward"/></barline><note><duration>4</duration></note></measure><measure number="2"><note><duration>4</duration></note><barline location="right"><repeat direction="backward"/></barline></measure></part></score-partwise>`);
+  assert.equal(facts.scoreDurationSeconds, 16);
+});

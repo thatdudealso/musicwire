@@ -10,7 +10,7 @@ export function validateMusicXml(xml) {
   if (!/^\uFEFF?\s*(?:<\?xml\b[\s\S]*?\?>\s*)?(?:(?:<!--[\s\S]*?-->)|(?:<\?(?!xml\b)[\s\S]*?\?>))*\s*<score-partwise\b[^>]*\bversion=["']4(?:\.0|\.1)?["']/i.test(xml)) errors.push(issue(xml, '<score-partwise', null, 'Expected a MusicXML 4.0 score-partwise root.', 'Use <score-partwise version="4.0"> as the document root.'));
   const parsed = XMLValidator.validate(xml, { allowBooleanAttributes: false, unpairedTags: [] });
   if (parsed !== true) errors.push({ line: parsed.err.line, measure: null, message: parsed.err.msg, fix_hint: 'Correct the XML syntax and submit a complete MusicXML document.' });
-  const semanticXml = xml.replace(/<!--[\s\S]*?-->/g, '');
+  const semanticXml = withoutNonElements(xml);
   if (!/<part-list\b/i.test(semanticXml)) errors.push(issue(xml, '<score-partwise', null, 'Missing part-list.', 'Add a part-list containing one score-part for every part.'));
   const parts = [...semanticXml.matchAll(/<part(?=\s|>)[^>]*id=["']([^"']+)["'][^>]*>/gi)];
   if (parts.length === 0) errors.push(issue(xml, '<score-partwise', null, 'Missing score part.', 'Add at least one <part id="P1"> with one or more measures.'));
@@ -24,41 +24,32 @@ export function validateMusicXml(xml) {
 }
 
 export function scoreFacts(xml) {
-  const semanticXml = xml.replace(/<!--[\s\S]*?-->/g, '');
+  const semanticXml = withoutNonElements(xml);
   const partCount = [...semanticXml.matchAll(/<part(?=\s|>)[^>]*id=["'][^"']+["'][^>]*>/gi)].length;
   const keyFifths = Number((semanticXml.match(/<fifths>\s*(-?\d+)\s*<\/fifths>/i)?.[1]) ?? 0);
   const mode = semanticXml.match(/<mode>\s*(major|minor)\s*<\/mode>/i)?.[1] ?? 'major';
   const parts = semanticXml.match(/<part(?=\s|>)[\s\S]*?<\/part>/gi) ?? [];
-  const longest = parts.map(partDuration).reduce((current, candidate) => candidate.seconds > current.seconds ? candidate : current, { tempo: 120, seconds: 0 });
-  return { partCount, tempo: longest.tempo, key: { fifths: keyFifths, mode }, scoreDurationSeconds: longest.seconds };
+  const partFacts = parts.map(partDuration);
+  const longest = partFacts.reduce((current, candidate) => candidate.seconds > current.seconds ? candidate : current, { tempo: 120, seconds: 0 });
+  const durationModelError = partFacts.find((part) => part.durationModelError)?.durationModelError;
+  return { partCount, tempo: longest.tempo, key: { fifths: keyFifths, mode }, scoreDurationSeconds: longest.seconds, ...(durationModelError ? { durationModelError } : {}) };
 }
 
 function partDuration(part) {
-  const tempoEvents = new Map();
   let divisions = 1;
+  const measures = (part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []).map((measure) => {
+    const data = measureData(measure, divisions);
+    divisions = data.divisions;
+    return data;
+  });
+  const sequence = repeatSequence(measures);
+  if (sequence.error) return { tempo: 120, seconds: 0, durationModelError: sequence.error };
+  const tempoEvents = new Map();
   let partQuarters = 0;
-  for (const measure of part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []) {
-    let cursor = 0;
-    let maximum = 0;
-    const tokens = measure.matchAll(/<direction\b[\s\S]*?<\/direction>|<divisions>\s*(\d+)\s*<\/divisions>|<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["'][^>]*>|<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>|<(note|backup|forward)\b[\s\S]*?<\/\4>/gi);
-    for (const token of tokens) {
-      if (token[0].startsWith('<direction')) {
-        const tempo = tempoInDirection(token[0]);
-        if (tempo) {
-          const offset = Number(token[0].match(/<offset\b[^>]*>\s*(-?\d+)\s*<\/offset>/i)?.[1] ?? 0) / divisions;
-          tempoEvents.set(Number(Math.max(0, partQuarters + cursor + offset).toFixed(6)), tempo);
-        }
-        continue;
-      }
-      if (token[1]) { divisions = Math.max(1, Number(token[1])); continue; }
-      if (token[2] || token[3]) { tempoEvents.set(Number((partQuarters + cursor).toFixed(6)), Number(token[2] ?? token[3])); continue; }
-      const duration = durationInQuarters(token[0], divisions);
-      if (token[4].toLowerCase() === 'backup') cursor = Math.max(0, cursor - duration);
-      else if (token[4].toLowerCase() === 'note' && /<chord\s*\/?\s*>/i.test(token[0])) continue;
-      else cursor += duration;
-      maximum = Math.max(maximum, cursor);
-    }
-    partQuarters += maximum;
+  for (const index of sequence.indices) {
+    const measure = measures[index];
+    for (const [position, tempo] of measure.tempoEvents) tempoEvents.set(Number((partQuarters + position).toFixed(6)), tempo);
+    partQuarters += measure.quarters;
   }
   const events = [...tempoEvents.entries()].sort((a, b) => a[0] - b[0]);
   if (events.length === 0 || events[0][0] > 0) events.unshift([0, 120]);
@@ -69,6 +60,69 @@ function partDuration(part) {
     if (end > start) seconds += (end - start) * 60 / Math.max(1, events[index][1]);
   }
   return { tempo: events[0][1], seconds };
+}
+
+function measureData(measure, initialDivisions) {
+  let divisions = initialDivisions;
+  let cursor = 0;
+  let maximum = 0;
+  const tempoEvents = new Map();
+  const tokens = measure.matchAll(/<direction\b[\s\S]*?<\/direction>|<divisions>\s*(\d+)\s*<\/divisions>|<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["'][^>]*>|<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>|<(note|backup|forward)\b[\s\S]*?<\/\4>/gi);
+  for (const token of tokens) {
+    if (token[0].startsWith('<direction')) {
+      const tempo = tempoInDirection(token[0]);
+      if (tempo) {
+        const offset = Number(token[0].match(/<offset\b[^>]*>\s*(-?\d+)\s*<\/offset>/i)?.[1] ?? 0) / divisions;
+        tempoEvents.set(Number(Math.max(0, cursor + offset).toFixed(6)), tempo);
+      }
+      continue;
+    }
+    if (token[1]) { divisions = Math.max(1, Number(token[1])); continue; }
+    if (token[2] || token[3]) { tempoEvents.set(Number(cursor.toFixed(6)), Number(token[2] ?? token[3])); continue; }
+    const duration = durationInQuarters(token[0], divisions);
+    if (token[4].toLowerCase() === 'backup') cursor = Math.max(0, cursor - duration);
+    else if (token[4].toLowerCase() === 'note' && /<chord\s*\/?\s*>/i.test(token[0])) continue;
+    else cursor += duration;
+    maximum = Math.max(maximum, cursor);
+  }
+  return { divisions, quarters: maximum, tempoEvents, forward: repeatMarker(measure, 'forward'), backward: repeatMarker(measure, 'backward'), hasEnding: /<ending\b/i.test(measure) };
+}
+
+function repeatSequence(measures) {
+  if (measures.some((measure) => measure.hasEnding)) return { error: 'Audio rendering does not support ending-based repeat duration modeling.' };
+  if (measures.some((measure) => measure.forward?.invalid || measure.backward?.invalid)) return { error: 'Audio rendering has an unsupported repeat count.' };
+  const indices = [];
+  const repeats = new Map();
+  let repeatStart = null;
+  for (let index = 0; index < measures.length; index += 1) {
+    const measure = measures[index];
+    indices.push(index);
+    if (measure.forward) {
+      const start = measure.forward.location === 'right' ? index + 1 : index;
+      if (repeatStart !== null && repeatStart !== start) return { error: 'Audio rendering does not support nested repeat duration modeling.' };
+      repeatStart = start;
+    }
+    if (!measure.backward) continue;
+    const start = repeatStart ?? 0;
+    const key = `${start}:${index}`;
+    const played = repeats.get(key) ?? 1;
+    if (played < measure.backward.times) {
+      repeats.set(key, played + 1);
+      index = start - 1;
+    } else {
+      repeatStart = null;
+    }
+  }
+  return { indices };
+}
+
+function repeatMarker(measure, direction) {
+  const match = measure.match(new RegExp(`<repeat\\b(?=[^>]*\\bdirection=["']${direction}["'])[^>]*>`, 'i'));
+  if (!match) return null;
+  const times = direction === 'backward' ? Number(match[0].match(/\btimes=["'](\d+)["']/i)?.[1] ?? 2) : 1;
+  if (!Number.isInteger(times) || times < 1 || times > 16) return { invalid: true };
+  const location = measure.match(/<barline\b[^>]*\blocation=["'](left|right)["'][^>]*>[\s\S]*?<repeat\b(?=[^>]*\bdirection=["'](?:forward|backward)["'])/i)?.[1] ?? 'left';
+  return { times, location };
 }
 
 function durationInQuarters(event, divisions) {
@@ -85,4 +139,8 @@ function tempoInDirection(direction) {
   return Number(direction.match(/<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["'][^>]*>/i)?.[1]
     ?? direction.match(/<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>/i)?.[1]
     ?? 0);
+}
+
+function withoutNonElements(xml) {
+  return xml.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>/g, '');
 }

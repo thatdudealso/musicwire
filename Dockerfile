@@ -23,6 +23,7 @@ ENV NODE_ENV=production \
   MSCORE_ARCH= \
   FFMPEG_BIN=ffmpeg \
   FFPROBE_BIN=ffprobe \
+  MS_BASIC_LICENSE="/opt/musescore/usr/share/mscore-4.0/sound/MS Basic_License.md" \
   MUSICWIRE_DATA_DIR=/var/lib/musicwire/data
 
 RUN mkdir -p /var/lib/musicwire/data && chown -R node:node /app /var/lib/musicwire
