@@ -88,14 +88,19 @@ test('render rejects requests once the pending backlog is full', async () => {
   }).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const request = () => fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf'] }) });
+  const request = (idempotencyKey) => fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) }, body: JSON.stringify({ musicxml, formats: ['pdf'] }) });
   try {
-    assert.equal((await request()).status, 202);
+    const accepted = await request('retry-under-overload');
+    assert.equal(accepted.status, 202);
+    const original = await accepted.json();
     await startedRender;
     assert.equal((await request()).status, 202);
     const overloaded = await request();
     assert.equal(overloaded.status, 503);
     assert.equal((await overloaded.json()).error.code, 'render_queue_full');
+    const replay = await request('retry-under-overload');
+    assert.equal(replay.status, 202);
+    assert.equal((await replay.json()).job_id, original.job_id);
   } finally {
     releaseRender();
     await new Promise((resolve) => setImmediate(resolve));

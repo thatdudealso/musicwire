@@ -33,14 +33,18 @@ export class JobStore {
   }
 
   create(job, idempotencyKey) {
-    if (idempotencyKey) {
-      const existing = this.db.prepare('SELECT job_id FROM idempotency_keys WHERE key = ?').get(idempotencyKey);
-      if (existing) return this.get(existing.job_id);
-    }
+    const existing = this.getByIdempotencyKey(idempotencyKey);
+    if (existing) return existing;
     this.db.prepare(`INSERT INTO jobs (id,state,input_xml,formats_json,constraints_json,facts_json,price_usd,payment_json,created_at,updated_at,expires_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(job.id, 'queued', job.inputXml, JSON.stringify(job.formats), JSON.stringify(job.constraints), JSON.stringify(job.facts), job.priceUsd, JSON.stringify(job.payment), job.createdAt, job.createdAt, job.expiresAt);
     if (idempotencyKey) this.db.prepare('INSERT INTO idempotency_keys (key, job_id, created_at) VALUES (?,?,?)').run(idempotencyKey, job.id, job.createdAt);
     return this.get(job.id);
+  }
+
+  getByIdempotencyKey(idempotencyKey) {
+    if (!idempotencyKey) return null;
+    const existing = this.db.prepare('SELECT job_id FROM idempotency_keys WHERE key = ?').get(idempotencyKey);
+    return existing ? this.get(existing.job_id) : null;
   }
 
   update(id, fields) {

@@ -66,6 +66,9 @@ export function createApp(overrides = {}) {
     const facts = scoreFacts(input.musicxml);
     if (formats.some((format) => format === 'mp3' || format === 'wav') && (facts.scoreDurationSeconds <= 0 || facts.durationModelError)) return response.status(422).json({ status: 'failed_not_charged', error: { code: facts.durationModelError ? failureCodes.durationModel : failureCodes.scoreDuration, message: facts.durationModelError ?? 'Audio rendering requires a positive computable score duration.' }, payment: { status: 'not_charged' } });
     const priceUsd = facts.partCount > config.multiInstrumentPartBoundary ? config.renderMultiPriceUsd : config.renderSoloPriceUsd;
+    const idempotencyKey = request.get('Idempotency-Key');
+    const existing = store.getByIdempotencyKey(idempotencyKey);
+    if (existing) return response.status(202).json(renderResponse(existing, config));
     if (!queue.reserve()) return response.status(503).json({ error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' } });
     let reservationConsumed = false;
     try {
@@ -82,11 +85,11 @@ export function createApp(overrides = {}) {
         expiresAt: new Date(now.getTime() + config.artifactRetentionDays * 86_400_000).toISOString(),
       };
       job.payment.job_id = job.id;
-      const record = store.create(job, request.get('Idempotency-Key'));
+      const record = store.create(job, idempotencyKey);
       if (record.id === job.id) queue.enqueue(record.id);
       else queue.release();
       reservationConsumed = true;
-      response.status(202).json({ job_id: record.id, status: record.state, estimated_seconds: Math.min(config.maxRenderSeconds, 15 + record.formats.length * 5), price_usd: record.price_usd, payment: { status: record.payment.status, capture_policy: 'capture_only_after_qc_pass' }, poll_url: `/v1/jobs/${record.id}` });
+      response.status(202).json(renderResponse(record, config));
     } catch (error) {
       if (!reservationConsumed) queue.release();
       throw error;
@@ -151,6 +154,10 @@ function publicJob(job, artifactStore) {
     expires_at: job.expires_at,
     artifacts: job.artifacts.map((artifact) => ({ name: artifact.name, sha256: artifact.sha256, bytes: artifact.bytes, url: `/v1/artifacts/${job.id}/${encodeURIComponent(artifact.name)}?expires=${expires}&token=${artifactStore.token(job.id, artifact, expires)}` })),
   };
+}
+
+function renderResponse(record, config) {
+  return { job_id: record.id, status: record.state, estimated_seconds: Math.min(config.maxRenderSeconds, 15 + record.formats.length * 5), price_usd: record.price_usd, payment: { status: record.payment.status, capture_policy: 'capture_only_after_qc_pass' }, poll_url: `/v1/jobs/${record.id}` };
 }
 
 function rateLimit(limiter, config) {
