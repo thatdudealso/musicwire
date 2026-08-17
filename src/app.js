@@ -18,15 +18,23 @@ export function createApp(overrides = {}) {
   const renderer = overrides.renderer ?? new Renderer(config, artifactStore);
   const app = express();
   const limiter = new Map();
+  const queue = createRenderQueue(config.maxConcurrentRenders, (id) => processJob(id, { store, renderer, payments }));
+  let readiness = null;
+  store.recoverInterruptedJobs();
   app.disable('x-powered-by');
   app.use(rateLimit(limiter, config));
   app.use(express.raw({ type: ['application/xml', 'text/xml', 'application/vnd.recordare.musicxml+xml'], limit: config.maxUploadBytes, inflate: false }));
   app.use(express.json({ limit: config.maxUploadBytes, inflate: false }));
 
   app.get('/health', async (_request, response) => {
-    const rendererReady = await commandReady(config.mscoreBin, config.mscoreArch ? [`-${config.mscoreArch}`, config.mscoreBin, '--version'] : ['--version'], config.mscoreArch ? 'arch' : config.mscoreBin);
-    const ffprobeReady = await commandReady(config.ffprobeBin, ['-version']);
-    response.status(rendererReady && ffprobeReady ? 200 : 503).json({ ok: rendererReady && ffprobeReady, renderer: { ready: rendererReady, executable: config.mscoreBin }, ffprobe: { ready: ffprobeReady, executable: config.ffprobeBin } });
+    if (!readiness || Date.now() - readiness.checkedAt >= config.healthCacheSeconds * 1_000) {
+      const [rendererReady, ffprobeReady] = await Promise.all([
+        commandReady(config.mscoreBin, config.mscoreArch ? [`-${config.mscoreArch}`, config.mscoreBin, '--version'] : ['--version'], config.mscoreArch ? 'arch' : config.mscoreBin),
+        commandReady(config.ffprobeBin, ['-version']),
+      ]);
+      readiness = { checkedAt: Date.now(), rendererReady, ffprobeReady };
+    }
+    response.status(readiness.rendererReady && readiness.ffprobeReady ? 200 : 503).json({ ok: readiness.rendererReady && readiness.ffprobeReady, renderer: { ready: readiness.rendererReady, executable: config.mscoreBin }, ffprobe: { ready: readiness.ffprobeReady, executable: config.ffprobeBin } });
   });
 
   app.get('/manifest', (_request, response) => response.json(manifest(config)));
@@ -64,7 +72,7 @@ export function createApp(overrides = {}) {
     };
     job.payment.job_id = job.id;
     const record = store.create(job, request.get('Idempotency-Key'));
-    if (record.id === job.id) setImmediate(() => processJob(record.id, { store, renderer, payments }));
+    if (record.id === job.id) queue.enqueue(record.id);
     response.status(202).json({ job_id: record.id, status: record.state, estimated_seconds: Math.min(config.maxRenderSeconds, 15 + record.formats.length * 5), price_usd: record.price_usd, payment: { status: record.payment.status, capture_policy: 'capture_only_after_qc_pass' }, poll_url: `/v1/jobs/${record.id}` });
   });
 
@@ -132,12 +140,33 @@ function rateLimit(limiter, config) {
   return (request, response, next) => {
     const key = request.ip ?? 'unknown';
     const now = Date.now();
+    for (const [ip, timestamps] of limiter) {
+      const active = timestamps.filter((time) => now - time < 60_000);
+      if (active.length === 0) limiter.delete(ip);
+      else if (active.length !== timestamps.length) limiter.set(ip, active);
+    }
     const current = limiter.get(key)?.filter((time) => now - time < 60_000) ?? [];
     if (current.length >= config.requestsPerMinute) return response.status(429).json({ error: { code: 'rate_limited', message: 'Too many requests. Retry after one minute.' } });
     current.push(now);
     limiter.set(key, current);
     next();
   };
+}
+
+function createRenderQueue(maxConcurrentRenders, run) {
+  const pending = [];
+  let active = 0;
+  const limit = Math.max(1, Number.isSafeInteger(maxConcurrentRenders) ? maxConcurrentRenders : 1);
+  const drain = () => {
+    while (active < limit && pending.length > 0) {
+      const id = pending.shift();
+      active += 1;
+      setImmediate(async () => {
+        try { await run(id); } finally { active -= 1; drain(); }
+      });
+    }
+  };
+  return { enqueue(id) { pending.push(id); drain(); } };
 }
 
 async function commandReady(binary, args, executable = binary) {
@@ -168,6 +197,6 @@ function manifest(config) {
     qc_guarantees: ['parse and semantic validation', 'renderer exit code 0', 'all requested artifacts present', 'audio container, RMS, and score-duration check when audio is requested', 'optional key, tempo, and duration constraint comparison', 'failed jobs are failed_not_charged'],
     failure_codes: failureCodes, retention: { minimum_days: config.artifactRetentionDays, storage: 'content-addressed sha256 local storage', access: 'signed token URLs' },
     license_terms: { customer_owns_composition: true, commercial_audio_use_with_notice: true, rendered_by: 'Musicwire', copyright_sold: false, soundfont: 'MS Basic only' },
-    abuse_terms: ['MusicXML bytes or strings only, no client filesystem paths.', 'External entities, DOCTYPE declarations, compressed uploads, plugins, custom soundfonts, and networked rendering are disabled.', 'Original, owned, or public-domain material only. Musicwire is not a copyrighted-melody transcription service.', 'Rate limits and isolated resource-capped render workspaces apply.'],
+    abuse_terms: ['MusicXML bytes or strings only, no client filesystem paths.', 'External entities, DOCTYPE declarations, compressed uploads, plugins, and custom soundfonts are disabled. The renderer performs no intentional network operations; strict egress control is a deploy-phase follow-up.', 'Original, owned, or public-domain material only. Musicwire is not a copyrighted-melody transcription service.', 'Rate limits and isolated resource-capped render workspaces apply.'],
   };
 }

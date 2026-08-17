@@ -38,8 +38,8 @@ curl http://localhost:8787/v1/jobs/JOB_ID
 | Endpoint | Price when x402 lands | Result |
 | --- | ---: | --- |
 | `GET /v1/compose-guide` | Free | Static, versioned BYO-LLM authoring guide. |
-| `POST /v1/validate` | $0.05 | `{valid, errors:[{line, measure, message, fix_hint}]}`. |
-| `POST /v1/render` | $0.10 solo, $0.25 multi-part | Returns `job_id` and `estimated_seconds`. |
+| `POST /v1/validate` | $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`. |
+| `POST /v1/render` | $0.25 solo, $0.50 multi-part | Returns `job_id` and `estimated_seconds`. |
 | `GET /v1/jobs/{id}` | Free | Status, QC outcome, hashes, and signed artifact URLs. |
 | `GET /health`, `GET /manifest` | Free | Renderer readiness and machine-readable service contract. |
 
@@ -47,7 +47,7 @@ The configured part boundary defaults to one part. MusicXML is the source of tru
 
 Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. In this phase the payment provider is a credential-free stub. The manifest documents the future `402 Payment Required` shape, but no payment service or wallet is contacted.
 
-QC passes only when MusicXML validates, MuseScore exits successfully, every requested artifact exists, requested audio has a valid container, non-silent RMS, and score-duration agreement within 10%, and optional key, tempo, and duration constraints match. Failures return a typed catalogued error and are not charged.
+QC passes only when MusicXML validates, MuseScore exits successfully, every requested artifact exists, requested audio has a valid container, non-silent RMS, and score-duration agreement within 10%, with a bounded two-second natural release-tail allowance, and optional key, tempo, and duration constraints match. Failures return a typed catalogued error and are not charged.
 
 ## Run locally
 
@@ -87,4 +87,8 @@ ARTIFACT_SIGNING_SECRET='replace-with-a-long-random-secret' docker compose up
 
 Each completed render includes `NOTICE.txt` containing the installed MS Basic license and FluidR3, Michael Cowgill, and S. Christian Collins attribution. `receipt.json` includes the renderer version, sound profile, soundfont SHA-256 where configured, `rendered_by: "Musicwire"`, and this repository URL.
 
-Customers own their compositions. Audio can be used commercially when the NOTICE travels with it. Musicwire sells a render and QC service and never sells copyright in a composition. Only the pinned MS Basic soundfont is supported. Custom soundfonts, plugins, external XML entities, networked rendering, and copyrighted-melody transcription are prohibited.
+Customers own their compositions. Audio can be used commercially when the NOTICE travels with it. Musicwire sells a render and QC service and never sells copyright in a composition. Only the pinned MS Basic soundfont is supported. Custom soundfonts, plugins, external XML entities, and copyrighted-melody transcription are prohibited. The renderer performs no intentional network operations; strict egress control is a deploy-phase follow-up, and any future network use must be limited to music-request processing, never general browsing.
+
+## Phase 1 operational tradeoffs
+
+Idempotency keys replay the original job without comparing request bodies. Artifact retention is a 30-day minimum without an automated purge job, so deployments must provision storage and add cleanup policy before long-term operation.

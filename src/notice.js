@@ -1,9 +1,12 @@
-export const noticeText = `Musicwire render attribution and soundfont notice
+import fs from 'node:fs';
+
+const attribution = `Musicwire render attribution and soundfont notice
 
 Rendered by Musicwire using MuseScore Studio with the "MuseScore Basic" sound profile.
 Customer retains ownership of their composition. Audio may be used commercially with this NOTICE. Musicwire sells a render and quality-control service and does not sell copyright in a composition or sound samples.
+`;
 
-MuseScore_General.sf2
+export const embeddedSoundfontLicense = `MuseScore_General.sf2
 ---
 
 Current version: 0.2  13th May 2020
@@ -67,3 +70,10 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 `;
+
+export function noticeText(soundfontLicensePath = '') {
+  const license = soundfontLicensePath && fs.existsSync(soundfontLicensePath)
+    ? fs.readFileSync(soundfontLicensePath, 'utf8')
+    : embeddedSoundfontLicense;
+  return `${attribution}\n${license.trimEnd()}\n`;
+}

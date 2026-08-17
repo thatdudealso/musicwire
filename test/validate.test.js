@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { validateMusicXml, scoreFacts } from '../src/validate.js';
-import { compareConstraints } from '../src/qc.js';
+import { checkAudioDuration, compareConstraints } from '../src/qc.js';
 import { PaymentService } from '../src/payment.js';
 
 const validScore = fs.readFileSync(new URL('./fixtures/two-bar-piano.musicxml', import.meta.url), 'utf8');
@@ -29,4 +29,15 @@ test('constraint mismatches are deterministic and payment cannot capture before 
   await assert.rejects(payments.captureAfterQc({ status: 'not_charged' }), /only permitted/);
   const captured = await payments.captureAfterQc({ status: 'pending_qc' });
   assert.equal(captured.status, 'capture_stubbed');
+});
+
+test('score facts incorporate tempo and division changes, while audio allows a bounded release tail', () => {
+  const score = `<score-partwise version="4.0"><part id="P1">
+    <measure number="1"><attributes><divisions>1</divisions></attributes><sound tempo="60"/><note><duration>4</duration></note></measure>
+    <measure number="2"><attributes><divisions>2</divisions></attributes><sound tempo="120"/><note><duration>8</duration></note></measure>
+  </part></score-partwise>`;
+  const facts = scoreFacts(score);
+  assert.equal(facts.scoreDurationSeconds, 6);
+  assert.equal(checkAudioDuration(6, 8, 2).ok, true);
+  assert.equal(checkAudioDuration(6, 8.61, 2).code, 'audio_duration_mismatch');
 });

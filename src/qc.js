@@ -12,7 +12,22 @@ export const failureCodes = {
   audioSilent: 'audio_silent',
   duration: 'audio_duration_mismatch',
   constraints: 'constraints_mismatch',
+  interrupted: 'render_interrupted',
 };
+
+export function checkAudioDuration(expectedSeconds, actualSeconds, tailAllowanceSeconds = 0) {
+  if (!(expectedSeconds > 0)) return { ok: true };
+  const tolerance = expectedSeconds * 0.1;
+  const shortfall = expectedSeconds - actualSeconds;
+  const overrun = actualSeconds - expectedSeconds - Math.max(0, tailAllowanceSeconds);
+  if (shortfall <= tolerance && overrun <= tolerance) return { ok: true };
+  return {
+    ok: false,
+    code: failureCodes.duration,
+    message: `Audio duration ${actualSeconds.toFixed(2)}s differs from score duration ${expectedSeconds.toFixed(2)}s by more than 10% beyond the ${Math.max(0, tailAllowanceSeconds)}s release-tail allowance.`,
+    details: { expected_seconds: expectedSeconds, actual_seconds: actualSeconds, tail_allowance_seconds: Math.max(0, tailAllowanceSeconds) },
+  };
+}
 
 export async function probeAudio(ffprobeBin, filename) {
   const args = ['-v', 'error', '-show_entries', 'format=duration,format_name:stream=codec_type,codec_name', '-of', 'json', filename];

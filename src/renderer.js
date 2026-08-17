@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { noticeText } from './notice.js';
-import { probeAudio, verifyNonSilent, compareConstraints, failureCodes } from './qc.js';
+import { checkAudioDuration, probeAudio, verifyNonSilent, compareConstraints, failureCodes } from './qc.js';
 
 const extensionFor = { midi: 'mid', mscz: 'mscz', pdf: 'pdf', svg: 'svg', png: 'png', mp3: 'mp3', wav: 'wav' };
 
@@ -42,7 +42,7 @@ export class Renderer {
       const artifacts = [
         this.artifactStore.put('source.musicxml', Buffer.from(job.inputXml)),
         ...rendered.map((item) => this.artifactStore.put(item.name, fs.readFileSync(item.path))),
-        this.artifactStore.put('NOTICE.txt', Buffer.from(noticeText)),
+        this.artifactStore.put('NOTICE.txt', Buffer.from(noticeText(this.config.soundfontLicensePath))),
         this.artifactStore.put('receipt.json', Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`)),
       ];
       return { ok: true, artifacts, receipt };
@@ -57,7 +57,8 @@ export class Renderer {
       if (!probe.ok) return failed(probe.code, probe.message);
       const silence = await verifyNonSilent(this.config.ffmpegBin, audio.path);
       if (!silence.ok) return failed(silence.code, silence.message);
-      if (expectedDuration > 0 && Math.abs(probe.duration - expectedDuration) > expectedDuration * 0.1) return failed(failureCodes.duration, `Audio duration ${probe.duration.toFixed(2)}s differs from score duration ${expectedDuration.toFixed(2)}s by more than 10%.`, { expected_seconds: expectedDuration, actual_seconds: probe.duration });
+      const duration = checkAudioDuration(expectedDuration, probe.duration, this.config.audioTailAllowanceSeconds);
+      if (!duration.ok) return failed(duration.code, duration.message, duration.details);
     }
     return null;
   }

@@ -16,7 +16,7 @@ test('real MuseScore pipeline returns content-addressed artifacts and NOTICE', {
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     const musicxml = fs.readFileSync(new URL('./fixtures/two-bar-piano.musicxml', import.meta.url), 'utf8');
-    const submitted = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf', 'svg'] }) });
+    const submitted = await fetch(`${base}/v1/render`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ musicxml, formats: ['pdf', 'svg', 'mp3'] }) });
     assert.equal(submitted.status, 202);
     const { job_id: jobId } = await submitted.json();
     let job;
@@ -30,6 +30,7 @@ test('real MuseScore pipeline returns content-addressed artifacts and NOTICE', {
     for (const artifact of job.artifacts) assert.match(artifact.sha256, /^[a-f0-9]{64}$/);
     assert.ok(job.artifacts.some((artifact) => artifact.name === 'NOTICE.txt'));
     assert.ok(job.artifacts.some((artifact) => artifact.name === 'score-1.svg'));
+    assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mp3'));
     const notice = await fetch(`${base}${job.artifacts.find((artifact) => artifact.name === 'NOTICE.txt').url}`);
     assert.equal(notice.status, 200);
     assert.match(await notice.text(), /FluidR3/);

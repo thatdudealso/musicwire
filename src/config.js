@@ -5,6 +5,11 @@ const integer = (name, fallback) => {
   return value === undefined ? fallback : Number.parseInt(value, 10);
 };
 
+const decimal = (name, fallback) => {
+  const value = process.env[name];
+  return value === undefined ? fallback : Number.parseFloat(value);
+};
+
 export const config = {
   port: integer('PORT', 8787),
   dataDirectory: process.env.MUSICWIRE_DATA_DIR ?? path.resolve('data'),
@@ -22,9 +27,12 @@ export const config = {
   maxRenderRssKb: integer('MAX_RENDER_RSS_KB', 1_024_000),
   artifactRetentionDays: integer('ARTIFACT_RETENTION_DAYS', 30),
   multiInstrumentPartBoundary: integer('MULTI_INSTRUMENT_PART_BOUNDARY', 1),
-  validatePriceUsd: process.env.VALIDATE_PRICE_USD ?? '0.05',
-  renderSoloPriceUsd: process.env.RENDER_SOLO_PRICE_USD ?? '0.10',
-  renderMultiPriceUsd: process.env.RENDER_MULTI_PRICE_USD ?? '0.25',
+  maxConcurrentRenders: integer('MAX_CONCURRENT_RENDERS', 2),
+  audioTailAllowanceSeconds: decimal('AUDIO_TAIL_ALLOWANCE_SECONDS', 2),
+  healthCacheSeconds: integer('HEALTH_CACHE_SECONDS', 30),
+  validatePriceUsd: process.env.VALIDATE_PRICE_USD ?? '0.10',
+  renderSoloPriceUsd: process.env.RENDER_SOLO_PRICE_USD ?? '0.25',
+  renderMultiPriceUsd: process.env.RENDER_MULTI_PRICE_USD ?? '0.50',
   requestsPerMinute: integer('REQUESTS_PER_MINUTE', 60),
 };
 

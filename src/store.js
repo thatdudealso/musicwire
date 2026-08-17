@@ -55,6 +55,18 @@ export class JobStore {
     const row = this.db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
     return row ? decode(row) : null;
   }
+
+  recoverInterruptedJobs() {
+    const rows = this.db.prepare("SELECT * FROM jobs WHERE state IN ('queued', 'running')").all();
+    const update = this.db.prepare('UPDATE jobs SET state = ?, qc_json = ?, error_json = ?, payment_json = ?, updated_at = ? WHERE id = ?');
+    const now = new Date().toISOString();
+    for (const row of rows) {
+      const payment = { ...JSON.parse(row.payment_json), status: 'not_charged', reason: 'render_interrupted', captured_at: null };
+      const error = { code: 'render_interrupted', message: 'The service restarted before rendering completed.' };
+      update.run('failed_not_charged', JSON.stringify({ status: 'failed', ...error }), JSON.stringify(error), JSON.stringify(payment), now, row.id);
+    }
+    return rows.length;
+  }
 }
 
 function decode(row) {

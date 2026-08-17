@@ -24,27 +24,38 @@ export function validateMusicXml(xml) {
 
 export function scoreFacts(xml) {
   const partCount = [...xml.matchAll(/<part\b[^>]*id=["'][^"']+["'][^>]*>/gi)].length;
-  const tempo = Number(xml.match(/<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["']/i)?.[1] ?? xml.match(/<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>/i)?.[1] ?? 90);
   const keyFifths = Number((xml.match(/<fifths>\s*(-?\d+)\s*<\/fifths>/i)?.[1]) ?? 0);
   const mode = xml.match(/<mode>\s*(major|minor)\s*<\/mode>/i)?.[1] ?? 'major';
   const parts = xml.match(/<part\b[\s\S]*?<\/part>/gi) ?? [];
-  const durationByPart = parts.map((part) => {
-    let total = 0;
+  const tempoEvents = new Map();
+  let scoreQuarters = 0;
+  for (const part of parts) {
+    let divisions = 1;
+    let partQuarters = 0;
     for (const measure of part.match(/<measure\b[\s\S]*?<\/measure>/gi) ?? []) {
       let cursor = 0;
       let maximum = 0;
-      for (const token of measure.match(/<(?:note|backup|forward)\b[\s\S]*?<\/(?:note|backup|forward)>/gi) ?? []) {
-        const duration = Number(token.match(/<duration>\s*(\d+)\s*<\/duration>/i)?.[1] ?? 0);
-        if (/^<backup\b/i.test(token)) cursor = Math.max(0, cursor - duration);
-        else if (/^<note\b/i.test(token) && /<chord\s*\/?\s*>/i.test(token)) continue;
+      const tokens = measure.matchAll(/<divisions>\s*(\d+)\s*<\/divisions>|<sound\b[^>]*\btempo=["']([0-9]+(?:\.[0-9]+)?)["'][^>]*>|<per-minute>\s*([0-9]+(?:\.[0-9]+)?)\s*<\/per-minute>|<(note|backup|forward)\b[\s\S]*?<\/\4>/gi);
+      for (const token of tokens) {
+        if (token[1]) { divisions = Math.max(1, Number(token[1])); continue; }
+        if (token[2] || token[3]) { tempoEvents.set(Number((partQuarters + cursor).toFixed(6)), Number(token[2] ?? token[3])); continue; }
+        const duration = Number(token[0].match(/<duration>\s*(\d+)\s*<\/duration>/i)?.[1] ?? 0) / divisions;
+        if (token[4].toLowerCase() === 'backup') cursor = Math.max(0, cursor - duration);
+        else if (token[4].toLowerCase() === 'note' && /<chord\s*\/?\s*>/i.test(token[0])) continue;
         else cursor += duration;
         maximum = Math.max(maximum, cursor);
       }
-      total += maximum;
+      partQuarters += maximum;
     }
-    return total;
-  });
-  const divisions = Number(xml.match(/<divisions>\s*(\d+)\s*<\/divisions>/i)?.[1] ?? 1);
-  const scoreDurationSeconds = Math.max(0, ...durationByPart) / Math.max(1, divisions) * 60 / Math.max(1, tempo);
-  return { partCount, tempo, key: { fifths: keyFifths, mode }, scoreDurationSeconds };
+    scoreQuarters = Math.max(scoreQuarters, partQuarters);
+  }
+  const events = [...tempoEvents.entries()].sort((a, b) => a[0] - b[0]);
+  if (events.length === 0 || events[0][0] > 0) events.unshift([0, events[0]?.[1] ?? 90]);
+  let scoreDurationSeconds = 0;
+  for (let index = 0; index < events.length; index += 1) {
+    const start = Math.min(scoreQuarters, events[index][0]);
+    const end = Math.min(scoreQuarters, events[index + 1]?.[0] ?? scoreQuarters);
+    if (end > start) scoreDurationSeconds += (end - start) * 60 / Math.max(1, events[index][1]);
+  }
+  return { partCount, tempo: events[0][1], key: { fifths: keyFifths, mode }, scoreDurationSeconds };
 }
