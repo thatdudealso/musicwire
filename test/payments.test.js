@@ -794,9 +794,14 @@ async function startServer({ events, renderer = undefined, gateway = undefined, 
   const server = createApp({
     dataDirectory,
     payments: new PaymentService(gateway ?? new RecordingGateway(events)),
+    // waitForJob polls every 10ms, so the production 60/minute rate limit can
+    // turn a slow render into a 429 mid-poll; give tests a far larger budget.
+    requestsPerMinute: 10_000,
     ...(renderer ? { renderer } : {}),
     ...overrides,
-  }).listen(0);
+    // Bind 127.0.0.1 explicitly: a wildcard listen(0) can be handed a port that
+    // another local service already holds on 127.0.0.1, hijacking test fetches.
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   return {
     base: `http://127.0.0.1:${server.address().port}`,

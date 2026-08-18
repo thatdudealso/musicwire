@@ -16,7 +16,7 @@ test('public API publishes the Phase 2 Base Sepolia prices', async () => {
   const server = createApp({
     dataDirectory,
     renderer: { render: async () => ({ ok: false, error: { code: 'test_renderer' } }) },
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const multiPartMusicxml = musicxml
@@ -66,7 +66,7 @@ test('public API publishes the Phase 2 Base Sepolia prices', async () => {
 
 test('render requires JSON and at least one output format before queuing', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-render-request-'));
-  const server = createApp({ dataDirectory }).listen(0);
+  const server = createApp({ dataDirectory }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
@@ -186,7 +186,7 @@ test('health coalesces concurrent readiness checks', async () => {
       await pending;
       return [true, true];
     },
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
@@ -282,7 +282,7 @@ test('render rejects requests once the pending backlog is full', async () => {
         return { ok: false, error: { code: 'test_renderer' } };
       },
     },
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const request = (idempotencyKey) =>
@@ -317,7 +317,7 @@ test('render rejects requests once the pending backlog is full', async () => {
 
 test('render rejects audio whose repeat expansion exceeds the configured limit', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-repeat-limit-'));
-  const server = createApp({ dataDirectory, maxPlaybackMeasures: 3 }).listen(0);
+  const server = createApp({ dataDirectory, maxPlaybackMeasures: 3 }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const repeated = musicxml
     .replace(
@@ -348,7 +348,7 @@ test('render rejects audio whose replayed tempo events exceed the configured lim
     dataDirectory,
     maxPlaybackMeasures: 20,
     maxPlaybackTempoEvents: 1,
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const repeated = musicxml
     .replace(

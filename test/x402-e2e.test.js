@@ -33,6 +33,9 @@ test(
       mscoreBin: process.env.MSCORE_BIN ?? 'mscore',
       mscoreArch: process.env.MSCORE_ARCH ?? (process.platform === 'darwin' ? 'arm64' : ''),
       requestTimeoutMs: 30_000,
+      // Job polling plus payment requests can exceed the production 60/minute
+      // rate limit while waiting for settlement reconciliation.
+      requestsPerMinute: 10_000,
     });
     const server = createServer(app);
     server.listen(0, '127.0.0.1');
@@ -64,7 +67,10 @@ test(
       for (let attempt = 0; attempt < 80; attempt += 1) {
         const response = await fetch(`${baseUrl}/v1/jobs/${jobId}`);
         const job = await response.json();
-        if (job.status === 'completed' || job.status === 'failed_not_charged') return job;
+        if (job.status === 'failed_not_charged') return job;
+        // An ambiguous facilitator settle response completes the job as
+        // settlement_pending until reconciliation confirms it on-chain.
+        if (job.status === 'completed' && job.payment.status !== 'settlement_pending') return job;
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
       throw new Error(`Timed out waiting for job ${jobId}.`);
