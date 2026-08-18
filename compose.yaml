@@ -1,14 +1,50 @@
 services:
+  # NON-PRODUCTION local test service. It overrides the image's
+  # NODE_ENV=production so the stub payment gate in src/config.js is legal,
+  # and it pins stub payments explicitly so no facilitator or on-chain
+  # settlement can ever occur from this service.
   musicwire:
     build: .
     ports:
       - '8787:8787'
     environment:
+      NODE_ENV: test
+      MUSICWIRE_PAYMENT_MODE: stub
       ARTIFACT_SIGNING_SECRET: ${ARTIFACT_SIGNING_SECRET:?set_a_long_random_secret}
       ARTIFACT_RETENTION_DAYS: '30'
       MAX_RENDER_SECONDS: '60'
       MAX_RENDER_CPU_SECONDS: '50'
       MAX_RENDER_RSS_KB: '1024000'
+    volumes:
+      - musicwire-data:/var/lib/musicwire/data
+    mem_limit: 1g
+    cpus: 1.0
+    restart: unless-stopped
+
+  # PRODUCTION service: `docker compose up musicwire-production`. Keeps the
+  # image's NODE_ENV=production and forwards real CDP credentials from the
+  # operator's host environment; bare entries below pass a variable through
+  # only when it is set, so no secret is ever committed to this repository.
+  # src/config.js refuses a production boot without MUSICWIRE_PAYMENT_MODE=x402
+  # and CDP_WALLET_SECRET, so this service cannot start unconfigured and never
+  # falls back to stub payments.
+  musicwire-production:
+    profiles:
+      - production
+    build: .
+    ports:
+      - '8787:8787'
+    environment:
+      - MUSICWIRE_PAYMENT_MODE=x402
+      - CDP_API_KEY_ID
+      - CDP_API_KEY_SECRET
+      - CDP_WALLET_SECRET
+      - MUSICWIRE_PUBLIC_BASE_URL
+      - ARTIFACT_SIGNING_SECRET=${ARTIFACT_SIGNING_SECRET:?set_a_long_random_secret}
+      - ARTIFACT_RETENTION_DAYS=30
+      - MAX_RENDER_SECONDS=60
+      - MAX_RENDER_CPU_SECONDS=50
+      - MAX_RENDER_RSS_KB=1024000
     volumes:
       - musicwire-data:/var/lib/musicwire/data
     mem_limit: 1g

@@ -6,24 +6,31 @@ import { composeGuide } from './compose-guide.js';
 import { validateMusicXml, scoreFacts } from './validate.js';
 import { JobStore } from './store.js';
 import { ArtifactStore } from './artifacts.js';
-import { PaymentService } from './payment.js';
+import {
+  createPaymentService,
+  PaymentConfigurationError,
+  PaymentSettlementError,
+  PaymentVerificationError,
+} from './payment.js';
 import { Renderer } from './renderer.js';
 import { failureCodes } from './qc.js';
 
 export function createApp(overrides = {}) {
   const config = { ...defaultConfig, ...overrides };
-  const store = new JobStore(config.dataDirectory);
+  const store = new JobStore(config.dataDirectory, config.idempotencyWindowHours);
   const artifactStore = new ArtifactStore(
     config.dataDirectory,
     config.artifactSigningSecret,
     config.artifactRetentionDays,
   );
-  const payments = overrides.payments ?? new PaymentService();
+  const payments = overrides.payments ?? createPaymentService(config, store);
   const renderer = overrides.renderer ?? new Renderer(config, artifactStore);
   const app = express();
   const limiter = new Map();
+  const inflightValidations = new Map();
+  const reconciler = createSettlementReconciler({ store, payments, artifactStore, config });
   const queue = createRenderQueue(config.maxConcurrentRenders, config.maxPendingRenders, (id) =>
-    processJob(id, { store, renderer, payments }),
+    processJob(id, { store, renderer, artifactStore, payments, reconciler }),
   );
   const readinessProbe =
     overrides.readinessProbe ??
@@ -41,6 +48,7 @@ export function createApp(overrides = {}) {
   let readiness = null;
   let readinessCheck = null;
   store.recoverInterruptedJobs();
+  for (const target of store.listSettlementPending()) reconciler.schedule(target);
   app.disable('x-powered-by');
   app.use(rateLimit(limiter, config));
   app.use(
@@ -71,21 +79,110 @@ export function createApp(overrides = {}) {
   });
 
   app.get('/manifest', (_request, response) => response.json(manifest(config)));
+  app.get('/.well-known/x402', async (_request, response, next) => {
+    try {
+      response.json({
+        ...manifest(config).payment,
+        receiver: await payments.description(),
+        endpoints: manifest(config).endpoints,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
   app.get('/v1/compose-guide', (request, response) => response.json(composeGuide(request.query)));
 
-  app.post('/v1/validate', (request, response) => {
+  app.post('/v1/validate', async (request, response) => {
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
-    const validation = validateMusicXml(input.musicxml);
-    response.status(validation.valid ? 200 : 422).json({
-      ...validation,
-      price_usd: config.validatePriceUsd,
-      payment: {
-        provider: 'stub',
-        status: 'configured_for_phase_2',
-        charge_eligible: validation.valid,
-      },
-    });
+    const idempotencyKey = request.get('Idempotency-Key');
+    const replay = store.getValidateResultByKey(idempotencyKey);
+    if (replay) return sendValidateResult(response, payments, replay);
+    const execute = async () => {
+      const authorization = await payments.authorize({
+        request,
+        endpoint: 'validate',
+        priceUsd: config.validatePriceUsd,
+        outputSchema: paymentOutputSchema('validate'),
+      });
+      if (!authorization.authorized) return { challenge: authorization.challenge };
+      if (
+        !claimPaymentAuthorization(
+          store,
+          payments,
+          authorization.payment,
+          'validate',
+          idempotencyKey,
+        )
+      )
+        return paymentAuthorizationReused();
+      const validationBody = (validation, payment, extra = {}) => ({
+        ...validation,
+        price_usd: config.validatePriceUsd,
+        ...extra,
+        payment: payments.publicPayment(payment),
+        receipt: payments.receipt(payment),
+      });
+      const validation = validateMusicXml(input.musicxml);
+      if (!validation.valid) {
+        const payment = await payments.cancelNotCharged(
+          authorization.payment,
+          failureCodes.validation,
+        );
+        const body = validationBody(validation, payment, { status: 'failed_not_charged' });
+        if (!idempotencyKey) return { id: null, httpStatus: 422, body, payment };
+        return store.saveValidateResult({
+          id: crypto.randomUUID(),
+          idempotencyKey,
+          httpStatus: 422,
+          body,
+          payment,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      const intent = payments.settlementIntent(authorization.payment);
+      const record = store.saveValidateResult({
+        id: crypto.randomUUID(),
+        idempotencyKey: idempotencyKey ?? null,
+        httpStatus: 200,
+        body: validationBody(validation, intent),
+        payment: intent,
+        createdAt: new Date().toISOString(),
+      });
+      const settlement = await payments.settleAfterQc(intent);
+      if (settlement.outcome === 'failed') {
+        return store.updateValidateResult(record.id, {
+          httpStatus: 502,
+          body: {
+            error: {
+              code: 'payment_settlement_failed',
+              message:
+                'Settlement was definitively rejected after validation passed. No payment was charged.',
+            },
+          },
+          payment: settlement.payment,
+        });
+      }
+      if (settlement.outcome === 'pending') {
+        reconciler.schedule({ kind: 'validate', id: record.id });
+        return record;
+      }
+      return store.updateValidateResult(record.id, {
+        body: validationBody(validation, settlement.payment),
+        payment: settlement.payment,
+      });
+    };
+    let pending = idempotencyKey ? inflightValidations.get(idempotencyKey) : null;
+    if (!pending) {
+      pending = execute();
+      if (idempotencyKey) {
+        inflightValidations.set(idempotencyKey, pending);
+        pending.finally(() => inflightValidations.delete(idempotencyKey)).catch(() => {});
+      }
+    }
+    const outcome = await pending;
+    if (outcome.challenge) return sendPaymentChallenge(response, outcome.challenge);
+    return sendValidateResult(response, payments, outcome);
   });
 
   app.post('/v1/render', async (request, response) => {
@@ -105,8 +202,8 @@ export function createApp(overrides = {}) {
         status: 'failed_not_charged',
         error: {
           code: failureCodes.validation,
-          message: 'MusicXML validation failed.',
-          errors: validation.errors,
+          message:
+            'MusicXML validation failed. Use paid POST /v1/validate for line-level diagnostics.',
         },
         payment: { status: 'not_charged' },
       });
@@ -165,8 +262,26 @@ export function createApp(overrides = {}) {
       return response.status(503).json({
         error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' },
       });
-    let reservationConsumed = false;
+    let reservationReleased = false;
+    let pendingPayment = null;
     try {
+      const authorization = await payments.authorize({
+        request,
+        endpoint: 'render',
+        priceUsd,
+        outputSchema: paymentOutputSchema('render'),
+      });
+      if (!authorization.authorized) {
+        queue.release();
+        reservationReleased = true;
+        return sendPaymentChallenge(response, authorization.challenge);
+      }
+      pendingPayment = authorization.payment;
+      if (!claimPaymentAuthorization(store, payments, pendingPayment, 'render', idempotencyKey)) {
+        queue.release();
+        reservationReleased = true;
+        return response.status(409).json(paymentAuthorizationReused().body);
+      }
       const now = new Date();
       const job = {
         id: crypto.randomUUID(),
@@ -175,7 +290,10 @@ export function createApp(overrides = {}) {
         constraints,
         facts,
         priceUsd,
-        payment: await payments.createPendingCharge({ jobId: 'pending', priceUsd }),
+        payment: await payments.createPendingCharge({
+          jobId: 'pending',
+          authorization: pendingPayment,
+        }),
         createdAt: now.toISOString(),
         expiresAt: new Date(
           now.getTime() + config.artifactRetentionDays * 86_400_000,
@@ -184,11 +302,15 @@ export function createApp(overrides = {}) {
       job.payment.job_id = job.id;
       const record = store.create(job, idempotencyKey);
       if (record.id === job.id) queue.enqueue(record.id);
-      else queue.release();
-      reservationConsumed = true;
+      else {
+        await payments.cancelNotCharged(pendingPayment, 'idempotent_request_replayed');
+        queue.release();
+      }
+      reservationReleased = true;
       response.status(202).json(renderResponse(record, config));
     } catch (error) {
-      if (!reservationConsumed) queue.release();
+      if (!reservationReleased) queue.release();
+      if (pendingPayment) await payments.cancelNotCharged(pendingPayment, 'request_not_queued');
       throw error;
     }
   });
@@ -199,7 +321,8 @@ export function createApp(overrides = {}) {
       return response
         .status(404)
         .json({ error: { code: 'job_not_found', message: 'No job exists with this id.' } });
-    response.json(publicJob(job, artifactStore));
+    setSettlementHeader(response, payments, job.payment);
+    response.json(publicJob(job, artifactStore, payments));
   });
 
   app.get('/v1/artifacts/:jobId/:name', (request, response) => {
@@ -216,6 +339,18 @@ export function createApp(overrides = {}) {
   });
 
   app.use((error, _request, response, _next) => {
+    if (error instanceof PaymentConfigurationError)
+      return response.status(503).json({
+        error: { code: 'payment_unavailable', message: error.message },
+      });
+    if (error instanceof PaymentVerificationError)
+      return response.status(503).json({
+        error: { code: 'payment_verification_unavailable', message: error.message },
+      });
+    if (error instanceof PaymentSettlementError)
+      return response.status(502).json({
+        error: { code: 'payment_settlement_failed', message: error.message },
+      });
     if (error.type === 'entity.too.large')
       return response.status(413).json({
         error: {
@@ -239,50 +374,124 @@ export function createApp(overrides = {}) {
 
 async function processJob(id, services) {
   const job = services.store.update(id, { state: 'running' });
+  let result;
   try {
-    const result = await services.renderer.render(job);
-    if (!result.ok) {
-      const payment = await services.payments.cancelNotCharged(job.payment, result.error.code);
-      services.store.update(id, {
-        state: 'failed_not_charged',
-        qc_json: JSON.stringify({ status: 'failed', ...result.error }),
-        error_json: JSON.stringify(result.error),
-        payment_json: JSON.stringify(payment),
-      });
-      return;
-    }
-    const payment = await services.payments.captureAfterQc(job.payment);
-    services.store.update(id, {
-      state: 'completed',
-      qc_json: JSON.stringify({
-        status: 'passed',
-        checks: [
-          'validation',
-          'renderer_exit',
-          'artifacts_present',
-          'audio_when_requested',
-          'constraints_when_requested',
-        ],
-      }),
-      artifacts_json: JSON.stringify(result.artifacts),
-      payment_json: JSON.stringify(payment),
-    });
+    result = await services.renderer.render(job);
   } catch {
-    const payment = await services.payments.cancelNotCharged(job.payment, failureCodes.renderer);
+    result = {
+      ok: false,
+      error: { code: failureCodes.renderer, message: 'Unexpected isolated renderer failure.' },
+    };
+  }
+  if (!result.ok) {
+    const payment = await services.payments.cancelNotCharged(job.payment, result.error.code);
     services.store.update(id, {
       state: 'failed_not_charged',
-      qc_json: JSON.stringify({
-        status: 'failed',
-        code: failureCodes.renderer,
-        message: 'Unexpected isolated renderer failure.',
-      }),
-      error_json: JSON.stringify({
-        code: failureCodes.renderer,
-        message: 'Unexpected isolated renderer failure.',
-      }),
+      qc_json: JSON.stringify({ status: 'failed', ...result.error }),
+      error_json: JSON.stringify(result.error),
       payment_json: JSON.stringify(payment),
     });
+    return;
   }
+  const intent = services.payments.settlementIntent(job.payment);
+  const receipt = {
+    ...result.receipt,
+    payment: services.payments.receipt(intent),
+  };
+  const artifacts = [
+    ...result.artifacts,
+    services.artifactStore.put(
+      'receipt.json',
+      Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
+    ),
+  ];
+  services.store.update(id, {
+    state: 'completed',
+    qc_json: JSON.stringify({
+      status: 'passed',
+      checks: [
+        'validation',
+        'renderer_exit',
+        'artifacts_present',
+        'audio_when_requested',
+        'constraints_when_requested',
+      ],
+    }),
+    artifacts_json: JSON.stringify(artifacts),
+    payment_json: JSON.stringify(intent),
+  });
+  const settlement = await services.payments.settleAfterQc(intent);
+  if (settlement.outcome === 'pending') {
+    services.reconciler.schedule({ kind: 'job', id });
+    return;
+  }
+  services.store.update(id, {
+    payment_json: JSON.stringify(settlement.payment),
+    artifacts_json: JSON.stringify(
+      refreshReceiptArtifact(
+        services.artifactStore,
+        services.payments,
+        artifacts,
+        settlement.payment,
+      ),
+    ),
+  });
+}
+
+function refreshReceiptArtifact(artifactStore, payments, artifacts, payment) {
+  return artifacts.map((artifact) => {
+    if (artifact.name !== 'receipt.json') return artifact;
+    const receipt = JSON.parse(artifactStore.read(artifact).toString('utf8'));
+    receipt.payment = payments.receipt(payment);
+    return artifactStore.put('receipt.json', Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`));
+  });
+}
+
+function createSettlementReconciler({ store, payments, artifactStore, config }) {
+  const timers = new Map();
+  const reconcileJob = async (id) => {
+    const job = store.get(id);
+    if (!job || job.payment.status !== 'settlement_pending') return true;
+    const settlement = await payments.settleAfterQc(job.payment);
+    if (settlement.outcome === 'pending') return false;
+    store.update(id, {
+      payment_json: JSON.stringify(settlement.payment),
+      artifacts_json: JSON.stringify(
+        refreshReceiptArtifact(artifactStore, payments, job.artifacts, settlement.payment),
+      ),
+    });
+    return true;
+  };
+  const reconcileValidate = async (id) => {
+    const record = store.getValidateResultById(id);
+    if (!record || record.payment.status !== 'settlement_pending') return true;
+    const settlement = await payments.settleAfterQc(record.payment);
+    if (settlement.outcome === 'pending') return false;
+    store.updateValidateResult(id, {
+      body: {
+        ...record.body,
+        payment: payments.publicPayment(settlement.payment),
+        receipt: payments.receipt(settlement.payment),
+      },
+      payment: settlement.payment,
+    });
+    return true;
+  };
+  const schedule = (target, attempt = 0) => {
+    const key = `${target.kind}:${target.id}`;
+    if (timers.has(key)) return;
+    const delay = Math.min(300, config.x402SettlementRetrySeconds * 2 ** Math.min(attempt, 8));
+    const timer = setTimeout(async () => {
+      timers.delete(key);
+      const settled = await (
+        target.kind === 'job' ? reconcileJob(target.id) : reconcileValidate(target.id)
+      ).catch(() => false);
+      if (!settled) schedule(target, attempt + 1);
+    }, delay * 1_000);
+    timer.unref?.();
+    timers.set(key, timer);
+  };
+  return { schedule };
 }
 
 function extractInput(request, config) {
@@ -313,7 +522,7 @@ function extractInput(request, config) {
   return { musicxml: value };
 }
 
-function publicJob(job, artifactStore) {
+function publicJob(job, artifactStore, payments) {
   const expires = new Date(job.expires_at).getTime();
   return {
     job_id: job.id,
@@ -322,7 +531,8 @@ function publicJob(job, artifactStore) {
     facts: job.facts,
     qc: job.qc,
     error: job.error,
-    payment: job.payment,
+    payment: payments.publicPayment(job.payment),
+    receipt: payments.receipt(job.payment),
     expires_at: job.expires_at,
     artifacts: job.artifacts.map((artifact) => ({
       name: artifact.name,
@@ -331,6 +541,43 @@ function publicJob(job, artifactStore) {
       url: `/v1/artifacts/${job.id}/${encodeURIComponent(artifact.name)}?expires=${expires}&token=${artifactStore.token(job.id, artifact, expires)}`,
     })),
   };
+}
+
+function sendPaymentChallenge(response, challenge) {
+  response.set(challenge.headers);
+  return response.status(402).json(challenge.body);
+}
+
+function claimPaymentAuthorization(store, payments, payment, endpoint, idempotencyKey) {
+  return store.claimPaymentAuthorization({
+    fingerprint: payments.authorizationFingerprint(payment),
+    endpoint,
+    idempotencyKey,
+    createdAt: new Date().toISOString(),
+  }).claimed;
+}
+
+function paymentAuthorizationReused() {
+  return {
+    httpStatus: 409,
+    body: {
+      error: {
+        code: 'payment_authorization_reused',
+        message: 'This payment authorization is already bound to another request.',
+      },
+    },
+    payment: { status: 'not_charged' },
+  };
+}
+
+function sendValidateResult(response, payments, result) {
+  setSettlementHeader(response, payments, result.payment);
+  return response.status(result.httpStatus).json(result.body);
+}
+
+function setSettlementHeader(response, payments, payment) {
+  const header = payments.settlementHeader(payment);
+  if (header) response.set('payment-response', header);
 }
 
 function renderResponse(record, config) {
@@ -465,12 +712,29 @@ function manifest(config) {
     name: 'Musicwire',
     version: 'v1',
     payment: {
-      phase: 'stub',
-      future_402_response: {
-        status: 402,
-        detail: 'Payment Required. x402 verification and settlement land in Phase 2.',
-      },
+      protocol: 'x402',
+      x402_version: 2,
+      mode: config.paymentMode,
+      network: config.x402Network,
+      asset: 'USDC',
+      scheme: 'exact',
+      facilitator: 'CDP',
+      payment_required_header: 'PAYMENT-REQUIRED',
+      payment_response_header: 'PAYMENT-RESPONSE',
       capture_policy: 'only_after_qc_pass',
+      receipt_schema: {
+        status: 'settled | settlement_pending | failed_not_charged',
+        amount_usd: 'string',
+        amount_atomic: 'string | null',
+        network: config.x402Network,
+        asset: 'EVM address | null',
+        tx_hash: 'transaction hash | null',
+        settled_at: 'ISO 8601 timestamp | null',
+      },
+      output_schemas: {
+        validate: paymentOutputSchema('validate'),
+        render: paymentOutputSchema('render'),
+      },
     },
     endpoints: {
       compose_guide: { method: 'GET', path: '/v1/compose-guide', price_usd: '0.00' },
@@ -518,5 +782,18 @@ function manifest(config) {
       'Original, owned, or public-domain material only. Musicwire is not a copyrighted-melody transcription service.',
       'Rate limits and isolated resource-capped render workspaces apply.',
     ],
+  };
+}
+
+function paymentOutputSchema(endpoint) {
+  if (endpoint === 'validate')
+    return {
+      status: '200 valid result | 422 failed_not_charged',
+      fields: ['valid', 'errors', 'price_usd', 'payment', 'receipt'],
+    };
+  return {
+    status: '202 queued render job',
+    fields: ['job_id', 'status', 'estimated_seconds', 'price_usd', 'payment', 'poll_url'],
+    completed_job_fields: ['qc', 'artifacts', 'receipt'],
   };
 }

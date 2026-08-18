@@ -3,9 +3,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 export class JobStore {
-  constructor(dataDirectory) {
+  constructor(dataDirectory, idempotencyWindowHours = 24) {
     fs.mkdirSync(dataDirectory, { recursive: true });
     this.db = new DatabaseSync(path.join(dataDirectory, 'musicwire.sqlite'));
+    this.idempotencyWindowMs = Math.max(1, idempotencyWindowHours) * 3_600_000;
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS jobs (
@@ -29,7 +30,30 @@ export class JobStore {
         job_id TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS payment_wallets (
+        provider TEXT PRIMARY KEY,
+        account_name TEXT NOT NULL,
+        address TEXT NOT NULL,
+        network TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS validate_results (
+        id TEXT PRIMARY KEY,
+        idempotency_key TEXT UNIQUE,
+        http_status INTEGER NOT NULL,
+        body_json TEXT NOT NULL,
+        payment_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS payment_authorizations (
+        fingerprint TEXT PRIMARY KEY,
+        endpoint TEXT NOT NULL,
+        idempotency_key TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
+    this.expireIdempotencyKeys();
   }
 
   create(job, idempotencyKey) {
@@ -62,10 +86,121 @@ export class JobStore {
 
   getByIdempotencyKey(idempotencyKey) {
     if (!idempotencyKey) return null;
+    this.expireIdempotencyKeys();
     const existing = this.db
       .prepare('SELECT job_id FROM idempotency_keys WHERE key = ?')
       .get(idempotencyKey);
     return existing ? this.get(existing.job_id) : null;
+  }
+
+  claimPaymentAuthorization({ fingerprint, endpoint, idempotencyKey, createdAt }) {
+    if (!fingerprint) return { claimed: true };
+    this.expireIdempotencyKeys();
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO payment_authorizations
+         (fingerprint,endpoint,idempotency_key,created_at) VALUES (?,?,?,?)`,
+      )
+      .run(fingerprint, endpoint, idempotencyKey ?? null, createdAt);
+    if (result.changes === 1) return { claimed: true };
+    return {
+      claimed: false,
+      authorization: this.db
+        .prepare(
+          'SELECT endpoint,idempotency_key FROM payment_authorizations WHERE fingerprint = ?',
+        )
+        .get(fingerprint),
+    };
+  }
+
+  saveValidateResult({ id, idempotencyKey, httpStatus, body, payment, createdAt }) {
+    this.db
+      .prepare(
+        `INSERT INTO validate_results (id,idempotency_key,http_status,body_json,payment_json,created_at)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        idempotencyKey ?? null,
+        httpStatus,
+        JSON.stringify(body),
+        JSON.stringify(payment),
+        createdAt,
+      );
+    return this.getValidateResultById(id);
+  }
+
+  getValidateResultById(id) {
+    const row = this.db.prepare('SELECT * FROM validate_results WHERE id = ?').get(id);
+    return row ? decodeValidateResult(row) : null;
+  }
+
+  getValidateResultByKey(idempotencyKey) {
+    if (!idempotencyKey) return null;
+    this.expireIdempotencyKeys();
+    const row = this.db
+      .prepare('SELECT * FROM validate_results WHERE idempotency_key = ?')
+      .get(idempotencyKey);
+    return row ? decodeValidateResult(row) : null;
+  }
+
+  updateValidateResult(id, { httpStatus, body, payment }) {
+    const fields = [];
+    const values = [];
+    if (httpStatus !== undefined) {
+      fields.push('http_status = ?');
+      values.push(httpStatus);
+    }
+    if (body !== undefined) {
+      fields.push('body_json = ?');
+      values.push(JSON.stringify(body));
+    }
+    if (payment !== undefined) {
+      fields.push('payment_json = ?');
+      values.push(JSON.stringify(payment));
+    }
+    if (fields.length === 0) return this.getValidateResultById(id);
+    this.db
+      .prepare(`UPDATE validate_results SET ${fields.join(', ')} WHERE id = ?`)
+      .run(...values, id);
+    return this.getValidateResultById(id);
+  }
+
+  listSettlementPending() {
+    const pattern = '%"status":"settlement_pending"%';
+    const jobs = this.db
+      .prepare("SELECT id FROM jobs WHERE state = 'completed' AND payment_json LIKE ?")
+      .all(pattern)
+      .filter((row) => this.get(row.id).payment.status === 'settlement_pending')
+      .map((row) => ({ kind: 'job', id: row.id }));
+    const validations = this.db
+      .prepare('SELECT id FROM validate_results WHERE payment_json LIKE ?')
+      .all(pattern)
+      .filter((row) => this.getValidateResultById(row.id).payment.status === 'settlement_pending')
+      .map((row) => ({ kind: 'validate', id: row.id }));
+    return [...jobs, ...validations];
+  }
+
+  getPaymentWallet(provider) {
+    return (
+      this.db.prepare('SELECT * FROM payment_wallets WHERE provider = ?').get(provider) ?? null
+    );
+  }
+
+  savePaymentWallet({ provider, accountName, address, network }) {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO payment_wallets (provider,account_name,address,network,created_at,updated_at)
+         VALUES (?,?,?,?,?,?)
+         ON CONFLICT(provider) DO UPDATE SET
+           account_name = excluded.account_name,
+           address = excluded.address,
+           network = excluded.network,
+           updated_at = excluded.updated_at`,
+      )
+      .run(provider, accountName, address, network, now, now);
+    return this.getPaymentWallet(provider);
   }
 
   update(id, fields) {
@@ -90,7 +225,7 @@ export class JobStore {
     for (const row of rows) {
       const payment = {
         ...JSON.parse(row.payment_json),
-        status: 'not_charged',
+        status: 'failed_not_charged',
         reason: 'render_interrupted',
         captured_at: null,
       };
@@ -109,6 +244,29 @@ export class JobStore {
     }
     return rows.length;
   }
+
+  expireIdempotencyKeys() {
+    const cutoff = new Date(Date.now() - this.idempotencyWindowMs).toISOString();
+    this.db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?').run(cutoff);
+    this.db.prepare('DELETE FROM payment_authorizations WHERE created_at < ?').run(cutoff);
+    this.db
+      .prepare(
+        `DELETE FROM validate_results
+         WHERE created_at < ? AND payment_json NOT LIKE '%"status":"settlement_pending"%'`,
+      )
+      .run(cutoff);
+  }
+}
+
+function decodeValidateResult(row) {
+  return {
+    id: row.id,
+    idempotencyKey: row.idempotency_key,
+    httpStatus: row.http_status,
+    body: JSON.parse(row.body_json),
+    payment: JSON.parse(row.payment_json),
+    createdAt: row.created_at,
+  };
 }
 
 function decode(row) {

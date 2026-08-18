@@ -11,12 +11,12 @@ const musicxml = fs.readFileSync(
   'utf8',
 );
 
-test('public API publishes the Phase 1 prices', async () => {
+test('public API publishes the Phase 2 Base Sepolia prices', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-prices-'));
   const server = createApp({
     dataDirectory,
     renderer: { render: async () => ({ ok: false, error: { code: 'test_renderer' } }) },
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const multiPartMusicxml = musicxml
@@ -31,27 +31,33 @@ test('public API publishes the Phase 1 prices', async () => {
   const render = (score) =>
     fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml: score, formats: ['pdf'] }),
     });
   try {
     const manifest = await (await fetch(`${base}/manifest`)).json();
-    assert.equal(manifest.endpoints.validate.price_usd, '0.05');
+    assert.equal(manifest.endpoints.validate.price_usd, '0.10');
     assert.deepEqual(manifest.endpoints.render.price_usd, {
-      solo: '0.10',
-      multi_instrument: '0.25',
+      solo: '0.25',
+      multi_instrument: '0.50',
       part_boundary: 1,
     });
+    assert.equal(manifest.payment.network, 'eip155:84532');
+    assert.equal(manifest.payment.asset, 'USDC');
+    const paymentDescription = await (await fetch(`${base}/.well-known/x402`)).json();
+    assert.equal(paymentDescription.network, 'eip155:84532');
+    assert.equal(paymentDescription.capture_policy, 'only_after_qc_pass');
+    assert.equal(paymentDescription.receiver.network, 'eip155:84532');
     const validation = await (
       await fetch(`${base}/v1/validate`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({ musicxml }),
       })
     ).json();
-    assert.equal(validation.price_usd, '0.05');
-    assert.equal((await (await render(musicxml)).json()).price_usd, '0.10');
-    assert.equal((await (await render(multiPartMusicxml)).json()).price_usd, '0.25');
+    assert.equal(validation.price_usd, '0.10');
+    assert.equal((await (await render(musicxml)).json()).price_usd, '0.25');
+    assert.equal((await (await render(multiPartMusicxml)).json()).price_usd, '0.50');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
@@ -60,7 +66,7 @@ test('public API publishes the Phase 1 prices', async () => {
 
 test('render requires JSON and at least one output format before queuing', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-render-request-'));
-  const server = createApp({ dataDirectory }).listen(0);
+  const server = createApp({ dataDirectory }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
@@ -180,7 +186,7 @@ test('health coalesces concurrent readiness checks', async () => {
       await pending;
       return [true, true];
     },
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
@@ -219,6 +225,43 @@ test('production startup requires a non-development artifact signing secret', ()
   assert.match(result.stderr.toString(), /ARTIFACT_SIGNING_SECRET/);
 });
 
+test('production startup requires CDP credentials for x402 payments', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        CDP_WALLET_SECRET: '',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /CDP_WALLET_SECRET/);
+});
+
+test('production startup refuses stub payments', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'stub',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /MUSICWIRE_PAYMENT_MODE=x402/);
+});
+
 test('render rejects requests once the pending backlog is full', async () => {
   let releaseRender;
   const renderStarted = new Promise((resolve) => {
@@ -239,7 +282,7 @@ test('render rejects requests once the pending backlog is full', async () => {
         return { ok: false, error: { code: 'test_renderer' } };
       },
     },
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const request = (idempotencyKey) =>
@@ -247,6 +290,7 @@ test('render rejects requests once the pending backlog is full', async () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        'Payment-Signature': 'test-payment',
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       body: JSON.stringify({ musicxml, formats: ['pdf'] }),
@@ -273,7 +317,7 @@ test('render rejects requests once the pending backlog is full', async () => {
 
 test('render rejects audio whose repeat expansion exceeds the configured limit', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-repeat-limit-'));
-  const server = createApp({ dataDirectory, maxPlaybackMeasures: 3 }).listen(0);
+  const server = createApp({ dataDirectory, maxPlaybackMeasures: 3 }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const repeated = musicxml
     .replace(
@@ -304,7 +348,7 @@ test('render rejects audio whose replayed tempo events exceed the configured lim
     dataDirectory,
     maxPlaybackMeasures: 20,
     maxPlaybackTempoEvents: 1,
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const repeated = musicxml
     .replace(
