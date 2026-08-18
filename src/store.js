@@ -3,9 +3,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 export class JobStore {
-  constructor(dataDirectory) {
+  constructor(dataDirectory, idempotencyWindowHours = 24) {
     fs.mkdirSync(dataDirectory, { recursive: true });
     this.db = new DatabaseSync(path.join(dataDirectory, 'musicwire.sqlite'));
+    this.idempotencyWindowMs = Math.max(1, idempotencyWindowHours) * 3_600_000;
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS jobs (
@@ -29,7 +30,16 @@ export class JobStore {
         job_id TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS payment_wallets (
+        provider TEXT PRIMARY KEY,
+        account_name TEXT NOT NULL,
+        address TEXT NOT NULL,
+        network TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
+    this.expireIdempotencyKeys();
   }
 
   create(job, idempotencyKey) {
@@ -62,10 +72,33 @@ export class JobStore {
 
   getByIdempotencyKey(idempotencyKey) {
     if (!idempotencyKey) return null;
+    this.expireIdempotencyKeys();
     const existing = this.db
       .prepare('SELECT job_id FROM idempotency_keys WHERE key = ?')
       .get(idempotencyKey);
     return existing ? this.get(existing.job_id) : null;
+  }
+
+  getPaymentWallet(provider) {
+    return (
+      this.db.prepare('SELECT * FROM payment_wallets WHERE provider = ?').get(provider) ?? null
+    );
+  }
+
+  savePaymentWallet({ provider, accountName, address, network }) {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO payment_wallets (provider,account_name,address,network,created_at,updated_at)
+         VALUES (?,?,?,?,?,?)
+         ON CONFLICT(provider) DO UPDATE SET
+           account_name = excluded.account_name,
+           address = excluded.address,
+           network = excluded.network,
+           updated_at = excluded.updated_at`,
+      )
+      .run(provider, accountName, address, network, now, now);
+    return this.getPaymentWallet(provider);
   }
 
   update(id, fields) {
@@ -108,6 +141,11 @@ export class JobStore {
       );
     }
     return rows.length;
+  }
+
+  expireIdempotencyKeys() {
+    const cutoff = new Date(Date.now() - this.idempotencyWindowMs).toISOString();
+    this.db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?').run(cutoff);
   }
 }
 

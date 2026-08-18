@@ -6,24 +6,28 @@ import { composeGuide } from './compose-guide.js';
 import { validateMusicXml, scoreFacts } from './validate.js';
 import { JobStore } from './store.js';
 import { ArtifactStore } from './artifacts.js';
-import { PaymentService } from './payment.js';
+import {
+  createPaymentService,
+  PaymentConfigurationError,
+  PaymentVerificationError,
+} from './payment.js';
 import { Renderer } from './renderer.js';
 import { failureCodes } from './qc.js';
 
 export function createApp(overrides = {}) {
   const config = { ...defaultConfig, ...overrides };
-  const store = new JobStore(config.dataDirectory);
+  const store = new JobStore(config.dataDirectory, config.idempotencyWindowHours);
   const artifactStore = new ArtifactStore(
     config.dataDirectory,
     config.artifactSigningSecret,
     config.artifactRetentionDays,
   );
-  const payments = overrides.payments ?? new PaymentService();
+  const payments = overrides.payments ?? createPaymentService(config, store);
   const renderer = overrides.renderer ?? new Renderer(config, artifactStore);
   const app = express();
   const limiter = new Map();
   const queue = createRenderQueue(config.maxConcurrentRenders, config.maxPendingRenders, (id) =>
-    processJob(id, { store, renderer, payments }),
+    processJob(id, { store, renderer, artifactStore, payments }),
   );
   const readinessProbe =
     overrides.readinessProbe ??
@@ -71,20 +75,50 @@ export function createApp(overrides = {}) {
   });
 
   app.get('/manifest', (_request, response) => response.json(manifest(config)));
+  app.get('/.well-known/x402', async (_request, response, next) => {
+    try {
+      response.json({
+        ...manifest(config).payment,
+        receiver: await payments.description(),
+        endpoints: manifest(config).endpoints,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
   app.get('/v1/compose-guide', (request, response) => response.json(composeGuide(request.query)));
 
-  app.post('/v1/validate', (request, response) => {
+  app.post('/v1/validate', async (request, response) => {
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
+    const authorization = await payments.authorize({
+      request,
+      endpoint: 'validate',
+      priceUsd: config.validatePriceUsd,
+      outputSchema: paymentOutputSchema('validate'),
+    });
+    if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
     const validation = validateMusicXml(input.musicxml);
-    response.status(validation.valid ? 200 : 422).json({
+    if (!validation.valid) {
+      const payment = await payments.cancelNotCharged(
+        authorization.payment,
+        failureCodes.validation,
+      );
+      return response.status(422).json({
+        ...validation,
+        price_usd: config.validatePriceUsd,
+        status: 'failed_not_charged',
+        payment,
+        receipt: payments.receipt(payment),
+      });
+    }
+    const payment = await payments.captureAfterQc(authorization.payment);
+    setSettlementHeader(response, payments, payment);
+    return response.status(200).json({
       ...validation,
       price_usd: config.validatePriceUsd,
-      payment: {
-        provider: 'stub',
-        status: 'configured_for_phase_2',
-        charge_eligible: validation.valid,
-      },
+      payment,
+      receipt: payments.receipt(payment),
     });
   });
 
@@ -165,8 +199,21 @@ export function createApp(overrides = {}) {
       return response.status(503).json({
         error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' },
       });
-    let reservationConsumed = false;
+    let reservationReleased = false;
+    let pendingPayment = null;
     try {
+      const authorization = await payments.authorize({
+        request,
+        endpoint: 'render',
+        priceUsd,
+        outputSchema: paymentOutputSchema('render'),
+      });
+      if (!authorization.authorized) {
+        queue.release();
+        reservationReleased = true;
+        return sendPaymentChallenge(response, authorization.challenge);
+      }
+      pendingPayment = authorization.payment;
       const now = new Date();
       const job = {
         id: crypto.randomUUID(),
@@ -175,7 +222,10 @@ export function createApp(overrides = {}) {
         constraints,
         facts,
         priceUsd,
-        payment: await payments.createPendingCharge({ jobId: 'pending', priceUsd }),
+        payment: await payments.createPendingCharge({
+          jobId: 'pending',
+          authorization: pendingPayment,
+        }),
         createdAt: now.toISOString(),
         expiresAt: new Date(
           now.getTime() + config.artifactRetentionDays * 86_400_000,
@@ -184,11 +234,15 @@ export function createApp(overrides = {}) {
       job.payment.job_id = job.id;
       const record = store.create(job, idempotencyKey);
       if (record.id === job.id) queue.enqueue(record.id);
-      else queue.release();
-      reservationConsumed = true;
+      else {
+        await payments.cancelNotCharged(pendingPayment, 'idempotent_request_replayed');
+        queue.release();
+      }
+      reservationReleased = true;
       response.status(202).json(renderResponse(record, config));
     } catch (error) {
-      if (!reservationConsumed) queue.release();
+      if (!reservationReleased) queue.release();
+      if (pendingPayment) await payments.cancelNotCharged(pendingPayment, 'request_not_queued');
       throw error;
     }
   });
@@ -199,7 +253,8 @@ export function createApp(overrides = {}) {
       return response
         .status(404)
         .json({ error: { code: 'job_not_found', message: 'No job exists with this id.' } });
-    response.json(publicJob(job, artifactStore));
+    setSettlementHeader(response, payments, job.payment);
+    response.json(publicJob(job, artifactStore, payments));
   });
 
   app.get('/v1/artifacts/:jobId/:name', (request, response) => {
@@ -216,6 +271,14 @@ export function createApp(overrides = {}) {
   });
 
   app.use((error, _request, response, _next) => {
+    if (error instanceof PaymentConfigurationError)
+      return response.status(503).json({
+        error: { code: 'payment_unavailable', message: error.message },
+      });
+    if (error instanceof PaymentVerificationError)
+      return response.status(503).json({
+        error: { code: 'payment_verification_unavailable', message: error.message },
+      });
     if (error.type === 'entity.too.large')
       return response.status(413).json({
         error: {
@@ -252,6 +315,17 @@ async function processJob(id, services) {
       return;
     }
     const payment = await services.payments.captureAfterQc(job.payment);
+    const receipt = {
+      ...result.receipt,
+      payment: services.payments.receipt(payment),
+    };
+    const artifacts = [
+      ...result.artifacts,
+      services.artifactStore.put(
+        'receipt.json',
+        Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
+      ),
+    ];
     services.store.update(id, {
       state: 'completed',
       qc_json: JSON.stringify({
@@ -264,7 +338,7 @@ async function processJob(id, services) {
           'constraints_when_requested',
         ],
       }),
-      artifacts_json: JSON.stringify(result.artifacts),
+      artifacts_json: JSON.stringify(artifacts),
       payment_json: JSON.stringify(payment),
     });
   } catch {
@@ -313,7 +387,7 @@ function extractInput(request, config) {
   return { musicxml: value };
 }
 
-function publicJob(job, artifactStore) {
+function publicJob(job, artifactStore, payments) {
   const expires = new Date(job.expires_at).getTime();
   return {
     job_id: job.id,
@@ -323,6 +397,7 @@ function publicJob(job, artifactStore) {
     qc: job.qc,
     error: job.error,
     payment: job.payment,
+    receipt: payments.receipt(job.payment),
     expires_at: job.expires_at,
     artifacts: job.artifacts.map((artifact) => ({
       name: artifact.name,
@@ -331,6 +406,16 @@ function publicJob(job, artifactStore) {
       url: `/v1/artifacts/${job.id}/${encodeURIComponent(artifact.name)}?expires=${expires}&token=${artifactStore.token(job.id, artifact, expires)}`,
     })),
   };
+}
+
+function sendPaymentChallenge(response, challenge) {
+  response.set(challenge.headers);
+  return response.status(402).json(challenge.body);
+}
+
+function setSettlementHeader(response, payments, payment) {
+  const header = payments.settlementHeader(payment);
+  if (header) response.set('payment-response', header);
 }
 
 function renderResponse(record, config) {
@@ -465,12 +550,29 @@ function manifest(config) {
     name: 'Musicwire',
     version: 'v1',
     payment: {
-      phase: 'stub',
-      future_402_response: {
-        status: 402,
-        detail: 'Payment Required. x402 verification and settlement land in Phase 2.',
-      },
+      protocol: 'x402',
+      x402_version: 2,
+      mode: config.paymentMode,
+      network: config.x402Network,
+      asset: 'USDC',
+      scheme: 'exact',
+      facilitator: 'CDP',
+      payment_required_header: 'PAYMENT-REQUIRED',
+      payment_response_header: 'PAYMENT-RESPONSE',
       capture_policy: 'only_after_qc_pass',
+      receipt_schema: {
+        status: 'settled | failed_not_charged',
+        amount_usd: 'string',
+        amount_atomic: 'string | null',
+        network: config.x402Network,
+        asset: 'EVM address | null',
+        tx_hash: 'transaction hash | null',
+        settled_at: 'ISO 8601 timestamp | null',
+      },
+      output_schemas: {
+        validate: paymentOutputSchema('validate'),
+        render: paymentOutputSchema('render'),
+      },
     },
     endpoints: {
       compose_guide: { method: 'GET', path: '/v1/compose-guide', price_usd: '0.00' },
@@ -518,5 +620,18 @@ function manifest(config) {
       'Original, owned, or public-domain material only. Musicwire is not a copyrighted-melody transcription service.',
       'Rate limits and isolated resource-capped render workspaces apply.',
     ],
+  };
+}
+
+function paymentOutputSchema(endpoint) {
+  if (endpoint === 'validate')
+    return {
+      status: '200 valid result | 422 failed_not_charged',
+      fields: ['valid', 'errors', 'price_usd', 'payment', 'receipt'],
+    };
+  return {
+    status: '202 queued render job',
+    fields: ['job_id', 'status', 'estimated_seconds', 'price_usd', 'payment', 'poll_url'],
+    completed_job_fields: ['qc', 'artifacts', 'receipt'],
   };
 }

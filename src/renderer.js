@@ -83,10 +83,6 @@ export class Renderer {
           'NOTICE.txt',
           Buffer.from(noticeText(this.config.soundfontLicensePath)),
         ),
-        this.artifactStore.put(
-          'receipt.json',
-          Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
-        ),
       ];
       return { ok: true, artifacts, receipt };
     } finally {

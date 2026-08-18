@@ -82,8 +82,8 @@ test('constraint mismatches are deterministic and payment cannot capture before 
   ]);
   const payments = new PaymentService();
   await assert.rejects(payments.captureAfterQc({ status: 'not_charged' }), /only permitted/);
-  const captured = await payments.captureAfterQc({ status: 'pending_qc' });
-  assert.equal(captured.status, 'capture_stubbed');
+  const captured = await payments.captureAfterQc({ status: 'verified_pending_qc' });
+  assert.equal(captured.status, 'settled');
 });
 
 test('score facts incorporate tempo and division changes, while audio allows a bounded release tail', () => {

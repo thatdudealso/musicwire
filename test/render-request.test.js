@@ -11,7 +11,7 @@ const musicxml = fs.readFileSync(
   'utf8',
 );
 
-test('public API publishes the Phase 1 prices', async () => {
+test('public API publishes the Phase 2 Base Sepolia prices', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-prices-'));
   const server = createApp({
     dataDirectory,
@@ -31,27 +31,33 @@ test('public API publishes the Phase 1 prices', async () => {
   const render = (score) =>
     fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml: score, formats: ['pdf'] }),
     });
   try {
     const manifest = await (await fetch(`${base}/manifest`)).json();
-    assert.equal(manifest.endpoints.validate.price_usd, '0.05');
+    assert.equal(manifest.endpoints.validate.price_usd, '0.10');
     assert.deepEqual(manifest.endpoints.render.price_usd, {
-      solo: '0.10',
-      multi_instrument: '0.25',
+      solo: '0.25',
+      multi_instrument: '0.50',
       part_boundary: 1,
     });
+    assert.equal(manifest.payment.network, 'eip155:84532');
+    assert.equal(manifest.payment.asset, 'USDC');
+    const paymentDescription = await (await fetch(`${base}/.well-known/x402`)).json();
+    assert.equal(paymentDescription.network, 'eip155:84532');
+    assert.equal(paymentDescription.capture_policy, 'only_after_qc_pass');
+    assert.equal(paymentDescription.receiver.network, 'eip155:84532');
     const validation = await (
       await fetch(`${base}/v1/validate`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({ musicxml }),
       })
     ).json();
-    assert.equal(validation.price_usd, '0.05');
-    assert.equal((await (await render(musicxml)).json()).price_usd, '0.10');
-    assert.equal((await (await render(multiPartMusicxml)).json()).price_usd, '0.25');
+    assert.equal(validation.price_usd, '0.10');
+    assert.equal((await (await render(musicxml)).json()).price_usd, '0.25');
+    assert.equal((await (await render(multiPartMusicxml)).json()).price_usd, '0.50');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
@@ -247,6 +253,7 @@ test('render rejects requests once the pending backlog is full', async () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        'Payment-Signature': 'test-payment',
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       body: JSON.stringify({ musicxml, formats: ['pdf'] }),
