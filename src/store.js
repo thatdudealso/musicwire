@@ -106,7 +106,9 @@ export class JobStore {
     return {
       claimed: false,
       authorization: this.db
-        .prepare('SELECT endpoint,idempotency_key FROM payment_authorizations WHERE fingerprint = ?')
+        .prepare(
+          'SELECT endpoint,idempotency_key FROM payment_authorizations WHERE fingerprint = ?',
+        )
         .get(fingerprint),
     };
   }

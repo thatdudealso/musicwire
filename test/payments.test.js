@@ -320,10 +320,7 @@ test('a signed authorization cannot create distinct render outcomes', async () =
     const bodies = await Promise.all(requests.map((response) => response.json()));
     const accepted = requests.findIndex((response) => response.status === 202);
     const rejected = requests.findIndex((response) => response.status === 409);
-    assert.deepEqual(
-      requests.map((response) => response.status).sort(),
-      [202, 409],
-    );
+    assert.deepEqual(requests.map((response) => response.status).sort(), [202, 409]);
     assert.equal(bodies[rejected].error.code, 'payment_authorization_reused');
     const job = await waitForJob(base, bodies[accepted].job_id);
     assert.equal(job.payment.status, 'settled');
@@ -347,14 +344,14 @@ test('a signed authorization cannot create distinct validation outcomes', async 
         },
         body: JSON.stringify({ musicxml }),
       });
-    const responses = await Promise.all([validate('first-validation'), validate('second-validation')]);
+    const responses = await Promise.all([
+      validate('first-validation'),
+      validate('second-validation'),
+    ]);
     const bodies = await Promise.all(responses.map((response) => response.json()));
     const accepted = responses.findIndex((response) => response.status === 200);
     const rejected = responses.findIndex((response) => response.status === 409);
-    assert.deepEqual(
-      responses.map((response) => response.status).sort(),
-      [200, 409],
-    );
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409]);
     assert.equal(bodies[rejected].error.code, 'payment_authorization_reused');
     assert.equal(bodies[accepted].payment.status, 'settled');
     assert.equal(events.filter((event) => event === 'settle').length, 1);

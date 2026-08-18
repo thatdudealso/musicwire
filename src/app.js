@@ -106,7 +106,15 @@ export function createApp(overrides = {}) {
         outputSchema: paymentOutputSchema('validate'),
       });
       if (!authorization.authorized) return { challenge: authorization.challenge };
-      if (!claimPaymentAuthorization(store, payments, authorization.payment, 'validate', idempotencyKey))
+      if (
+        !claimPaymentAuthorization(
+          store,
+          payments,
+          authorization.payment,
+          'validate',
+          idempotencyKey,
+        )
+      )
         return paymentAuthorizationReused();
       const validationBody = (validation, payment, extra = {}) => ({
         ...validation,
@@ -420,7 +428,12 @@ async function processJob(id, services) {
   services.store.update(id, {
     payment_json: JSON.stringify(settlement.payment),
     artifacts_json: JSON.stringify(
-      refreshReceiptArtifact(services.artifactStore, services.payments, artifacts, settlement.payment),
+      refreshReceiptArtifact(
+        services.artifactStore,
+        services.payments,
+        artifacts,
+        settlement.payment,
+      ),
     ),
   });
 }

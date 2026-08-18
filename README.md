@@ -159,7 +159,7 @@ The end-to-end test skips cleanly where MuseScore is absent. It renders a real s
 
 ## Container deployment
 
-The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image builds and the container starts locally; a full published-port container rendering smoke test remains a deploy-phase follow-up because Docker Desktop reset loopback connections during the initial probe. The native MuseScore E2E remains the pipeline proof for this phase.
+The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image sets `NODE_ENV=production`, so the container requires x402 payment configuration at startup: `MUSICWIRE_PAYMENT_MODE=x402` plus `CDP_WALLET_SECRET` and the other CDP credentials. `compose.yaml` does not yet forward those variables, so wiring payment environment into the container is part of the deploy-phase follow-up, alongside the full published-port container rendering smoke test that was deferred because Docker Desktop reset loopback connections during the initial probe. The native MuseScore E2E remains the pipeline proof for this phase.
 
 ```sh
 docker build -t musicwire .

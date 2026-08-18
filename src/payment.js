@@ -402,7 +402,9 @@ async function findAuthorizationUsedTransaction(rpc, asset, authorization) {
   const validAfter = Number(authorization.validAfter);
   const validBefore = Number(authorization.validBefore);
   const blockTimestamp = async (number) =>
-    Number((await rpc.request('eth_getBlockByNumber', [`0x${number.toString(16)}`, false])).timestamp);
+    Number(
+      (await rpc.request('eth_getBlockByNumber', [`0x${number.toString(16)}`, false])).timestamp,
+    );
   const firstBlockAtOrAfter = async (timestamp) => {
     let low = 0;
     let high = latestNumber;
