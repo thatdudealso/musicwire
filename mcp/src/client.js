@@ -42,12 +42,12 @@ export function createMusicwireClient({
         if (value !== undefined) query.set(name, String(value));
       }
       const suffix = query.size ? `?${query}` : '';
-      return request({ method: 'GET', path: `/v1/compose-guide${suffix}` });
+      return request({ method: 'GET', path: `v1/compose-guide${suffix}` });
     },
     validate({ musicxml, idempotency_key: idempotencyKey }) {
       return request({
         method: 'POST',
-        path: '/v1/validate',
+        path: 'v1/validate',
         body: { musicxml },
         idempotencyKey,
       });
@@ -60,7 +60,7 @@ export function createMusicwireClient({
     }) {
       return request({
         method: 'POST',
-        path: '/v1/render',
+        path: 'v1/render',
         body: {
           musicxml,
           formats,
@@ -70,7 +70,7 @@ export function createMusicwireClient({
       });
     },
     getJob(jobId) {
-      return request({ method: 'GET', path: `/v1/jobs/${encodeURIComponent(jobId)}` });
+      return request({ method: 'GET', path: `v1/jobs/${encodeURIComponent(jobId)}` });
     },
   };
 }
@@ -79,9 +79,20 @@ export function createPaidFetch({ apiBaseUrl, paymentMode, privateKey, fetchImpl
   if (paymentMode === 'stub') return createStubPaymentFetch({ apiBaseUrl, fetchImpl });
   if (paymentMode !== 'x402')
     throw new Error('MUSICWIRE_MCP_PAYMENT_MODE must be either "x402" or "stub".');
+  let payingFetch;
+  return async (input, init) => {
+    if (payingFetch) return payingFetch(input, init);
+    const response = await fetchImpl(input, init);
+    if (response.status !== 402) return response;
+    payingFetch = createSignedPaymentFetch({ privateKey, fetchImpl });
+    return payingFetch(input, init);
+  };
+}
+
+function createSignedPaymentFetch({ privateKey, fetchImpl }) {
   if (!privateKey)
     throw new Error(
-      'MUSICWIRE_X402_PRIVATE_KEY (or X402_PRIVATE_KEY) is required for x402 payments.',
+      'Musicwire requires payment for this call, and no buyer key is configured. Set MUSICWIRE_X402_PRIVATE_KEY (or X402_PRIVATE_KEY) to a funded Base Sepolia test buyer private key.',
     );
   const signer = privateKeyToAccount(privateKey);
   const client = new x402Client().register(baseSepoliaNetwork, new ExactEvmScheme(signer));
@@ -113,5 +124,5 @@ function normalizeApiBaseUrl(value) {
 }
 
 function isLoopbackUrl(url) {
-  return ['127.0.0.1', '::1', 'localhost'].includes(url.hostname);
+  return ['127.0.0.1', '::1', '[::1]', 'localhost'].includes(url.hostname);
 }

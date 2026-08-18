@@ -125,12 +125,14 @@ function createMcpClient({ env }) {
           const request = pending.get(id);
           if (!request) return;
           pending.delete(id);
-          const result = await exited;
-          reject(
-            new Error(
-              `MCP request ${method} timed out (server exit ${result.code ?? result.signal}): ${stderr}`,
-            ),
-          );
+          const result = await Promise.race([
+            exited,
+            new Promise((resolveGrace) => setTimeout(resolveGrace, 100, null).unref()),
+          ]);
+          const serverState = result
+            ? `server exit ${result.code ?? result.signal}`
+            : 'server still running';
+          reject(new Error(`MCP request ${method} timed out (${serverState}): ${stderr}`));
         }, 2_000).unref();
       });
     },

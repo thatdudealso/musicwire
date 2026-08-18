@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "pretest": "npm --prefix mcp install --no-audit --no-fund",
     "test": "node --test",
     "test:e2e": "MUSICWIRE_E2E=1 node --test test/e2e.test.js",
     "test:x402-e2e": "MUSICWIRE_X402_E2E=1 node --test test/x402-e2e.test.js"

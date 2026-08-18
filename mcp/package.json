@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "MCP server for paid Musicwire MusicXML validation and rendering.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thatdudealso/musicwire.git",
+    "directory": "mcp"
+  },
   "bin": {
     "musicwire-mcp": "./src/index.js"
   },

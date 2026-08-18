@@ -27,6 +27,8 @@ The package requires Node.js 22.5 or newer.
 | `MUSICWIRE_X402_PRIVATE_KEY` | For paid x402 calls | Throwaway Base Sepolia buyer private key. `X402_PRIVATE_KEY` is also accepted for compatibility. |
 | `MUSICWIRE_MCP_PAYMENT_MODE` | No                  | `x402` (default), or the test-only `stub` mode for a loopback API.                               |
 
+The server starts and serves the free tools without a key. The key is read only when a paid call actually receives `402 Payment Required`; if it is missing at that point, the tool call fails with an error telling you to set it.
+
 `stub` mode retries challenges with a non-secret test authorization and is rejected unless `MUSICWIRE_API_URL` points at `localhost`, `127.0.0.1`, or `::1`. It is for Musicwire's explicit local stub profile only. Never use it for a remote API.
 
 Keep the buyer wallet funded only with Base Sepolia test USDC. Musicwire has no mainnet configuration in this package. Treat the private key as a secret: inject it through your client environment, do not put it in a repository or client configuration file, and rotate it if exposed.
