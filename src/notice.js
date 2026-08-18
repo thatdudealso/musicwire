@@ -72,8 +72,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 `;
 
 export function noticeText(soundfontLicensePath = '') {
-  const license = soundfontLicensePath && fs.existsSync(soundfontLicensePath)
-    ? fs.readFileSync(soundfontLicensePath, 'utf8')
-    : embeddedSoundfontLicense;
+  const license =
+    soundfontLicensePath && fs.existsSync(soundfontLicensePath)
+      ? fs.readFileSync(soundfontLicensePath, 'utf8')
+      : embeddedSoundfontLicense;
   return `${attribution}\n${license.trimEnd()}\n`;
 }

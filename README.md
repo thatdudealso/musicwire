@@ -61,13 +61,13 @@ Artifact URLs are signed, expire with the job retention window, and return the n
 
 ## API contract
 
-| Endpoint | Price | Result |
-| --- | ---: | --- |
-| `GET /v1/compose-guide` | Free | Static, versioned BYO-LLM authoring guide. |
-| `POST /v1/validate` | $0.05 | `{valid, errors:[{line, measure, message, fix_hint}]}`. |
-| `POST /v1/render` | $0.10 solo, $0.25 multi-part | Returns `job_id` and `estimated_seconds`. |
-| `GET /v1/jobs/{id}` | Free | Status, QC outcome, hashes, and signed artifact URLs. |
-| `GET /health`, `GET /manifest` | Free | Renderer readiness and machine-readable service contract. |
+| Endpoint                       |                        Price | Result                                                    |
+| ------------------------------ | ---------------------------: | --------------------------------------------------------- |
+| `GET /v1/compose-guide`        |                         Free | Static, versioned BYO-LLM authoring guide.                |
+| `POST /v1/validate`            |                        $0.05 | `{valid, errors:[{line, measure, message, fix_hint}]}`.   |
+| `POST /v1/render`              | $0.10 solo, $0.25 multi-part | Returns `job_id` and `estimated_seconds`.                 |
+| `GET /v1/jobs/{id}`            |                         Free | Status, QC outcome, hashes, and signed artifact URLs.     |
+| `GET /health`, `GET /manifest` |                         Free | Renderer readiness and machine-readable service contract. |
 
 The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mscz`, `pdf`, `svg`, `png`, `midi`, `mp3`, and `wav`.
 

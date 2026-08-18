@@ -4,6 +4,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 - Runtime architecture and API contract are documented in `README.md`; configuration defaults are authoritative in `src/config.js`.
 - Run `npm test` for unit coverage. Set `MUSICWIRE_E2E=1` and `MSCORE_BIN` to run the real native MuseScore end-to-end test in `test/e2e.test.js`.
+- Run `npm run lint` (ESLint flat config) and `npm run format:check` (Prettier) before pushing; `npm run format` applies formatting.
 - The Docker image is pinned to MuseScore Studio 4.7.2 and builds locally. Published-port container E2E is a deploy-phase follow-up because Docker Desktop reset loopback connections during the initial probe.
 
 ## Maintaining this file

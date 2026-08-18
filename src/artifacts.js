@@ -22,7 +22,10 @@ export class ArtifactStore {
   }
 
   token(jobId, artifact, expires) {
-    return crypto.createHmac('sha256', this.signingSecret).update(`${jobId}:${artifact.storageKey}:${expires}`).digest('base64url');
+    return crypto
+      .createHmac('sha256', this.signingSecret)
+      .update(`${jobId}:${artifact.storageKey}:${expires}`)
+      .digest('base64url');
   }
 
   isValidToken(jobId, artifact, expires, token) {

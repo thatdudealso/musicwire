@@ -34,6 +34,9 @@ export function composeGuide(query) {
       { label: 'MusicXML 4.0 partwise', url: 'https://www.w3.org/2021/06/musicxml40/' },
       { label: 'MuseScore import and export', url: 'https://musescore.org/en/faq' },
     ],
-    next_steps: ['POST the MusicXML string or raw XML bytes to /v1/validate.', 'POST it to /v1/render with the desired formats after validation. MusicXML and a NOTICE are always retained with the job.'],
+    next_steps: [
+      'POST the MusicXML string or raw XML bytes to /v1/validate.',
+      'POST it to /v1/render with the desired formats after validation. MusicXML and a NOTICE are always retained with the job.',
+    ],
   };
 }

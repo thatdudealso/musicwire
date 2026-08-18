@@ -2,13 +2,13 @@ services:
   musicwire:
     build: .
     ports:
-      - "8787:8787"
+      - '8787:8787'
     environment:
       ARTIFACT_SIGNING_SECRET: ${ARTIFACT_SIGNING_SECRET:?set_a_long_random_secret}
-      ARTIFACT_RETENTION_DAYS: "30"
-      MAX_RENDER_SECONDS: "60"
-      MAX_RENDER_CPU_SECONDS: "50"
-      MAX_RENDER_RSS_KB: "1024000"
+      ARTIFACT_RETENTION_DAYS: '30'
+      MAX_RENDER_SECONDS: '60'
+      MAX_RENDER_CPU_SECONDS: '50'
+      MAX_RENDER_RSS_KB: '1024000'
     volumes:
       - musicwire-data:/var/lib/musicwire/data
     mem_limit: 1g

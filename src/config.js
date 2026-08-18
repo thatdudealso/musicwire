@@ -11,10 +11,16 @@ const decimal = (name, fallback) => {
 };
 
 const developmentArtifactSigningSecret = 'development-only-change-before-deploy';
-const artifactSigningSecret = process.env.ARTIFACT_SIGNING_SECRET ?? developmentArtifactSigningSecret;
+const artifactSigningSecret =
+  process.env.ARTIFACT_SIGNING_SECRET ?? developmentArtifactSigningSecret;
 
-if (process.env.NODE_ENV === 'production' && (!artifactSigningSecret.trim() || artifactSigningSecret === developmentArtifactSigningSecret)) {
-  throw new Error('ARTIFACT_SIGNING_SECRET must be explicitly set to a non-development value in production.');
+if (
+  process.env.NODE_ENV === 'production' &&
+  (!artifactSigningSecret.trim() || artifactSigningSecret === developmentArtifactSigningSecret)
+) {
+  throw new Error(
+    'ARTIFACT_SIGNING_SECRET must be explicitly set to a non-development value in production.',
+  );
 }
 
 export const config = {

@@ -35,15 +35,36 @@ export class JobStore {
   create(job, idempotencyKey) {
     const existing = this.getByIdempotencyKey(idempotencyKey);
     if (existing) return existing;
-    this.db.prepare(`INSERT INTO jobs (id,state,input_xml,formats_json,constraints_json,facts_json,price_usd,payment_json,created_at,updated_at,expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(job.id, 'queued', job.inputXml, JSON.stringify(job.formats), JSON.stringify(job.constraints), JSON.stringify(job.facts), job.priceUsd, JSON.stringify(job.payment), job.createdAt, job.createdAt, job.expiresAt);
-    if (idempotencyKey) this.db.prepare('INSERT INTO idempotency_keys (key, job_id, created_at) VALUES (?,?,?)').run(idempotencyKey, job.id, job.createdAt);
+    this.db
+      .prepare(
+        `INSERT INTO jobs (id,state,input_xml,formats_json,constraints_json,facts_json,price_usd,payment_json,created_at,updated_at,expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        job.id,
+        'queued',
+        job.inputXml,
+        JSON.stringify(job.formats),
+        JSON.stringify(job.constraints),
+        JSON.stringify(job.facts),
+        job.priceUsd,
+        JSON.stringify(job.payment),
+        job.createdAt,
+        job.createdAt,
+        job.expiresAt,
+      );
+    if (idempotencyKey)
+      this.db
+        .prepare('INSERT INTO idempotency_keys (key, job_id, created_at) VALUES (?,?,?)')
+        .run(idempotencyKey, job.id, job.createdAt);
     return this.get(job.id);
   }
 
   getByIdempotencyKey(idempotencyKey) {
     if (!idempotencyKey) return null;
-    const existing = this.db.prepare('SELECT job_id FROM idempotency_keys WHERE key = ?').get(idempotencyKey);
+    const existing = this.db
+      .prepare('SELECT job_id FROM idempotency_keys WHERE key = ?')
+      .get(idempotencyKey);
     return existing ? this.get(existing.job_id) : null;
   }
 
@@ -62,12 +83,29 @@ export class JobStore {
 
   recoverInterruptedJobs() {
     const rows = this.db.prepare("SELECT * FROM jobs WHERE state IN ('queued', 'running')").all();
-    const update = this.db.prepare('UPDATE jobs SET state = ?, qc_json = ?, error_json = ?, payment_json = ?, updated_at = ? WHERE id = ?');
+    const update = this.db.prepare(
+      'UPDATE jobs SET state = ?, qc_json = ?, error_json = ?, payment_json = ?, updated_at = ? WHERE id = ?',
+    );
     const now = new Date().toISOString();
     for (const row of rows) {
-      const payment = { ...JSON.parse(row.payment_json), status: 'not_charged', reason: 'render_interrupted', captured_at: null };
-      const error = { code: 'render_interrupted', message: 'The service restarted before rendering completed.' };
-      update.run('failed_not_charged', JSON.stringify({ status: 'failed', ...error }), JSON.stringify(error), JSON.stringify(payment), now, row.id);
+      const payment = {
+        ...JSON.parse(row.payment_json),
+        status: 'not_charged',
+        reason: 'render_interrupted',
+        captured_at: null,
+      };
+      const error = {
+        code: 'render_interrupted',
+        message: 'The service restarted before rendering completed.',
+      };
+      update.run(
+        'failed_not_charged',
+        JSON.stringify({ status: 'failed', ...error }),
+        JSON.stringify(error),
+        JSON.stringify(payment),
+        now,
+        row.id,
+      );
     }
     return rows.length;
   }
