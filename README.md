@@ -1,6 +1,6 @@
 # Musicwire
 
-Musicwire is a deterministic MusicXML validation, MuseScore rendering, automated QC, and attribution API for agents. It does not compose music or invoke a server-side LLM.
+Musicwire is a deterministic MusicXML validation, MuseScore rendering, automated QC, and attribution API for agents. It does not compose music or invoke a server-side LLM. MCP clients such as Claude Code and Cursor can use the API through the `musicwire-mcp` stdio server in `mcp/`; see `mcp/README.md` for install, configuration, and payment behavior.
 
 ## Agent quickstart
 
