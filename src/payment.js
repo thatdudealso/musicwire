@@ -1,4 +1,5 @@
 import { CdpClient } from '@coinbase/cdp-sdk';
+import { createHash } from 'node:crypto';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import {
   decodePaymentSignatureHeader,
@@ -96,8 +97,13 @@ export class PaymentService {
     return this.gateway.cancel(payment, reason);
   }
 
+  authorizationFingerprint(payment) {
+    return payment.authorization_fingerprint ?? null;
+  }
+
   publicPayment(payment) {
     const safe = { ...payment };
+    delete safe.authorization_fingerprint;
     delete safe.payment_payload;
     delete safe.payment_requirements;
     delete safe.settlement_response;
@@ -244,6 +250,7 @@ export class CdpX402Gateway {
         requirements: matchedRequirements,
         verification,
         priceUsd,
+        authorizationFingerprint: createHash('sha256').update(paymentSignature).digest('hex'),
       }),
     };
   }
@@ -501,7 +508,13 @@ function challenge(paymentRequired, priceUsd, outputSchema, error) {
   };
 }
 
-function pendingPayment({ paymentPayload, requirements, verification, priceUsd }) {
+function pendingPayment({
+  paymentPayload,
+  requirements,
+  verification,
+  priceUsd,
+  authorizationFingerprint,
+}) {
   return {
     provider: 'cdp_x402',
     status: 'verified_pending_qc',
@@ -512,6 +525,7 @@ function pendingPayment({ paymentPayload, requirements, verification, priceUsd }
     pay_to: requirements.payTo,
     payer: verification.payer ?? null,
     verified_at: new Date().toISOString(),
+    authorization_fingerprint: authorizationFingerprint,
     payment_payload: paymentPayload,
     payment_requirements: requirements,
   };

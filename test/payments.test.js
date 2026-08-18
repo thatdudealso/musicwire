@@ -122,6 +122,7 @@ class RecordingGateway {
         network: requirements.network,
         pay_to: requirements.payTo,
         payer: '0x2222222222222222222222222222222222222222',
+        authorization_fingerprint: request.get('payment-signature'),
         payment_payload: { test: true },
         payment_requirements: requirements,
       },
@@ -249,6 +250,84 @@ test('successful QC settles once, persists a receipt, and idempotent retries do 
     const receipt = await (await fetch(`${base}${receiptArtifact.url}`)).json();
     assert.equal(receipt.payment.tx_hash, job.receipt.tx_hash);
     assert.equal(receipt.payment.network, job.receipt.network);
+  } finally {
+    await close();
+  }
+});
+
+test('a signed authorization cannot create distinct render outcomes', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const requests = await Promise.all([
+      renderRequest(base, 'one-authorization', 'first-outcome'),
+      renderRequest(base, 'one-authorization', 'second-outcome'),
+    ]);
+    const bodies = await Promise.all(requests.map((response) => response.json()));
+    const accepted = requests.findIndex((response) => response.status === 202);
+    const rejected = requests.findIndex((response) => response.status === 409);
+    assert.deepEqual(
+      requests.map((response) => response.status).sort(),
+      [202, 409],
+    );
+    assert.equal(bodies[rejected].error.code, 'payment_authorization_reused');
+    const job = await waitForJob(base, bodies[accepted].job_id);
+    assert.equal(job.payment.status, 'settled');
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('a signed authorization cannot create distinct validation outcomes', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const validate = (idempotencyKey) =>
+      fetch(`${base}/v1/validate`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Payment-Signature': 'one-validation-authorization',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({ musicxml }),
+      });
+    const responses = await Promise.all([validate('first-validation'), validate('second-validation')]);
+    const bodies = await Promise.all(responses.map((response) => response.json()));
+    const accepted = responses.findIndex((response) => response.status === 200);
+    const rejected = responses.findIndex((response) => response.status === 409);
+    assert.deepEqual(
+      responses.map((response) => response.status).sort(),
+      [200, 409],
+    );
+    assert.equal(bodies[rejected].error.code, 'payment_authorization_reused');
+    assert.equal(bodies[accepted].payment.status, 'settled');
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('payment quotes follow the live price configuration', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    validatePriceUsd: '0.11',
+    renderSoloPriceUsd: '0.26',
+    renderMultiPriceUsd: '0.51',
+  });
+  try {
+    const manifest = await (await fetch(`${base}/manifest`)).json();
+    assert.equal(manifest.endpoints.validate.price_usd, '0.11');
+    assert.equal(manifest.endpoints.render.price_usd.solo, '0.26');
+    assert.equal(manifest.endpoints.render.price_usd.multi_instrument, '0.51');
+    const quote = await renderRequest(base);
+    assert.equal(quote.status, 402);
+    assert.equal(
+      decodePaymentRequiredHeader(quote.headers.get('payment-required')).accepts[0].amount,
+      '260000',
+    );
   } finally {
     await close();
   }

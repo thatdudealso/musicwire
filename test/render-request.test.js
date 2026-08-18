@@ -225,6 +225,43 @@ test('production startup requires a non-development artifact signing secret', ()
   assert.match(result.stderr.toString(), /ARTIFACT_SIGNING_SECRET/);
 });
 
+test('production startup requires CDP credentials for x402 payments', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        CDP_WALLET_SECRET: '',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /CDP_WALLET_SECRET/);
+});
+
+test('production startup refuses stub payments', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'stub',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /MUSICWIRE_PAYMENT_MODE=x402/);
+});
+
 test('render rejects requests once the pending backlog is full', async () => {
   let releaseRender;
   const renderStarted = new Promise((resolve) => {

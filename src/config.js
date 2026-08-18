@@ -67,4 +67,18 @@ if (!['stub', 'x402'].includes(config.paymentMode))
 if (process.env.NODE_ENV === 'production' && config.paymentMode !== 'x402')
   throw new Error('MUSICWIRE_PAYMENT_MODE=x402 is required in production.');
 
+if (process.env.NODE_ENV === 'production' && !process.env.CDP_WALLET_SECRET?.trim())
+  throw new Error('CDP_WALLET_SECRET is required for production x402 payments.');
+
+if (process.env.NODE_ENV === 'production' && !isHttpsUrl(config.x402RpcUrl))
+  throw new Error('X402_RPC_URL must be an HTTPS URL in production.');
+
 export const supportedFormats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'];
+
+function isHttpsUrl(value) {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}

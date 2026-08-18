@@ -106,6 +106,8 @@ export function createApp(overrides = {}) {
         outputSchema: paymentOutputSchema('validate'),
       });
       if (!authorization.authorized) return { challenge: authorization.challenge };
+      if (!claimPaymentAuthorization(store, payments, authorization.payment, 'validate', idempotencyKey))
+        return paymentAuthorizationReused();
       const validationBody = (validation, payment, extra = {}) => ({
         ...validation,
         price_usd: config.validatePriceUsd,
@@ -267,6 +269,11 @@ export function createApp(overrides = {}) {
         return sendPaymentChallenge(response, authorization.challenge);
       }
       pendingPayment = authorization.payment;
+      if (!claimPaymentAuthorization(store, payments, pendingPayment, 'render', idempotencyKey)) {
+        queue.release();
+        reservationReleased = true;
+        return response.status(409).json(paymentAuthorizationReused().body);
+      }
       const now = new Date();
       const job = {
         id: crypto.randomUUID(),
@@ -526,6 +533,28 @@ function publicJob(job, artifactStore, payments) {
 function sendPaymentChallenge(response, challenge) {
   response.set(challenge.headers);
   return response.status(402).json(challenge.body);
+}
+
+function claimPaymentAuthorization(store, payments, payment, endpoint, idempotencyKey) {
+  return store.claimPaymentAuthorization({
+    fingerprint: payments.authorizationFingerprint(payment),
+    endpoint,
+    idempotencyKey,
+    createdAt: new Date().toISOString(),
+  }).claimed;
+}
+
+function paymentAuthorizationReused() {
+  return {
+    httpStatus: 409,
+    body: {
+      error: {
+        code: 'payment_authorization_reused',
+        message: 'This payment authorization is already bound to another request.',
+      },
+    },
+    payment: { status: 'not_charged' },
+  };
 }
 
 function sendValidateResult(response, payments, result) {

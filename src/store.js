@@ -46,6 +46,12 @@ export class JobStore {
         payment_json TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS payment_authorizations (
+        fingerprint TEXT PRIMARY KEY,
+        endpoint TEXT NOT NULL,
+        idempotency_key TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
     this.expireIdempotencyKeys();
   }
@@ -85,6 +91,24 @@ export class JobStore {
       .prepare('SELECT job_id FROM idempotency_keys WHERE key = ?')
       .get(idempotencyKey);
     return existing ? this.get(existing.job_id) : null;
+  }
+
+  claimPaymentAuthorization({ fingerprint, endpoint, idempotencyKey, createdAt }) {
+    if (!fingerprint) return { claimed: true };
+    this.expireIdempotencyKeys();
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO payment_authorizations
+         (fingerprint,endpoint,idempotency_key,created_at) VALUES (?,?,?,?)`,
+      )
+      .run(fingerprint, endpoint, idempotencyKey ?? null, createdAt);
+    if (result.changes === 1) return { claimed: true };
+    return {
+      claimed: false,
+      authorization: this.db
+        .prepare('SELECT endpoint,idempotency_key FROM payment_authorizations WHERE fingerprint = ?')
+        .get(fingerprint),
+    };
   }
 
   saveValidateResult({ id, idempotencyKey, httpStatus, body, payment, createdAt }) {
@@ -222,6 +246,7 @@ export class JobStore {
   expireIdempotencyKeys() {
     const cutoff = new Date(Date.now() - this.idempotencyWindowMs).toISOString();
     this.db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?').run(cutoff);
+    this.db.prepare('DELETE FROM payment_authorizations WHERE created_at < ?').run(cutoff);
     this.db
       .prepare(
         `DELETE FROM validate_results
