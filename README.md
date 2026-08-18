@@ -159,12 +159,29 @@ The end-to-end test skips cleanly where MuseScore is absent. It renders a real s
 
 ## Container deployment
 
-The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image sets `NODE_ENV=production`, so the container requires x402 payment configuration at startup: `MUSICWIRE_PAYMENT_MODE=x402` plus `CDP_WALLET_SECRET` and the other CDP credentials. `compose.yaml` does not yet forward those variables, so wiring payment environment into the container is part of the deploy-phase follow-up, alongside the full published-port container rendering smoke test that was deferred because Docker Desktop reset loopback connections during the initial probe. The native MuseScore E2E remains the pipeline proof for this phase.
+The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image sets `NODE_ENV=production`; the startup guards in `src/config.js` are authoritative and refuse a production boot without `MUSICWIRE_PAYMENT_MODE=x402` and `CDP_WALLET_SECRET`.
+
+`compose.yaml` defines two services:
+
+- `musicwire` (the default for `docker compose up`) is a clearly labeled non-production local test service. It overrides `NODE_ENV=test` and pins `MUSICWIRE_PAYMENT_MODE=stub`, so it needs no CDP credentials and can never reach the facilitator or settle on-chain.
+- `musicwire-production` (compose profile `production`) keeps the image's `NODE_ENV=production`, sets `MUSICWIRE_PAYMENT_MODE=x402`, and passes `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`, and `MUSICWIRE_PUBLIC_BASE_URL` through from the host environment (or an uncommitted `env_file` you add locally). The startup guards refuse a production boot without `CDP_WALLET_SECRET`, so a true production run starts only when the operator supplies real credentials. No secret is committed to the repository and production never defaults to stub.
 
 ```sh
 docker build -t musicwire .
+
+# Non-production local test service (stub payments, no credentials):
 ARTIFACT_SIGNING_SECRET='replace-with-a-long-random-secret' docker compose up
+
+# Production service; source real CDP credentials first, never commit them:
+set -a
+. "$HOME/.config/ai-keys.env"
+set +a
+ARTIFACT_SIGNING_SECRET='replace-with-a-long-random-secret' \
+MUSICWIRE_PUBLIC_BASE_URL='https://musicwire.example' \
+docker compose up musicwire-production
 ```
+
+The full published-port container rendering smoke test remains a deploy-phase follow-up because Docker Desktop reset loopback connections during the initial probe; the native MuseScore E2E remains the pipeline proof for this phase.
 
 ## Rights, attribution, and acceptable use
 
