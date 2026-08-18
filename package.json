@@ -1,0 +1,30 @@
+{
+  "name": "musicwire",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic MusicXML validation, rendering, and automated QC API.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test",
+    "test:e2e": "MUSICWIRE_E2E=1 node --test test/e2e.test.js"
+  },
+  "dependencies": {
+    "express": "5.1.0",
+    "fast-xml-parser": "5.11.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6"
+  }
+}
