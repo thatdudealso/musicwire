@@ -106,62 +106,61 @@ export function createApp(overrides = {}) {
         outputSchema: paymentOutputSchema('validate'),
       });
       if (!authorization.authorized) return { challenge: authorization.challenge };
-      const persist = (httpStatus, body, payment) =>
-        idempotencyKey || payment.status === 'settlement_pending'
-          ? store.saveValidateResult({
-              id: crypto.randomUUID(),
-              idempotencyKey: idempotencyKey ?? null,
-              httpStatus,
-              body,
-              payment,
-              createdAt: new Date().toISOString(),
-            })
-          : { id: null, httpStatus, body, payment };
+      const validationBody = (validation, payment, extra = {}) => ({
+        ...validation,
+        price_usd: config.validatePriceUsd,
+        ...extra,
+        payment: payments.publicPayment(payment),
+        receipt: payments.receipt(payment),
+      });
       const validation = validateMusicXml(input.musicxml);
       if (!validation.valid) {
         const payment = await payments.cancelNotCharged(
           authorization.payment,
           failureCodes.validation,
         );
-        return persist(
-          422,
-          {
-            ...validation,
-            price_usd: config.validatePriceUsd,
-            status: 'failed_not_charged',
-            payment: payments.publicPayment(payment),
-            receipt: payments.receipt(payment),
-          },
+        const body = validationBody(validation, payment, { status: 'failed_not_charged' });
+        if (!idempotencyKey) return { id: null, httpStatus: 422, body, payment };
+        return store.saveValidateResult({
+          id: crypto.randomUUID(),
+          idempotencyKey,
+          httpStatus: 422,
+          body,
           payment,
-        );
+          createdAt: new Date().toISOString(),
+        });
       }
-      const settlement = await payments.settleAfterQc(authorization.payment);
-      if (settlement.outcome === 'failed')
-        return {
-          id: null,
+      const intent = payments.settlementIntent(authorization.payment);
+      const record = store.saveValidateResult({
+        id: crypto.randomUUID(),
+        idempotencyKey: idempotencyKey ?? null,
+        httpStatus: 200,
+        body: validationBody(validation, intent),
+        payment: intent,
+        createdAt: new Date().toISOString(),
+      });
+      const settlement = await payments.settleAfterQc(intent);
+      if (settlement.outcome === 'failed') {
+        return store.updateValidateResult(record.id, {
           httpStatus: 502,
           body: {
             error: {
               code: 'payment_settlement_failed',
               message:
-                'The facilitator refused settlement after validation passed. No payment was charged; retry with a fresh authorization.',
+                'Settlement was definitively rejected after validation passed. No payment was charged.',
             },
           },
           payment: settlement.payment,
-        };
-      const result = persist(
-        200,
-        {
-          ...validation,
-          price_usd: config.validatePriceUsd,
-          payment: payments.publicPayment(settlement.payment),
-          receipt: payments.receipt(settlement.payment),
-        },
-        settlement.payment,
-      );
-      if (settlement.outcome === 'pending' && result.id)
-        reconciler.schedule({ kind: 'validate', id: result.id });
-      return result;
+        });
+      }
+      if (settlement.outcome === 'pending') {
+        reconciler.schedule({ kind: 'validate', id: record.id });
+        return record;
+      }
+      return store.updateValidateResult(record.id, {
+        body: validationBody(validation, settlement.payment),
+        payment: settlement.payment,
+      });
     };
     let pending = idempotencyKey ? inflightValidations.get(idempotencyKey) : null;
     if (!pending) {
@@ -193,8 +192,8 @@ export function createApp(overrides = {}) {
         status: 'failed_not_charged',
         error: {
           code: failureCodes.validation,
-          message: 'MusicXML validation failed.',
-          errors: validation.errors,
+          message:
+            'MusicXML validation failed. Use paid POST /v1/validate for line-level diagnostics.',
         },
         payment: { status: 'not_charged' },
       });
@@ -379,10 +378,10 @@ async function processJob(id, services) {
     });
     return;
   }
-  const settlement = await services.payments.settleAfterQc(job.payment);
+  const intent = services.payments.settlementIntent(job.payment);
   const receipt = {
     ...result.receipt,
-    payment: services.payments.receipt(settlement.payment),
+    payment: services.payments.receipt(intent),
   };
   const artifacts = [
     ...result.artifacts,
@@ -404,23 +403,32 @@ async function processJob(id, services) {
       ],
     }),
     artifacts_json: JSON.stringify(artifacts),
-    payment_json: JSON.stringify(settlement.payment),
+    payment_json: JSON.stringify(intent),
   });
-  if (settlement.outcome === 'pending') services.reconciler.schedule({ kind: 'job', id });
+  const settlement = await services.payments.settleAfterQc(intent);
+  if (settlement.outcome === 'pending') {
+    services.reconciler.schedule({ kind: 'job', id });
+    return;
+  }
+  services.store.update(id, {
+    payment_json: JSON.stringify(settlement.payment),
+    artifacts_json: JSON.stringify(
+      refreshReceiptArtifact(services.artifactStore, services.payments, artifacts, settlement.payment),
+    ),
+  });
+}
+
+function refreshReceiptArtifact(artifactStore, payments, artifacts, payment) {
+  return artifacts.map((artifact) => {
+    if (artifact.name !== 'receipt.json') return artifact;
+    const receipt = JSON.parse(artifactStore.read(artifact).toString('utf8'));
+    receipt.payment = payments.receipt(payment);
+    return artifactStore.put('receipt.json', Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`));
+  });
 }
 
 function createSettlementReconciler({ store, payments, artifactStore, config }) {
   const timers = new Map();
-  const refreshReceiptArtifact = (artifacts, payment) =>
-    artifacts.map((artifact) => {
-      if (artifact.name !== 'receipt.json') return artifact;
-      const receipt = JSON.parse(artifactStore.read(artifact).toString('utf8'));
-      receipt.payment = payments.receipt(payment);
-      return artifactStore.put(
-        'receipt.json',
-        Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
-      );
-    });
   const reconcileJob = async (id) => {
     const job = store.get(id);
     if (!job || job.payment.status !== 'settlement_pending') return true;
@@ -428,7 +436,9 @@ function createSettlementReconciler({ store, payments, artifactStore, config }) 
     if (settlement.outcome === 'pending') return false;
     store.update(id, {
       payment_json: JSON.stringify(settlement.payment),
-      artifacts_json: JSON.stringify(refreshReceiptArtifact(job.artifacts, settlement.payment)),
+      artifacts_json: JSON.stringify(
+        refreshReceiptArtifact(artifactStore, payments, job.artifacts, settlement.payment),
+      ),
     });
     return true;
   };

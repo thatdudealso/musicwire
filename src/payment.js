@@ -10,6 +10,9 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 
 const BASE_SEPOLIA_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYMENT_WALLET_PROVIDER = 'cdp_server_wallet';
+const AUTHORIZATION_STATE_SELECTOR = '0xe94a0102';
+const AUTHORIZATION_USED_TOPIC =
+  '0x98de503528ee59b575ef0c0a2576a82497bfc029a5685b209e9ec333479b10a5';
 
 export class PaymentConfigurationError extends Error {}
 export class PaymentVerificationError extends Error {}
@@ -50,13 +53,43 @@ export class PaymentService {
     try {
       return { outcome: 'settled', payment: await this.captureAfterQc(payment) };
     } catch (error) {
-      if (error instanceof PaymentSettlementError && error.definitive)
-        return {
-          outcome: 'failed',
-          payment: await this.cancelNotCharged(payment, 'settlement_failed'),
-        };
-      return { outcome: 'pending', payment: settlementPendingPayment(payment) };
+      if (!(error instanceof PaymentSettlementError) || !error.definitive)
+        return { outcome: 'pending', payment: settlementPendingPayment(payment) };
+      return this.#resolveRefusedReconciliation(settlementPendingPayment(payment));
     }
+  }
+
+  async #resolveRefusedReconciliation(payment) {
+    let evidence;
+    try {
+      evidence = (await this.gateway.findSettlement?.(payment)) ?? { outcome: 'unknown' };
+    } catch {
+      evidence = { outcome: 'unknown' };
+    }
+    if (evidence.outcome === 'settled') {
+      const settledAt = new Date().toISOString();
+      return {
+        outcome: 'settled',
+        payment: {
+          ...payment,
+          status: 'settled',
+          tx_hash: evidence.tx_hash,
+          network: evidence.network ?? payment.network,
+          settled_at: settledAt,
+          captured_at: settledAt,
+        },
+      };
+    }
+    if (evidence.outcome === 'not_charged')
+      return {
+        outcome: 'failed',
+        payment: await this.cancelNotCharged(payment, 'settlement_failed'),
+      };
+    return { outcome: 'pending', payment: settlementPendingPayment(payment) };
+  }
+
+  settlementIntent(payment) {
+    return settlementPendingPayment(payment);
   }
 
   async cancelNotCharged(payment, reason) {
@@ -248,6 +281,34 @@ export class CdpX402Gateway {
     return failedPayment(payment, reason);
   }
 
+  async findSettlement(payment) {
+    const authorization = payment.payment_payload?.payload?.authorization;
+    const asset = payment.payment_requirements?.asset;
+    if (
+      !isEvmAddress(authorization?.from) ||
+      !isBytes32(authorization?.nonce) ||
+      !isEvmAddress(asset)
+    )
+      return { outcome: 'unknown' };
+    const rpc = new JsonRpcClient(this.config.x402RpcUrl);
+    const state = await rpc.request('eth_call', [
+      {
+        to: asset,
+        data: `${AUTHORIZATION_STATE_SELECTOR}${padTopic(authorization.from).slice(2)}${authorization.nonce.slice(2).toLowerCase()}`,
+      },
+      'latest',
+    ]);
+    if (BigInt(state) === 0n) {
+      const latest = await rpc.request('eth_getBlockByNumber', ['latest', false]);
+      if (Number(latest.timestamp) > Number(authorization.validBefore))
+        return { outcome: 'not_charged' };
+      return { outcome: 'unknown' };
+    }
+    const txHash = await findAuthorizationUsedTransaction(rpc, asset, authorization);
+    if (txHash) return { outcome: 'settled', tx_hash: txHash, network: this.config.x402Network };
+    return { outcome: 'unknown' };
+  }
+
   async description() {
     return {
       provider: 'cdp',
@@ -292,6 +353,69 @@ export class CdpX402Gateway {
     });
     return this.serverPromise;
   }
+}
+
+class JsonRpcClient {
+  constructor(url) {
+    this.url = url;
+    this.id = 0;
+  }
+
+  async request(method, params) {
+    const response = await fetch(this.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: (this.id += 1), method, params }),
+    });
+    if (!response.ok) throw new Error(`RPC ${method} failed with HTTP ${response.status}.`);
+    const body = await response.json();
+    if (body.error) throw new Error(body.error.message ?? `RPC ${method} failed.`);
+    return body.result;
+  }
+}
+
+async function findAuthorizationUsedTransaction(rpc, asset, authorization) {
+  const latest = await rpc.request('eth_getBlockByNumber', ['latest', false]);
+  const latestNumber = Number(latest.number);
+  const latestTimestamp = Number(latest.timestamp);
+  const validAfter = Number(authorization.validAfter);
+  const validBefore = Number(authorization.validBefore);
+  const blockTimestamp = async (number) =>
+    Number((await rpc.request('eth_getBlockByNumber', [`0x${number.toString(16)}`, false])).timestamp);
+  const firstBlockAtOrAfter = async (timestamp) => {
+    let low = 0;
+    let high = latestNumber;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if ((await blockTimestamp(middle)) < timestamp) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
+  const fromBlock = await firstBlockAtOrAfter(validAfter);
+  const toBlock =
+    latestTimestamp <= validBefore ? latestNumber : await firstBlockAtOrAfter(validBefore + 1);
+  const logs = await rpc.request('eth_getLogs', [
+    {
+      address: asset,
+      fromBlock: `0x${fromBlock.toString(16)}`,
+      toBlock: `0x${toBlock.toString(16)}`,
+      topics: [
+        AUTHORIZATION_USED_TOPIC,
+        padTopic(authorization.from),
+        authorization.nonce.toLowerCase(),
+      ],
+    },
+  ]);
+  return logs[0]?.transactionHash ?? null;
+}
+
+function padTopic(address) {
+  return `0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`;
+}
+
+function isBytes32(value) {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
 export class StubPaymentGateway {

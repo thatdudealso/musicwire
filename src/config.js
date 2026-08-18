@@ -53,6 +53,7 @@ export const config = {
   x402Network: 'eip155:84532',
   x402PaymentTimeoutSeconds: integer('X402_PAYMENT_TIMEOUT_SECONDS', 300),
   x402SettlementRetrySeconds: decimal('X402_SETTLEMENT_RETRY_SECONDS', 5),
+  x402RpcUrl: process.env.X402_RPC_URL ?? 'https://sepolia.base.org',
   x402ReceiverWalletName:
     process.env.MUSICWIRE_X402_RECEIVER_WALLET_NAME ?? 'musicwire-x402-receiver',
   publicBaseUrl: process.env.MUSICWIRE_PUBLIC_BASE_URL ?? '',

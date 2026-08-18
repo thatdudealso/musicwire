@@ -118,10 +118,25 @@ export class JobStore {
     return row ? decodeValidateResult(row) : null;
   }
 
-  updateValidateResult(id, { body, payment }) {
+  updateValidateResult(id, { httpStatus, body, payment }) {
+    const fields = [];
+    const values = [];
+    if (httpStatus !== undefined) {
+      fields.push('http_status = ?');
+      values.push(httpStatus);
+    }
+    if (body !== undefined) {
+      fields.push('body_json = ?');
+      values.push(JSON.stringify(body));
+    }
+    if (payment !== undefined) {
+      fields.push('payment_json = ?');
+      values.push(JSON.stringify(payment));
+    }
+    if (fields.length === 0) return this.getValidateResultById(id);
     this.db
-      .prepare('UPDATE validate_results SET body_json = ?, payment_json = ? WHERE id = ?')
-      .run(JSON.stringify(body), JSON.stringify(payment), id);
+      .prepare(`UPDATE validate_results SET ${fields.join(', ')} WHERE id = ?`)
+      .run(...values, id);
     return this.getValidateResultById(id);
   }
 

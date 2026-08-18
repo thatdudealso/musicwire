@@ -348,12 +348,67 @@ test('a lost settle response leaves the job completed as settlement_pending unti
   }
 });
 
-test('a definitive facilitator refusal after QC keeps artifacts and records failed_not_charged', async () => {
+test('an already-used authorization resolves settled after a retry refusal', async () => {
+  const events = [];
+  const gateway = new (class extends RecordingGateway {
+    async settle() {
+      this.events.push('settle_attempt');
+      const attempts = this.events.filter((event) => event === 'settle_attempt').length;
+      throw new PaymentSettlementError(attempts === 1 ? 'response lost' : 'authorization used', {
+        definitive: attempts > 1,
+      });
+    }
+
+    async findSettlement(payment) {
+      this.events.push('find_settlement');
+      return {
+        outcome: 'settled',
+        tx_hash: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        network: payment.network,
+      };
+    }
+  })(events);
+  const { base, close } = await startServer({
+    events,
+    gateway,
+    x402SettlementRetrySeconds: 0.01,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const accepted = await renderRequest(base, 'used-authorization');
+    const job = await waitForJob(base, (await accepted.json()).job_id);
+    let reconciled = job;
+    for (let attempt = 0; attempt < 200 && reconciled.payment.status !== 'settled'; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      reconciled = await (await fetch(`${base}/v1/jobs/${job.job_id}`)).json();
+    }
+    assert.equal(reconciled.payment.status, 'settled');
+    assert.equal(
+      reconciled.receipt.tx_hash,
+      '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+    assert.equal(events.includes('cancel'), false);
+  } finally {
+    await close();
+  }
+});
+
+test('a definitively unused authorization after QC keeps artifacts and records failed_not_charged', async () => {
   const events = [];
   const gateway = new (class extends RecordingGateway {
     async settle() {
       this.events.push('settle_attempt');
       throw new PaymentSettlementError('authorization expired', { definitive: true });
+    }
+
+    async findSettlement() {
+      return { outcome: 'not_charged' };
     }
   })(events);
   const { base, close } = await startServer({
@@ -375,6 +430,27 @@ test('a definitive facilitator refusal after QC keeps artifacts and records fail
     assert.equal(job.payment.reason, 'settlement_failed');
     assert.equal(job.receipt.tx_hash, null);
     assert.ok(job.artifacts.find((artifact) => artifact.name === 'receipt.json'));
+  } finally {
+    await close();
+  }
+});
+
+test('unpaid invalid render requests expose only a coarse validation error', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const response = await fetch(`${base}/v1/render`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ musicxml: '<score-partwise><invalid>', formats: ['pdf'] }),
+    });
+    assert.equal(response.status, 422);
+    const body = await response.json();
+    assert.equal(body.error.code, 'validation_failed');
+    assert.match(body.error.message, /paid POST \/v1\/validate/);
+    assert.equal(body.error.errors, undefined);
+    assert.equal(body.errors, undefined);
+    assert.deepEqual(events, []);
   } finally {
     await close();
   }
@@ -438,6 +514,10 @@ test('validate maps a definitive settlement refusal to 502 payment_settlement_fa
     async settle() {
       throw new PaymentSettlementError('authorization expired', { definitive: true });
     }
+
+    async findSettlement() {
+      return { outcome: 'not_charged' };
+    }
   })(events);
   const { base, close } = await startServer({ events, gateway });
   try {
@@ -452,6 +532,18 @@ test('validate maps a definitive settlement refusal to 502 payment_settlement_fa
     });
     assert.equal(response.status, 502);
     assert.equal((await response.json()).error.code, 'payment_settlement_failed');
+    const replay = await fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Payment-Signature': 'paid-validation',
+        'Idempotency-Key': 'validate-refused',
+      },
+      body: JSON.stringify({ musicxml }),
+    });
+    assert.equal(replay.status, 502);
+    assert.equal((await replay.json()).error.code, 'payment_settlement_failed');
+    assert.equal(events.filter((event) => event === 'verify').length, 1);
   } finally {
     await close();
   }
@@ -525,6 +617,40 @@ test('restart recovery records interrupted jobs as failed_not_charged', async ()
     assert.equal(recovered.state, 'failed_not_charged');
     assert.equal(recovered.payment.status, 'failed_not_charged');
     assert.equal(recovered.payment.reason, 'render_interrupted');
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('restart recovery retains durable settlement intents for reconciliation', () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-settlement-recovery-'));
+  const store = new JobStore(dataDirectory);
+  const now = new Date();
+  store.create(
+    {
+      id: 'settlement-intent-job',
+      inputXml: musicxml,
+      formats: ['pdf'],
+      constraints: {},
+      facts: {},
+      priceUsd: '0.25',
+      payment: { provider: 'stub', status: 'verified_pending_qc' },
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
+    },
+    null,
+  );
+  try {
+    store.update('settlement-intent-job', {
+      state: 'completed',
+      artifacts_json: JSON.stringify([{ name: 'receipt.json' }]),
+      payment_json: JSON.stringify({ provider: 'stub', status: 'settlement_pending' }),
+    });
+    assert.equal(store.recoverInterruptedJobs(), 0);
+    const recovered = store.get('settlement-intent-job');
+    assert.equal(recovered.payment.status, 'settlement_pending');
+    assert.deepEqual(recovered.artifacts, [{ name: 'receipt.json' }]);
+    assert.deepEqual(store.listSettlementPending(), [{ kind: 'job', id: 'settlement-intent-job' }]);
   } finally {
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
