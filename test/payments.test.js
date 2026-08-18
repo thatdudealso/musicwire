@@ -27,7 +27,17 @@ test('CDP gateway decodes the standard payment-signature header before verificat
     maxTimeoutSeconds: 300,
     extra: { name: 'USDC', version: '2' },
   };
-  const payload = { x402Version: 2, accepted: requirements, payload: { signature: 'test' } };
+  const payload = {
+    x402Version: 2,
+    accepted: requirements,
+    payload: {
+      authorization: {
+        from: '0x2222222222222222222222222222222222222222',
+        nonce: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+      signature: 'test',
+    },
+  };
   const gateway = new CdpX402Gateway({
     config: {
       x402Network: 'eip155:84532',
@@ -44,8 +54,7 @@ test('CDP gateway decodes the standard payment-signature header before verificat
       resource,
       accepts: [requirements],
     }),
-    findMatchingRequirements: (available, signedPayload) =>
-      JSON.stringify(signedPayload) === JSON.stringify(payload) ? available[0] : undefined,
+    findMatchingRequirements: (available) => available[0],
     verifyPayment: async () => ({
       isValid: true,
       payer: '0x2222222222222222222222222222222222222222',
@@ -69,6 +78,51 @@ test('CDP gateway decodes the standard payment-signature header before verificat
   assert.equal(result.authorized, true);
   assert.deepEqual(result.payment.payment_payload, payload);
   assert.equal(result.payment.status, 'verified_pending_qc');
+
+  const reencodedPayload = {
+    payload: {
+      signature: 'test',
+      authorization: {
+        nonce: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        from: '0x2222222222222222222222222222222222222222',
+      },
+    },
+    accepted: requirements,
+    x402Version: 2,
+  };
+  const reencoded = await gateway.authorize({
+    request: {
+      protocol: 'https',
+      originalUrl: '/v1/render',
+      get: (name) =>
+        name.toLowerCase() === 'payment-signature'
+          ? Buffer.from(JSON.stringify(reencodedPayload)).toString('base64')
+          : 'musicwire.test',
+    },
+    endpoint: 'render',
+    priceUsd: '0.25',
+    outputSchema: {},
+  });
+  assert.equal(reencoded.authorized, true);
+  assert.equal(
+    reencoded.payment.authorization_fingerprint,
+    result.payment.authorization_fingerprint,
+  );
+
+  const malformed = await gateway.authorize({
+    request: {
+      protocol: 'https',
+      originalUrl: '/v1/render',
+      get: (name) =>
+        name.toLowerCase() === 'payment-signature'
+          ? encodePaymentSignatureHeader({ ...payload, payload: { signature: 'test' } })
+          : 'musicwire.test',
+    },
+    endpoint: 'render',
+    priceUsd: '0.25',
+    outputSchema: {},
+  });
+  assert.equal(malformed.authorized, false);
 });
 
 class RecordingGateway {

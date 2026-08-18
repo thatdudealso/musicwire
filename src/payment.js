@@ -223,6 +223,20 @@ export class CdpX402Gateway {
           'Payment does not match this quote.',
         ),
       };
+    const authorizationFingerprint = paymentAuthorizationFingerprint(
+      paymentPayload,
+      matchedRequirements,
+    );
+    if (!authorizationFingerprint)
+      return {
+        authorized: false,
+        challenge: challenge(
+          paymentRequired,
+          priceUsd,
+          outputSchema,
+          'Payment authorization is missing a valid payer and nonce.',
+        ),
+      };
     let verification;
     try {
       verification = await server.verifyPayment(paymentPayload, matchedRequirements);
@@ -250,7 +264,7 @@ export class CdpX402Gateway {
         requirements: matchedRequirements,
         verification,
         priceUsd,
-        authorizationFingerprint: createHash('sha256').update(paymentSignature).digest('hex'),
+        authorizationFingerprint,
       }),
     };
   }
@@ -423,6 +437,21 @@ function padTopic(address) {
 
 function isBytes32(value) {
   return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function paymentAuthorizationFingerprint(paymentPayload, requirements) {
+  const authorization = paymentPayload?.payload?.authorization;
+  if (
+    !isEvmAddress(authorization?.from) ||
+    !isBytes32(authorization?.nonce) ||
+    !isEvmAddress(requirements.asset)
+  )
+    return null;
+  return createHash('sha256')
+    .update(
+      `${requirements.network}:${requirements.asset.toLowerCase()}:${authorization.from.toLowerCase()}:${authorization.nonce.toLowerCase()}`,
+    )
+    .digest('hex');
 }
 
 export class StubPaymentGateway {
