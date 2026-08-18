@@ -9,6 +9,7 @@ import { ArtifactStore } from './artifacts.js';
 import {
   createPaymentService,
   PaymentConfigurationError,
+  PaymentSettlementError,
   PaymentVerificationError,
 } from './payment.js';
 import { Renderer } from './renderer.js';
@@ -26,8 +27,10 @@ export function createApp(overrides = {}) {
   const renderer = overrides.renderer ?? new Renderer(config, artifactStore);
   const app = express();
   const limiter = new Map();
+  const inflightValidations = new Map();
+  const reconciler = createSettlementReconciler({ store, payments, artifactStore, config });
   const queue = createRenderQueue(config.maxConcurrentRenders, config.maxPendingRenders, (id) =>
-    processJob(id, { store, renderer, artifactStore, payments }),
+    processJob(id, { store, renderer, artifactStore, payments, reconciler }),
   );
   const readinessProbe =
     overrides.readinessProbe ??
@@ -45,6 +48,7 @@ export function createApp(overrides = {}) {
   let readiness = null;
   let readinessCheck = null;
   store.recoverInterruptedJobs();
+  for (const target of store.listSettlementPending()) reconciler.schedule(target);
   app.disable('x-powered-by');
   app.use(rateLimit(limiter, config));
   app.use(
@@ -91,35 +95,85 @@ export function createApp(overrides = {}) {
   app.post('/v1/validate', async (request, response) => {
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
-    const authorization = await payments.authorize({
-      request,
-      endpoint: 'validate',
-      priceUsd: config.validatePriceUsd,
-      outputSchema: paymentOutputSchema('validate'),
-    });
-    if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
-    const validation = validateMusicXml(input.musicxml);
-    if (!validation.valid) {
-      const payment = await payments.cancelNotCharged(
-        authorization.payment,
-        failureCodes.validation,
-      );
-      return response.status(422).json({
-        ...validation,
-        price_usd: config.validatePriceUsd,
-        status: 'failed_not_charged',
-        payment,
-        receipt: payments.receipt(payment),
+    const idempotencyKey = request.get('Idempotency-Key');
+    const replay = store.getValidateResultByKey(idempotencyKey);
+    if (replay) return sendValidateResult(response, payments, replay);
+    const execute = async () => {
+      const authorization = await payments.authorize({
+        request,
+        endpoint: 'validate',
+        priceUsd: config.validatePriceUsd,
+        outputSchema: paymentOutputSchema('validate'),
       });
+      if (!authorization.authorized) return { challenge: authorization.challenge };
+      const persist = (httpStatus, body, payment) =>
+        idempotencyKey || payment.status === 'settlement_pending'
+          ? store.saveValidateResult({
+              id: crypto.randomUUID(),
+              idempotencyKey: idempotencyKey ?? null,
+              httpStatus,
+              body,
+              payment,
+              createdAt: new Date().toISOString(),
+            })
+          : { id: null, httpStatus, body, payment };
+      const validation = validateMusicXml(input.musicxml);
+      if (!validation.valid) {
+        const payment = await payments.cancelNotCharged(
+          authorization.payment,
+          failureCodes.validation,
+        );
+        return persist(
+          422,
+          {
+            ...validation,
+            price_usd: config.validatePriceUsd,
+            status: 'failed_not_charged',
+            payment: payments.publicPayment(payment),
+            receipt: payments.receipt(payment),
+          },
+          payment,
+        );
+      }
+      const settlement = await payments.settleAfterQc(authorization.payment);
+      if (settlement.outcome === 'failed')
+        return {
+          id: null,
+          httpStatus: 502,
+          body: {
+            error: {
+              code: 'payment_settlement_failed',
+              message:
+                'The facilitator refused settlement after validation passed. No payment was charged; retry with a fresh authorization.',
+            },
+          },
+          payment: settlement.payment,
+        };
+      const result = persist(
+        200,
+        {
+          ...validation,
+          price_usd: config.validatePriceUsd,
+          payment: payments.publicPayment(settlement.payment),
+          receipt: payments.receipt(settlement.payment),
+        },
+        settlement.payment,
+      );
+      if (settlement.outcome === 'pending' && result.id)
+        reconciler.schedule({ kind: 'validate', id: result.id });
+      return result;
+    };
+    let pending = idempotencyKey ? inflightValidations.get(idempotencyKey) : null;
+    if (!pending) {
+      pending = execute();
+      if (idempotencyKey) {
+        inflightValidations.set(idempotencyKey, pending);
+        pending.finally(() => inflightValidations.delete(idempotencyKey)).catch(() => {});
+      }
     }
-    const payment = await payments.captureAfterQc(authorization.payment);
-    setSettlementHeader(response, payments, payment);
-    return response.status(200).json({
-      ...validation,
-      price_usd: config.validatePriceUsd,
-      payment,
-      receipt: payments.receipt(payment),
-    });
+    const outcome = await pending;
+    if (outcome.challenge) return sendPaymentChallenge(response, outcome.challenge);
+    return sendValidateResult(response, payments, outcome);
   });
 
   app.post('/v1/render', async (request, response) => {
@@ -279,6 +333,10 @@ export function createApp(overrides = {}) {
       return response.status(503).json({
         error: { code: 'payment_verification_unavailable', message: error.message },
       });
+    if (error instanceof PaymentSettlementError)
+      return response.status(502).json({
+        error: { code: 'payment_settlement_failed', message: error.message },
+      });
     if (error.type === 'entity.too.large')
       return response.status(413).json({
         error: {
@@ -302,61 +360,108 @@ export function createApp(overrides = {}) {
 
 async function processJob(id, services) {
   const job = services.store.update(id, { state: 'running' });
+  let result;
   try {
-    const result = await services.renderer.render(job);
-    if (!result.ok) {
-      const payment = await services.payments.cancelNotCharged(job.payment, result.error.code);
-      services.store.update(id, {
-        state: 'failed_not_charged',
-        qc_json: JSON.stringify({ status: 'failed', ...result.error }),
-        error_json: JSON.stringify(result.error),
-        payment_json: JSON.stringify(payment),
-      });
-      return;
-    }
-    const payment = await services.payments.captureAfterQc(job.payment);
-    const receipt = {
-      ...result.receipt,
-      payment: services.payments.receipt(payment),
-    };
-    const artifacts = [
-      ...result.artifacts,
-      services.artifactStore.put(
-        'receipt.json',
-        Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
-      ),
-    ];
-    services.store.update(id, {
-      state: 'completed',
-      qc_json: JSON.stringify({
-        status: 'passed',
-        checks: [
-          'validation',
-          'renderer_exit',
-          'artifacts_present',
-          'audio_when_requested',
-          'constraints_when_requested',
-        ],
-      }),
-      artifacts_json: JSON.stringify(artifacts),
-      payment_json: JSON.stringify(payment),
-    });
+    result = await services.renderer.render(job);
   } catch {
-    const payment = await services.payments.cancelNotCharged(job.payment, failureCodes.renderer);
+    result = {
+      ok: false,
+      error: { code: failureCodes.renderer, message: 'Unexpected isolated renderer failure.' },
+    };
+  }
+  if (!result.ok) {
+    const payment = await services.payments.cancelNotCharged(job.payment, result.error.code);
     services.store.update(id, {
       state: 'failed_not_charged',
-      qc_json: JSON.stringify({
-        status: 'failed',
-        code: failureCodes.renderer,
-        message: 'Unexpected isolated renderer failure.',
-      }),
-      error_json: JSON.stringify({
-        code: failureCodes.renderer,
-        message: 'Unexpected isolated renderer failure.',
-      }),
+      qc_json: JSON.stringify({ status: 'failed', ...result.error }),
+      error_json: JSON.stringify(result.error),
       payment_json: JSON.stringify(payment),
     });
+    return;
   }
+  const settlement = await services.payments.settleAfterQc(job.payment);
+  const receipt = {
+    ...result.receipt,
+    payment: services.payments.receipt(settlement.payment),
+  };
+  const artifacts = [
+    ...result.artifacts,
+    services.artifactStore.put(
+      'receipt.json',
+      Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
+    ),
+  ];
+  services.store.update(id, {
+    state: 'completed',
+    qc_json: JSON.stringify({
+      status: 'passed',
+      checks: [
+        'validation',
+        'renderer_exit',
+        'artifacts_present',
+        'audio_when_requested',
+        'constraints_when_requested',
+      ],
+    }),
+    artifacts_json: JSON.stringify(artifacts),
+    payment_json: JSON.stringify(settlement.payment),
+  });
+  if (settlement.outcome === 'pending') services.reconciler.schedule({ kind: 'job', id });
+}
+
+function createSettlementReconciler({ store, payments, artifactStore, config }) {
+  const timers = new Map();
+  const refreshReceiptArtifact = (artifacts, payment) =>
+    artifacts.map((artifact) => {
+      if (artifact.name !== 'receipt.json') return artifact;
+      const receipt = JSON.parse(artifactStore.read(artifact).toString('utf8'));
+      receipt.payment = payments.receipt(payment);
+      return artifactStore.put(
+        'receipt.json',
+        Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
+      );
+    });
+  const reconcileJob = async (id) => {
+    const job = store.get(id);
+    if (!job || job.payment.status !== 'settlement_pending') return true;
+    const settlement = await payments.settleAfterQc(job.payment);
+    if (settlement.outcome === 'pending') return false;
+    store.update(id, {
+      payment_json: JSON.stringify(settlement.payment),
+      artifacts_json: JSON.stringify(refreshReceiptArtifact(job.artifacts, settlement.payment)),
+    });
+    return true;
+  };
+  const reconcileValidate = async (id) => {
+    const record = store.getValidateResultById(id);
+    if (!record || record.payment.status !== 'settlement_pending') return true;
+    const settlement = await payments.settleAfterQc(record.payment);
+    if (settlement.outcome === 'pending') return false;
+    store.updateValidateResult(id, {
+      body: {
+        ...record.body,
+        payment: payments.publicPayment(settlement.payment),
+        receipt: payments.receipt(settlement.payment),
+      },
+      payment: settlement.payment,
+    });
+    return true;
+  };
+  const schedule = (target, attempt = 0) => {
+    const key = `${target.kind}:${target.id}`;
+    if (timers.has(key)) return;
+    const delay = Math.min(300, config.x402SettlementRetrySeconds * 2 ** Math.min(attempt, 8));
+    const timer = setTimeout(async () => {
+      timers.delete(key);
+      const settled = await (
+        target.kind === 'job' ? reconcileJob(target.id) : reconcileValidate(target.id)
+      ).catch(() => false);
+      if (!settled) schedule(target, attempt + 1);
+    }, delay * 1_000);
+    timer.unref?.();
+    timers.set(key, timer);
+  };
+  return { schedule };
 }
 
 function extractInput(request, config) {
@@ -396,7 +501,7 @@ function publicJob(job, artifactStore, payments) {
     facts: job.facts,
     qc: job.qc,
     error: job.error,
-    payment: job.payment,
+    payment: payments.publicPayment(job.payment),
     receipt: payments.receipt(job.payment),
     expires_at: job.expires_at,
     artifacts: job.artifacts.map((artifact) => ({
@@ -411,6 +516,11 @@ function publicJob(job, artifactStore, payments) {
 function sendPaymentChallenge(response, challenge) {
   response.set(challenge.headers);
   return response.status(402).json(challenge.body);
+}
+
+function sendValidateResult(response, payments, result) {
+  setSettlementHeader(response, payments, result.payment);
+  return response.status(result.httpStatus).json(result.body);
 }
 
 function setSettlementHeader(response, payments, payment) {
@@ -561,7 +671,7 @@ function manifest(config) {
       payment_response_header: 'PAYMENT-RESPONSE',
       capture_policy: 'only_after_qc_pass',
       receipt_schema: {
-        status: 'settled | failed_not_charged',
+        status: 'settled | settlement_pending | failed_not_charged',
         amount_usd: 'string',
         amount_atomic: 'string | null',
         network: config.x402Network,

@@ -38,6 +38,14 @@ export class JobStore {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS validate_results (
+        id TEXT PRIMARY KEY,
+        idempotency_key TEXT UNIQUE,
+        http_status INTEGER NOT NULL,
+        body_json TEXT NOT NULL,
+        payment_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
     this.expireIdempotencyKeys();
   }
@@ -77,6 +85,59 @@ export class JobStore {
       .prepare('SELECT job_id FROM idempotency_keys WHERE key = ?')
       .get(idempotencyKey);
     return existing ? this.get(existing.job_id) : null;
+  }
+
+  saveValidateResult({ id, idempotencyKey, httpStatus, body, payment, createdAt }) {
+    this.db
+      .prepare(
+        `INSERT INTO validate_results (id,idempotency_key,http_status,body_json,payment_json,created_at)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        idempotencyKey ?? null,
+        httpStatus,
+        JSON.stringify(body),
+        JSON.stringify(payment),
+        createdAt,
+      );
+    return this.getValidateResultById(id);
+  }
+
+  getValidateResultById(id) {
+    const row = this.db.prepare('SELECT * FROM validate_results WHERE id = ?').get(id);
+    return row ? decodeValidateResult(row) : null;
+  }
+
+  getValidateResultByKey(idempotencyKey) {
+    if (!idempotencyKey) return null;
+    this.expireIdempotencyKeys();
+    const row = this.db
+      .prepare('SELECT * FROM validate_results WHERE idempotency_key = ?')
+      .get(idempotencyKey);
+    return row ? decodeValidateResult(row) : null;
+  }
+
+  updateValidateResult(id, { body, payment }) {
+    this.db
+      .prepare('UPDATE validate_results SET body_json = ?, payment_json = ? WHERE id = ?')
+      .run(JSON.stringify(body), JSON.stringify(payment), id);
+    return this.getValidateResultById(id);
+  }
+
+  listSettlementPending() {
+    const pattern = '%"status":"settlement_pending"%';
+    const jobs = this.db
+      .prepare("SELECT id FROM jobs WHERE state = 'completed' AND payment_json LIKE ?")
+      .all(pattern)
+      .filter((row) => this.get(row.id).payment.status === 'settlement_pending')
+      .map((row) => ({ kind: 'job', id: row.id }));
+    const validations = this.db
+      .prepare('SELECT id FROM validate_results WHERE payment_json LIKE ?')
+      .all(pattern)
+      .filter((row) => this.getValidateResultById(row.id).payment.status === 'settlement_pending')
+      .map((row) => ({ kind: 'validate', id: row.id }));
+    return [...jobs, ...validations];
   }
 
   getPaymentWallet(provider) {
@@ -123,7 +184,7 @@ export class JobStore {
     for (const row of rows) {
       const payment = {
         ...JSON.parse(row.payment_json),
-        status: 'not_charged',
+        status: 'failed_not_charged',
         reason: 'render_interrupted',
         captured_at: null,
       };
@@ -146,7 +207,24 @@ export class JobStore {
   expireIdempotencyKeys() {
     const cutoff = new Date(Date.now() - this.idempotencyWindowMs).toISOString();
     this.db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?').run(cutoff);
+    this.db
+      .prepare(
+        `DELETE FROM validate_results
+         WHERE created_at < ? AND payment_json NOT LIKE '%"status":"settlement_pending"%'`,
+      )
+      .run(cutoff);
   }
+}
+
+function decodeValidateResult(row) {
+  return {
+    id: row.id,
+    idempotencyKey: row.idempotency_key,
+    httpStatus: row.http_status,
+    body: JSON.parse(row.body_json),
+    payment: JSON.parse(row.payment_json),
+    createdAt: row.created_at,
+  };
 }
 
 function decode(row) {

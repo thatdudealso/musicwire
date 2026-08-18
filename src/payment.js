@@ -13,6 +13,12 @@ const PAYMENT_WALLET_PROVIDER = 'cdp_server_wallet';
 
 export class PaymentConfigurationError extends Error {}
 export class PaymentVerificationError extends Error {}
+export class PaymentSettlementError extends Error {
+  constructor(message, { definitive = false } = {}) {
+    super(message);
+    this.definitive = definitive;
+  }
+}
 
 export class PaymentService {
   constructor(gateway = new StubPaymentGateway()) {
@@ -35,13 +41,34 @@ export class PaymentService {
   }
 
   async captureAfterQc(payment) {
-    if (payment.status !== 'verified_pending_qc')
+    if (!['verified_pending_qc', 'settlement_pending'].includes(payment.status))
       throw new Error('Payment settlement is only permitted after verified pending QC.');
     return this.gateway.settle(payment);
   }
 
+  async settleAfterQc(payment) {
+    try {
+      return { outcome: 'settled', payment: await this.captureAfterQc(payment) };
+    } catch (error) {
+      if (error instanceof PaymentSettlementError && error.definitive)
+        return {
+          outcome: 'failed',
+          payment: await this.cancelNotCharged(payment, 'settlement_failed'),
+        };
+      return { outcome: 'pending', payment: settlementPendingPayment(payment) };
+    }
+  }
+
   async cancelNotCharged(payment, reason) {
     return this.gateway.cancel(payment, reason);
+  }
+
+  publicPayment(payment) {
+    const safe = { ...payment };
+    delete safe.payment_payload;
+    delete safe.payment_requirements;
+    delete safe.settlement_response;
+    return safe;
   }
 
   settlementHeader(payment) {
@@ -86,7 +113,10 @@ export class CdpReceiverWallet {
   }
 
   async address() {
-    this.addressPromise ??= this.#resolveAddress();
+    this.addressPromise ??= this.#resolveAddress().catch((error) => {
+      this.addressPromise = null;
+      throw error;
+    });
     return this.addressPromise;
   }
 
@@ -186,12 +216,21 @@ export class CdpX402Gateway {
   }
 
   async settle(payment) {
-    const result = await (
-      await this.#server()
-    ).settlePayment(payment.payment_payload, payment.payment_requirements);
+    let result;
+    try {
+      result = await (
+        await this.#server()
+      ).settlePayment(payment.payment_payload, payment.payment_requirements);
+    } catch (error) {
+      throw new PaymentSettlementError(
+        `The settlement outcome is unknown: ${error?.message ?? 'facilitator request failed'}.`,
+        { definitive: false },
+      );
+    }
     if (!result.success)
-      throw new Error(
-        result.errorMessage ?? result.errorReason ?? 'CDP facilitator could not settle payment.',
+      throw new PaymentSettlementError(
+        result.errorMessage ?? result.errorReason ?? 'CDP facilitator refused to settle payment.',
+        { definitive: true },
       );
     return {
       ...payment,
@@ -247,7 +286,10 @@ export class CdpX402Gateway {
       );
       await server.initialize();
       return server;
-    })();
+    })().catch((error) => {
+      this.serverPromise = null;
+      throw error;
+    });
     return this.serverPromise;
   }
 }
@@ -356,6 +398,16 @@ function failedPayment(payment, reason) {
     ...payment,
     status: 'failed_not_charged',
     reason,
+    tx_hash: null,
+    settled_at: null,
+    captured_at: null,
+  };
+}
+
+function settlementPendingPayment(payment) {
+  return {
+    ...payment,
+    status: 'settlement_pending',
     tx_hash: null,
     settled_at: null,
     captured_at: null,

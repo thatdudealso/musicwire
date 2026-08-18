@@ -83,7 +83,7 @@ X402_PRIVATE_KEY="$TESTNET_PRIVATE_KEY" x402curl --x402-rpc-url https://sepolia.
 
 Compatibility note: `x402curl 0.2.0` was installed and tested. It receives the v2 quote and signs the retry, but that v2 signed retry does not complete with the CDP facilitator, so no job or settlement is reached. The Coinbase `@x402/fetch` E2E is the required payment proof for this phase.
 
-An idempotency key replays the same job for 24 hours and cannot create a second charge. Musicwire verifies an authorization before work begins, then calls the facilitator settlement endpoint only after server-side QC passes. A QC failure returns `failed_not_charged` and a receipt with `tx_hash: null`.
+An `Idempotency-Key` header on `POST /v1/validate` or `POST /v1/render` replays the original paid outcome for 24 hours and cannot create a second charge. Musicwire verifies an authorization before work begins, then calls the facilitator settlement endpoint only after server-side QC passes. A QC failure returns `failed_not_charged` and a receipt with `tx_hash: null`. If the facilitator settlement outcome is unknown after QC passes, the result is delivered with `payment.status: "settlement_pending"` and `tx_hash: null`, and Musicwire retries the settlement check in the background until it is confirmed or definitively failed; the EIP-3009 authorization nonce makes a reconciliation retry unable to charge twice. A definitive facilitator refusal on `POST /v1/validate` returns `502 payment_settlement_failed` with no charge.
 
 ## Request and response schemas
 
@@ -112,7 +112,7 @@ MusicXML supplied in a JSON request body must be a UTF-8 string. Render requests
 { "error": { "code": "invalid_formats", "message": "..." } }
 ```
 
-Artifact URLs are signed, expire with the job retention window, and return the named binary artifact. Failed render jobs use `status: "failed_not_charged"` and include a typed `error` plus `payment.status: "not_charged"`.
+Artifact URLs are signed, expire with the job retention window, and return the named binary artifact. Failed render jobs use `status: "failed_not_charged"` and include a typed `error` plus `payment.status: "failed_not_charged"`. Job and validation responses expose only payment status and receipt data, never the signed payment authorization.
 
 ## API contract
 
@@ -127,7 +127,7 @@ Artifact URLs are signed, expire with the job retention window, and return the n
 
 The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mscz`, `pdf`, `svg`, `png`, `midi`, `mp3`, and `wav`.
 
-Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. Payment requirements use x402 Exact USDC through the CDP facilitator on Base Sepolia. `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
+Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. Payment statuses are `verified_pending_qc`, `settled`, `settlement_pending`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. Payment requirements use x402 Exact USDC through the CDP facilitator on Base Sepolia. `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
 
 QC passes only when MusicXML validates, MuseScore exits successfully, every requested artifact exists, requested audio has a valid container, non-silent RMS, and score-duration agreement within 10%, with a bounded two-second natural release-tail allowance, and optional key, tempo, and duration constraints match. Failures return a typed catalogued error and are not charged.
 

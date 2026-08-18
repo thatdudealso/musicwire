@@ -9,7 +9,8 @@ import {
   encodePaymentSignatureHeader,
 } from '@x402/core/http';
 import { createApp } from '../src/app.js';
-import { CdpX402Gateway, PaymentService } from '../src/payment.js';
+import { CdpX402Gateway, PaymentService, PaymentSettlementError } from '../src/payment.js';
+import { JobStore } from '../src/store.js';
 
 const musicxml = fs.readFileSync(
   new URL('./fixtures/two-bar-piano.musicxml', import.meta.url),
@@ -286,12 +287,256 @@ test('validation uses the same 402 quote and settles only after a valid QC resul
   }
 });
 
-async function startServer({ events, renderer = undefined }) {
+test('a lost settle response leaves the job completed as settlement_pending until reconciliation confirms it', async () => {
+  const events = [];
+  const gateway = new (class extends RecordingGateway {
+    async settle(payment) {
+      this.events.push('settle_attempt');
+      if (this.events.filter((event) => event === 'settle_attempt').length < 3)
+        throw new PaymentSettlementError('settle response lost', { definitive: false });
+      return super.settle(payment);
+    }
+  })(events);
+  const { base, close } = await startServer({
+    events,
+    gateway,
+    x402SettlementRetrySeconds: 0.01,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const accepted = await renderRequest(base, 'paid-pending');
+    assert.equal(accepted.status, 202);
+    const job = await waitForJob(base, (await accepted.json()).job_id);
+    assert.equal(job.status, 'completed');
+    assert.equal(job.payment.status, 'settlement_pending');
+    assert.equal(job.receipt.tx_hash, null);
+    assert.equal(job.payment.payment_payload, undefined);
+    assert.equal(job.payment.payment_requirements, undefined);
+    const pendingReceiptArtifact = job.artifacts.find(
+      (artifact) => artifact.name === 'receipt.json',
+    );
+    assert.ok(pendingReceiptArtifact, 'QC-passed artifacts must be delivered while pending');
+    const pendingReceipt = await (await fetch(`${base}${pendingReceiptArtifact.url}`)).json();
+    assert.equal(pendingReceipt.payment.status, 'settlement_pending');
+    assert.equal(pendingReceipt.payment.tx_hash, null);
+
+    let reconciled = job;
+    for (let attempt = 0; attempt < 200 && reconciled.payment.status !== 'settled'; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      reconciled = await (await fetch(`${base}/v1/jobs/${job.job_id}`)).json();
+    }
+    assert.equal(reconciled.payment.status, 'settled');
+    assert.equal(
+      reconciled.receipt.tx_hash,
+      '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    const settledReceiptArtifact = reconciled.artifacts.find(
+      (artifact) => artifact.name === 'receipt.json',
+    );
+    const settledReceipt = await (await fetch(`${base}${settledReceiptArtifact.url}`)).json();
+    assert.equal(settledReceipt.payment.status, 'settled');
+    assert.equal(settledReceipt.payment.tx_hash, reconciled.receipt.tx_hash);
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('a definitive facilitator refusal after QC keeps artifacts and records failed_not_charged', async () => {
+  const events = [];
+  const gateway = new (class extends RecordingGateway {
+    async settle() {
+      this.events.push('settle_attempt');
+      throw new PaymentSettlementError('authorization expired', { definitive: true });
+    }
+  })(events);
+  const { base, close } = await startServer({
+    events,
+    gateway,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const accepted = await renderRequest(base, 'paid-refused');
+    const job = await waitForJob(base, (await accepted.json()).job_id);
+    assert.equal(job.status, 'completed');
+    assert.equal(job.payment.status, 'failed_not_charged');
+    assert.equal(job.payment.reason, 'settlement_failed');
+    assert.equal(job.receipt.tx_hash, null);
+    assert.ok(job.artifacts.find((artifact) => artifact.name === 'receipt.json'));
+  } finally {
+    await close();
+  }
+});
+
+test('the public job response never exposes the signed payment authorization', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const accepted = await renderRequest(base, 'paid-sanitized');
+    const job = await waitForJob(base, (await accepted.json()).job_id);
+    assert.equal(job.payment.status, 'settled');
+    assert.equal(job.payment.payment_payload, undefined);
+    assert.equal(job.payment.payment_requirements, undefined);
+    assert.equal(job.payment.settlement_response, undefined);
+  } finally {
+    await close();
+  }
+});
+
+test('validate replays the same paid outcome for an idempotency key without a second charge', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const validate = () =>
+      fetch(`${base}/v1/validate`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Payment-Signature': 'paid-validation',
+          'Idempotency-Key': 'validate-once',
+        },
+        body: JSON.stringify({ musicxml }),
+      });
+    const first = await validate();
+    assert.equal(first.status, 200);
+    const firstBody = await first.json();
+    assert.equal(firstBody.payment.payment_payload, undefined);
+    const replay = await validate();
+    assert.equal(replay.status, 200);
+    assert.deepEqual(await replay.json(), firstBody);
+    assert.ok(replay.headers.get('payment-response'));
+    assert.deepEqual(events, ['verify', 'settle']);
+  } finally {
+    await close();
+  }
+});
+
+test('validate maps a definitive settlement refusal to 502 payment_settlement_failed', async () => {
+  const events = [];
+  const gateway = new (class extends RecordingGateway {
+    async settle() {
+      throw new PaymentSettlementError('authorization expired', { definitive: true });
+    }
+  })(events);
+  const { base, close } = await startServer({ events, gateway });
+  try {
+    const response = await fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Payment-Signature': 'paid-validation',
+        'Idempotency-Key': 'validate-refused',
+      },
+      body: JSON.stringify({ musicxml }),
+    });
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).error.code, 'payment_settlement_failed');
+  } finally {
+    await close();
+  }
+});
+
+test('validate reports settlement_pending on an ambiguous settle and replays the reconciled receipt', async () => {
+  const events = [];
+  const gateway = new (class extends RecordingGateway {
+    async settle(payment) {
+      this.events.push('settle_attempt');
+      if (this.events.filter((event) => event === 'settle_attempt').length < 2)
+        throw new PaymentSettlementError('settle response lost', { definitive: false });
+      return super.settle(payment);
+    }
+  })(events);
+  const { base, close } = await startServer({ events, gateway, x402SettlementRetrySeconds: 0.01 });
+  try {
+    const validate = () =>
+      fetch(`${base}/v1/validate`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Payment-Signature': 'paid-validation',
+          'Idempotency-Key': 'validate-pending',
+        },
+        body: JSON.stringify({ musicxml }),
+      });
+    const first = await validate();
+    assert.equal(first.status, 200);
+    const firstBody = await first.json();
+    assert.equal(firstBody.payment.status, 'settlement_pending');
+    assert.equal(firstBody.receipt.tx_hash, null);
+
+    let replayBody = firstBody;
+    for (let attempt = 0; attempt < 200 && replayBody.payment.status !== 'settled'; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      replayBody = await (await validate()).json();
+    }
+    assert.equal(replayBody.payment.status, 'settled');
+    assert.equal(
+      replayBody.receipt.tx_hash,
+      '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('restart recovery records interrupted jobs as failed_not_charged', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-recovery-'));
+  const store = new JobStore(dataDirectory);
+  const now = new Date();
+  store.create(
+    {
+      id: 'interrupted-job',
+      inputXml: musicxml,
+      formats: ['pdf'],
+      constraints: {},
+      facts: {},
+      priceUsd: '0.25',
+      payment: { provider: 'stub', status: 'verified_pending_qc' },
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
+    },
+    null,
+  );
+  try {
+    assert.equal(store.recoverInterruptedJobs(), 1);
+    const recovered = store.get('interrupted-job');
+    assert.equal(recovered.state, 'failed_not_charged');
+    assert.equal(recovered.payment.status, 'failed_not_charged');
+    assert.equal(recovered.payment.reason, 'render_interrupted');
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+async function startServer({ events, renderer = undefined, gateway = undefined, ...overrides }) {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-payments-'));
   const server = createApp({
     dataDirectory,
-    payments: new PaymentService(new RecordingGateway(events)),
+    payments: new PaymentService(gateway ?? new RecordingGateway(events)),
     ...(renderer ? { renderer } : {}),
+    ...overrides,
   }).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   return {
