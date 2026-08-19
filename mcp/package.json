@@ -1,0 +1,31 @@
+{
+  "name": "musicwire-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for paid Musicwire MusicXML validation and rendering.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thatdudealso/musicwire.git",
+    "directory": "mcp"
+  },
+  "bin": {
+    "musicwire-mcp": "./src/index.js"
+  },
+  "files": [
+    "README.md",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@x402/evm": "^2.22.0",
+    "@x402/fetch": "^2.22.0",
+    "viem": "^2.47.0",
+    "zod": "^3.25.76"
+  }
+}
