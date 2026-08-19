@@ -50,15 +50,26 @@ body {
 }
 
 /* Typography */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-weight: 600;
   line-height: 1.2;
   margin: 0 0 16px 0;
 }
 
-h1 { font-size: 32px; }
-h2 { font-size: 24px; }
-h3 { font-size: 20px; }
+h1 {
+  font-size: 32px;
+}
+h2 {
+  font-size: 24px;
+}
+h3 {
+  font-size: 20px;
+}
 
 p {
   margin: 0 0 16px 0;
@@ -107,7 +118,9 @@ code {
   border-radius: var(--radius);
   cursor: pointer;
   text-decoration: none;
-  transition: transform 0.15s, opacity 0.15s;
+  transition:
+    transform 0.15s,
+    opacity 0.15s;
   font-size: 14px;
 }
 
@@ -140,7 +153,8 @@ thead {
   border-bottom: 1px solid var(--border);
 }
 
-th, td {
+th,
+td {
   padding: 12px 16px;
   text-align: left;
 }
@@ -225,7 +239,8 @@ td {
 }
 
 /* List styles */
-ul, ol {
+ul,
+ol {
   margin: 0 0 16px 0;
   padding-left: 24px;
 }
@@ -239,19 +254,23 @@ li {
   .hero h1 {
     font-size: 36px;
   }
-  
+
   .hero p {
     font-size: 16px;
   }
-  
+
   .hero-actions {
     flex-direction: column;
     align-items: center;
   }
-  
-  h1 { font-size: 28px; }
-  h2 { font-size: 20px; }
-  
+
+  h1 {
+    font-size: 28px;
+  }
+  h2 {
+    font-size: 20px;
+  }
+
   pre {
     font-size: 12px;
     padding: 12px;
@@ -267,10 +286,18 @@ li {
   color: var(--text-muted);
 }
 
-.mt-4 { margin-top: 32px; }
-.mt-2 { margin-top: 16px; }
-.mb-4 { margin-bottom: 32px; }
-.mb-2 { margin-bottom: 16px; }
+.mt-4 {
+  margin-top: 32px;
+}
+.mt-2 {
+  margin-top: 16px;
+}
+.mb-4 {
+  margin-bottom: 32px;
+}
+.mb-2 {
+  margin-bottom: 16px;
+}
 
 /* Pricing table */
 .pricing-table {
@@ -414,7 +441,7 @@ p code {
     --code-bg: #f0f0f0;
     --code-border: #ccc;
   }
-  
+
   pre {
     background: var(--code-bg);
     border-color: var(--code-border);
@@ -423,8 +450,14 @@ p code {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .fade-in {

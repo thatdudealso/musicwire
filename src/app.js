@@ -54,16 +54,12 @@ export function createApp(overrides = {}) {
   app.use(rateLimit(limiter, config));
 
   // Serve static landing page and docs - BEFORE body parsers
-  const staticDir = resolve(process.cwd(), 'static');
-  console.log('Static dir:', staticDir);
-  
+  const staticDir = resolve(new URL('.', import.meta.url).pathname, 'static');
+
   app.get('/', (_request, response) => {
     response.type('text/html').sendFile('index.html', { root: staticDir });
   });
   app.get('/docs', (_request, response) => {
-    response.type('text/html').sendFile('docs.html', { root: staticDir });
-  });
-  app.get('/docs/', (_request, response) => {
     response.type('text/html').sendFile('docs.html', { root: staticDir });
   });
   app.use(express.static(staticDir, { index: false }));
@@ -356,8 +352,6 @@ export function createApp(overrides = {}) {
   });
 
   app.use((error, _request, response, _next) => {
-    // DEBUG: Log the error
-    console.log('ERROR HANDLER:', error.constructor.name, error.message, error.type);
     if (error instanceof PaymentConfigurationError)
       return response.status(503).json({
         error: { code: 'payment_unavailable', message: error.message },

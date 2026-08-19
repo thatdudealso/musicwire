@@ -1,7 +1,7 @@
 // Musicwire - Client-side manifest fetcher for dynamic pricing
 // Fetches manifest from /manifest endpoint and updates pricing displays
 
-(function() {
+(function () {
   'use strict';
 
   const MANIFEST_URL = '/manifest';
@@ -30,38 +30,39 @@
   // Update pricing elements based on manifest data
   function updatePricing(manifest) {
     const endpoints = manifest.endpoints || {};
-    
+
     // Update validate price
     const validatePriceEl = document.getElementById('price-validate');
     if (validatePriceEl && endpoints.validate) {
-      validatePriceEl.innerHTML = formatPriceWithLabel(
-        endpoints.validate.price_usd,
-        'Validation'
-      );
+      validatePriceEl.innerHTML = formatPriceWithLabel(endpoints.validate.price_usd, 'Validation');
     }
 
     // Update render pricing
     const renderPriceEl = document.getElementById('price-render');
     if (renderPriceEl && endpoints.render) {
       const render = endpoints.render;
-      // eslint-disable-next-line no-useless-assignment
-      let html = '';
-      
+      let html;
+
       if (render.price_usd && typeof render.price_usd === 'object') {
         // Handle solo/multi pricing
         html = `
           <span class="price"><label>Solo</label>${formatPrice(render.price_usd.solo)}</span>
           <span class="price"><label>Ensemble</label>${formatPrice(render.price_usd.multi_instrument)}</span>
         `;
-        // Add part boundary info
-        if (render.price_usd.part_boundary) {
-          html += `<span class="badge">${render.price_usd.part_boundary}+ parts = ensemble</span>`;
-        }
       } else {
         html = formatPriceWithLabel(render.price_usd, 'Rendering');
       }
-      
+
       renderPriceEl.innerHTML = html;
+    }
+
+    // Update render detail for docs page
+    const renderDetailEl = document.getElementById('price-render-detail');
+    if (renderDetailEl && endpoints.render) {
+      const render = endpoints.render;
+      if (render.price_usd && typeof render.price_usd === 'object') {
+        renderDetailEl.innerHTML = `$${formatPrice(render.price_usd.solo).replace('$', '')} for solo (1 part), $${formatPrice(render.price_usd.multi_instrument).replace('$', '')} for ensemble (${render.price_usd.part_boundary + 1}+ parts)`;
+      }
     }
 
     // Update compose guide price
@@ -69,17 +70,14 @@
     if (guidePriceEl && endpoints.compose_guide) {
       guidePriceEl.innerHTML = formatPriceWithLabel(
         endpoints.compose_guide.price_usd,
-        'Compose Guide'
+        'Compose Guide',
       );
     }
 
     // Update jobs price
     const jobsPriceEl = document.getElementById('price-jobs');
     if (jobsPriceEl && endpoints.jobs) {
-      jobsPriceEl.innerHTML = formatPriceWithLabel(
-        endpoints.jobs.price_usd,
-        'Job Status'
-      );
+      jobsPriceEl.innerHTML = formatPriceWithLabel(endpoints.jobs.price_usd, 'Job Status');
     }
 
     // Update network info
@@ -93,18 +91,16 @@
 
     // Remove loading state
     document.body.classList.remove('manifest-loading');
-    const loadingEls = document.querySelectorAll('.manifest-loading-placeholder');
-    loadingEls.forEach(el => el.style.display = 'none');
+    const loadingEls = document.querySelectorAll('.manifest-loading-placeholder .loading');
+    loadingEls.forEach((el) => (el.style.display = 'none'));
   }
 
   // Handle fetch errors
-  function handleError(error) {
-    console.warn('Musicwire: Failed to fetch manifest:', error);
+  function handleError() {
     document.body.classList.remove('manifest-loading');
     const errorEls = document.querySelectorAll('.manifest-loading-placeholder');
-    errorEls.forEach(el => {
+    errorEls.forEach((el) => {
       el.innerHTML = '<span class="error">Pricing unavailable</span>';
-      el.style.display = 'inline';
     });
   }
 
@@ -113,11 +109,11 @@
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    fetch(MANIFEST_URL, { 
+    fetch(MANIFEST_URL, {
       signal: controller.signal,
-      headers: { 'Accept': 'application/json' }
+      headers: { Accept: 'application/json' },
     })
-      .then(response => {
+      .then((response) => {
         clearTimeout(timeout);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
@@ -125,14 +121,16 @@
         return response.json();
       })
       .then(updatePricing)
-      .catch(handleError);
+      .catch((_error) => {
+        handleError(_error);
+      });
   }
 
   // Initialize when DOM is ready
   function init() {
     // Add loading state
     document.body.classList.add('manifest-loading');
-    
+
     // Fetch manifest
     fetchManifest();
   }
