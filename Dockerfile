@@ -19,6 +19,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --omit=dev
 COPY src ./src
+COPY static ./static
 
 ENV NODE_ENV=production \
   MSCORE_BIN=/opt/musescore/AppRun \
