@@ -17,7 +17,7 @@
     }
     if (priceUsd && typeof priceUsd === 'object') {
       // Handle nested price object (solo/multi)
-      return formatPrice(priceUsd.solo || priceUsd.price_usd || 0);
+      return formatPrice(priceUsd.solo || 0);
     }
     return '$0.00';
   }
@@ -61,7 +61,7 @@
     if (renderDetailEl && endpoints.render) {
       const render = endpoints.render;
       if (render.price_usd && typeof render.price_usd === 'object') {
-        renderDetailEl.innerHTML = `$${formatPrice(render.price_usd.solo).replace('$', '')} for solo (1 part), $${formatPrice(render.price_usd.multi_instrument).replace('$', '')} for ensemble (${render.price_usd.part_boundary + 1}+ parts)`;
+        renderDetailEl.innerHTML = `${formatPrice(render.price_usd.solo)} for solo (1 part), ${formatPrice(render.price_usd.multi_instrument)} for ensemble (${render.price_usd.part_boundary + 1}+ parts)`;
       }
     }
 

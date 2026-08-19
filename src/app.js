@@ -52,18 +52,26 @@ export function createApp(overrides = {}) {
   store.recoverInterruptedJobs();
   for (const target of store.listSettlementPending()) reconciler.schedule(target);
   app.disable('x-powered-by');
-  app.use(rateLimit(limiter, config));
 
-  // Serve static landing page and docs - BEFORE body parsers
+  // Serve static landing page and docs - BEFORE the rate limiter and body parsers
   const staticDir = resolve(fileURLToPath(new URL('..', import.meta.url)), 'static');
+  const sendStaticPage = (response, name) => {
+    response.type('text/html').sendFile(name, { root: staticDir }, (error) => {
+      if (!error || response.headersSent) return;
+      response.status(error.code === 'ENOENT' ? 404 : 500).json({
+        error: {
+          code: 'static_page_unavailable',
+          message: `The ${name} page could not be served.`,
+        },
+      });
+    });
+  };
 
-  app.get('/', (_request, response) => {
-    response.type('text/html').sendFile('index.html', { root: staticDir });
-  });
-  app.get('/docs', (_request, response) => {
-    response.type('text/html').sendFile('docs.html', { root: staticDir });
-  });
+  app.get('/', (_request, response) => sendStaticPage(response, 'index.html'));
+  app.get('/docs', (_request, response) => sendStaticPage(response, 'docs.html'));
   app.use(express.static(staticDir, { index: false }));
+
+  app.use(rateLimit(limiter, config));
 
   app.use(
     express.raw({
