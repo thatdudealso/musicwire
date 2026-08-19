@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config as defaultConfig, supportedFormats } from './config.js';
 import { composeGuide } from './compose-guide.js';
 import { validateMusicXml, scoreFacts } from './validate.js';
@@ -54,7 +55,7 @@ export function createApp(overrides = {}) {
   app.use(rateLimit(limiter, config));
 
   // Serve static landing page and docs - BEFORE body parsers
-  const staticDir = resolve(new URL('.', import.meta.url).pathname, 'static');
+  const staticDir = resolve(fileURLToPath(new URL('..', import.meta.url)), 'static');
 
   app.get('/', (_request, response) => {
     response.type('text/html').sendFile('index.html', { root: staticDir });

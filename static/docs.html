@@ -148,7 +148,7 @@ claude</code></pre>
   --data '{"musicxml":"&lt;?xml version=&quot;1.0&quot;?&gt;&lt;score-partwise version=&quot;4.0&quot;&gt;...&lt;/score-partwise&gt;"}'
 
 # Response: 402 Payment Required
-# Headers include: Payment-Required: x402-exact; network=eip155:84532; asset=USDC; amount=100000; ...</code></pre>
+# Headers include: Payment-Required: x402-exact (encoded JSON with network, asset address, amount)</code></pre>
               <p>The response body contains the full quote including:</p>
               <ul>
                 <li><code>x402Version</code> - Protocol version</li>
@@ -161,7 +161,7 @@ claude</code></pre>
             <div class="card">
               <h4>Step 2: Payment Authorization</h4>
               <p>Use an x402 buyer to sign and retry the request with payment authorization.</p>
-              <pre><code># Using @x402/fetch (Coinbase)
+              <pre><code># Using awal CLI
 npx awal x402 details https://musicwire.5432wire.com/v1/validate -X POST
 
 # Inspect the quote, then pay
@@ -171,7 +171,11 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/validate \
   -h '{"content-type":"application/json","Idempotency-Key":"agent-validate-001"}' \
   --max-amount 100000 \
   --json</code></pre>
-              <p>Or use <code>x402curl</code>:</p>
+              <p>
+                Or use <code>x402curl</code> (note: x402curl 0.2.0 signed retry does not
+                currently complete with the CDP facilitator - use MCP client or raw HTTP
+                flow):
+              </p>
               <pre><code>X402_PRIVATE_KEY="$TESTNET_PRIVATE_KEY" x402curl \
   --x402-rpc-url https://sepolia.base.org \
   -X POST \
@@ -441,10 +445,13 @@ npx -y musicwire-mcp</code></pre>
               <p><strong>Do not send mainnet funds.</strong> The API will not accept them.</p>
               <p>
                 Get test USDC from the
-                <a href="https://sepolia.paraswap.io/" target="_blank"
-                  >Paraswap Base Sepolia faucet</a
+                <a href="https://faucet.circle.com/" target="_blank"
+                  >Circle Base Sepolia faucet</a
                 >
-                or any Base Sepolia faucet.
+                or the
+                <a href="https://base-sepolia-faucet.quicknode.com/" target="_blank"
+                  >QuickNode Base Sepolia faucet</a
+                >.
               </p>
             </div>
 
@@ -537,7 +544,7 @@ npx -y musicwire-mcp</code></pre>
           </div>
 
           <div class="doc-section">
-            <h2>Attribution</h2>
+            <h2 id="attribution">Attribution</h2>
             <div class="card">
               <p>Each completed render includes <code>NOTICE.txt</code> containing:</p>
               <ul>
