@@ -35,7 +35,7 @@
           </p>
 
           <div class="mt-4">
-            <span class="badge">Phase 3: Live on Base Sepolia</span>
+            <span class="badge">Phase 2: Live on Base Sepolia</span>
             <span id="network-info" class="manifest-loading-placeholder badge">Loading...</span>
           </div>
         </div>
@@ -315,7 +315,10 @@ npx -y musicwire-mcp</code></pre>
 }</code></pre>
                 <h4>Headers:</h4>
                 <ul>
-                  <li><code>Idempotency-Key</code> - Strongly recommended: replay protection for 24 hours</li>
+                  <li>
+                    <code>Idempotency-Key</code> - Strongly recommended: replay protection for 24
+                    hours
+                  </li>
                   <li><code>Payment-Signature</code> - x402 payment authorization</li>
                 </ul>
                 <h4>Response (202 Accepted):</h4>
@@ -428,7 +431,7 @@ npx -y musicwire-mcp</code></pre>
             <div class="card">
               <h3>Testnet vs Mainnet</h3>
               <p>
-                <strong>Musicwire Phase 3 uses Base Sepolia testnet only.</strong>
+                <strong>Musicwire Phase 2 uses Base Sepolia testnet only.</strong>
               </p>
               <ul>
                 <li><strong>Network:</strong> Base Sepolia (<code>eip155:84532</code>)</li>
@@ -570,10 +573,7 @@ npx -y musicwire-mcp</code></pre>
             <div class="card">
               <h3>Rate Limiting</h3>
               <p>Default: 60 requests per minute per IP address.</p>
-              <p>
-                Rate limited responses return <code>429 Too Many Requests</code> with a retry-after
-                hint.
-              </p>
+              <p>Rate limited responses return <code>429 Too Many Requests</code>.</p>
             </div>
             <div class="card">
               <h3>Artifact Retention</h3>
@@ -601,7 +601,7 @@ npx -y musicwire-mcp</code></pre>
           <a href="https://github.com/thatdudealso/musicwire/issues" target="_blank">Issues</a>
         </div>
         <p class="mt-4">
-          Musicwire &copy; 2025 &mdash; Uses
+          Musicwire &copy; 2025 - Uses
           <a href="https://musescore.org/" target="_blank">MuseScore</a> with MS Basic soundfont.
         </p>
       </div>

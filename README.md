@@ -124,6 +124,7 @@ Artifact URLs are signed, expire with the job retention window, and return the n
 | `GET /v1/jobs/{id}`                  |                       Free | Status, QC outcome, receipt, and signed artifact URLs.  |
 | `GET /manifest`, `/.well-known/x402` |                       Free | Machine-readable service and payment requirements.      |
 | `GET /health`                        |                       Free | Renderer readiness.                                     |
+| `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.   |
 
 The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mscz`, `pdf`, `svg`, `png`, `midi`, `mp3`, and `wav`.
 
