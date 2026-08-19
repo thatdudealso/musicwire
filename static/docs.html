@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Musicwire Documentation - MusicXML API for agents and developers">
+  <meta name="theme-color" content="#000000">
+  <title>Musicwire Documentation</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <nav class="nav">
+        <div class="logo">Musicwire</div>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="/docs">Docs</a>
+          <a href="https://github.com/thatdudealso/musicwire" target="_blank">GitHub</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="section">
+      <div class="container">
+        <h1>Musicwire Documentation</h1>
+        <p class="text-secondary">
+          Deterministic MusicXML validation, MuseScore rendering, and automated QC API.
+          Pay per call in USDC via x402 on Base Sepolia.
+        </p>
+        
+        <div class="mt-4">
+          <span class="badge">Phase 3: Live on Base Sepolia</span>
+          <span id="network-info" class="manifest-loading-placeholder badge">Loading...</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="doc-section">
+          <h2>Quickstart</h2>
+          
+          <h3>MCP Client Configuration</h3>
+          <p>
+            The easiest way to use Musicwire is through the <code>musicwire-mcp</code> package.
+          </p>
+          
+          <div class="card">
+            <h4>Installation</h4>
+            <pre><code># Run directly
+npx -y musicwire-mcp
+
+# Or install globally
+npm install -g musicwire-mcp</code></pre>
+          </div>
+
+          <div class="card">
+            <h4>Claude Code Configuration</h4>
+            <p>Add to <code>.mcp.json</code> in your project:</p>
+            <pre><code>{
+  "mcpServers": {
+    "musicwire": {
+      "command": "npx",
+      "args": ["-y", "musicwire-mcp"],
+      "env": {
+        "MUSICWIRE_API_URL": "https://musicwire.5432wire.com"
+      }
+    }
+  }
+}</code></pre>
+            <p>Before starting Claude Code, export your buyer key:</p>
+            <pre><code>export MUSICWIRE_X402_PRIVATE_KEY='0x...'
+claude</code></pre>
+          </div>
+
+          <div class="card">
+            <h4>Cursor Configuration</h4>
+            <p>Add to <code>.cursor/mcp.json</code> (project) or global MCP config:</p>
+            <pre><code>{
+  "mcpServers": {
+    "musicwire": {
+      "command": "npx",
+      "args": ["-y", "musicwire-mcp"],
+      "env": {
+        "MUSICWIRE_API_URL": "https://musicwire.5432wire.com"
+      }
+    }
+  }
+}</code></pre>
+            <p>Start Cursor from an environment with <code>MUSICWIRE_X402_PRIVATE_KEY</code>.</p>
+          </div>
+
+          <div class="card">
+            <h4>Environment Variables</h4>
+            <table>
+              <thead>
+                <tr><th>Variable</th><th>Required</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>MUSICWIRE_API_URL</code></td>
+                  <td>No</td>
+                  <td>API base URL. Defaults to <code>http://127.0.0.1:8787</code>.</td>
+                </tr>
+                <tr>
+                  <td><code>MUSICWIRE_X402_PRIVATE_KEY</code></td>
+                  <td>For paid calls</td>
+                  <td>Base Sepolia buyer private key (throws away). Also accepts <code>X402_PRIVATE_KEY</code>.</td>
+                </tr>
+                <tr>
+                  <td><code>MUSICWIRE_MCP_PAYMENT_MODE</code></td>
+                  <td>No</td>
+                  <td><code>x402</code> (default) or <code>stub</code> for local testing.</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="text-muted">
+              <strong>Important:</strong> Use test USDC on Base Sepolia only. Never send mainnet funds.
+              Treat your private key as a secret.
+            </p>
+          </div>
+
+          <h3>Raw HTTP + x402 Flow</h3>
+          <p>
+            For direct API access without MCP, use the x402 payment flow:
+          </p>
+
+          <div class="card">
+            <h4>Step 1: Discovery (Get Quote)</h4>
+            <p>Send your request. You'll receive a <code>402 Payment Required</code> with the exact quote.</p>
+            <pre><code>curl -X POST https://musicwire.5432wire.com/v1/validate \
+  -H 'content-type: application/json' \
+  -H 'Idempotency-Key: agent-validate-001' \
+  --data '{"musicxml":"<?xml version=\"1.0\"?><score-partwise version=\"4.0\">...</score-partwise>"}'
+
+# Response: 402 Payment Required
+# Headers include: Payment-Required: x402-exact; network=eip155:84532; asset=USDC; amount=100000; ...</code></pre>
+            <p>
+              The response body contains the full quote including:
+            </p>
+            <ul>
+              <li><code>x402Version</code> - Protocol version</li>
+              <li><code>accepts</code> - Payment requirements (network, asset, amount)</li>
+              <li><code>quote</code> - Human-readable quote with currency and price</li>
+              <li><code>output_schema</code> - Expected response structure</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h4>Step 2: Payment Authorization</h4>
+            <p>Use an x402 buyer to sign and retry the request with payment authorization.</p>
+            <pre><code># Using @x402/fetch (Coinbase)
+npx awal x402 details https://musicwire.5432wire.com/v1/validate -X POST
+
+# Inspect the quote, then pay
+npx awal x402 pay https://musicwire.5432wire.com/v1/validate \
+  -X POST \
+  -d '{"musicxml":"..."}' \
+  -h '{"content-type":"application/json","Idempotency-Key":"agent-validate-001"}' \
+  --max-amount 100000 \
+  --json</code></pre>
+            <p>Or use <code>x402curl</code>:</p>
+            <pre><code>X402_PRIVATE_KEY="$TESTNET_PRIVATE_KEY" x402curl \
+  --x402-rpc-url https://sepolia.base.org \
+  -X POST \
+  -H 'content-type: application/json' \
+  --data-binary @request.json \
+  https://musicwire.5432wire.com/v1/validate</code></pre>
+          </div>
+
+          <div class="card">
+            <h4>Step 3: Use the Response</h4>
+            <p>On success, you receive a 200 response with validation results and payment receipt.</p>
+            <pre><code>{
+  "valid": true,
+  "errors": [],
+  "price_usd": "0.10",
+  "payment": {
+    "status": "settled"
+  },
+  "receipt": {
+    "tx_hash": "0x...",
+    "amount_usd": "0.10",
+    "amount_atomic": "100000",
+    "network": "eip155:84532",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "pay_to": "0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f"
+  }
+}</code></pre>
+          </div>
+
+          <h3>Local Development (Stub Mode)</h3>
+          <p>
+            For zero-cost local development, use the stub payment profile:
+          </p>
+          <div class="card">
+            <h4>Run Musicwire in Stub Mode</h4>
+            <pre><code># Using Docker Compose (recommended)
+ARTIFACT_SIGNING_SECRET='replace-with-a-long-random-secret' \
+  docker compose up</code></pre>
+            <pre><code># Or directly with Node
+ARTIFACT_SIGNING_SECRET='replace-with-a-long-random-secret' \
+  MUSICWIRE_PAYMENT_MODE=stub \
+  npm start</code></pre>
+            <p>The stub profile accepts any request without real payment.</p>
+          </div>
+
+          <div class="card">
+            <h4>Run MCP Server in Stub Mode</h4>
+            <pre><code>MUSICWIRE_API_URL='http://127.0.0.1:8787' \
+MUSICWIRE_MCP_PAYMENT_MODE=stub \
+npx -y musicwire-mcp</code></pre>
+            <p>Stub mode works only with <code>localhost</code>, <code>127.0.0.1</code>, or <code>::1</code>.</p>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h2>Endpoint Reference</h2>
+          <p>
+            All endpoints are versioned under <code>/v1/</code>.
+            The <code>/manifest</code> and <code>/.well-known/x402</code> endpoints provide
+            machine-readable service and payment information.
+          </p>
+
+          <div class="endpoint-list">
+            <div class="endpoint-item">
+              <h3><code>GET /v1/compose-guide</code></h3>
+              <p><strong>Free</strong> - Static MusicXML authoring guide with versioned prompts.</p>
+              <h4>Query Parameters:</h4>
+              <ul>
+                <li><code>style</code> - Optional: musical style (e.g., waltz, march)</li>
+                <li><code>key</code> - Optional: key signature (e.g., C major, F major)</li>
+                <li><code>tempo</code> - Optional: BPM value</li>
+              </ul>
+              <h4>Example:</h4>
+              <pre><code>curl 'http://localhost:8787/v1/compose-guide?style=waltz&key=F%20major&tempo=84'</code></pre>
+            </div>
+
+            <div class="endpoint-item">
+              <h3><code>POST /v1/validate</code></h3>
+              <p><span id="price-validate" class="manifest-loading-placeholder price"><span class="loading">Loading...</span></span> - Detailed MusicXML validation with line-level diagnostics.</p>
+              <h4>Request Body:</h4>
+              <pre><code>{
+  "musicxml": "<?xml version=\"1.0\"?><score-partwise version=\"4.0\">...</score-partwise>"
+}</code></pre>
+              <p>
+                Accepts raw <code>application/xml</code> bytes or JSON with <code>musicxml</code> string.
+              </p>
+              <h4>Headers:</h4>
+              <ul>
+                <li><code>Idempotency-Key</code> - Optional: replay protection for 24 hours</li>
+                <li><code>Payment-Signature</code> - x402 payment authorization (auto-added by MCP client)</li>
+              </ul>
+              <h4>Response:</h4>
+              <pre><code>{
+  "valid": true,
+  "errors": [],
+  "price_usd": "0.10",
+  "payment": { "status": "settled" },
+  "receipt": { ... }
+}</code></pre>
+              <p>On validation failure (422), includes <code>errors</code> array with line, measure, message, and fix_hint.</p>
+            </div>
+
+            <div class="endpoint-item">
+              <h3><code>POST /v1/render</code></h3>
+              <p>
+                <span id="price-render" class="manifest-loading-placeholder">
+                  <span class="loading">Loading...</span>
+                </span> - Queue a MusicXML render with multiple output formats.
+              </p>
+              <h4>Request Body:</h4>
+              <pre><code>{
+  "musicxml": "<?xml version=\"1.0\"?><score-partwise version=\"4.0\">...</score-partwise>",
+  "formats": ["pdf", "mp3", "midi"],
+  "constraints_check": {
+    "tempo": 120,
+    "duration_seconds": 60,
+    "key_fifths": 0,
+    "mode": "major"
+  }
+}</code></pre>
+              <h4>Headers:</h4>
+              <ul>
+                <li><code>Idempotency-Key</code> - Required: replay protection for 24 hours</li>
+                <li><code>Payment-Signature</code> - x402 payment authorization</li>
+              </ul>
+              <h4>Response (202 Accepted):</h4>
+              <pre><code>{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "queued",
+  "estimated_seconds": 30,
+  "price_usd": "0.25",
+  "payment": {
+    "status": "verified_pending_qc",
+    "capture_policy": "capture_only_after_qc_pass"
+  },
+  "poll_url": "/v1/jobs/550e8400-e29b-41d4-a716-446655440000"
+}</code></pre>
+              <h4>Supported Formats:</h4>
+              <p>
+                <code>mscz</code>, <code>pdf</code>, <code>svg</code>, <code>png</code>, <code>midi</code>, <code>mp3</code>, <code>wav</code>.
+                Always returns: <code>musicxml</code>, <code>NOTICE.txt</code>, <code>receipt.json</code>.
+              </p>
+              <p>
+                <code>svg</code> and <code>png</code> are page sets (multiple files for multi-page scores).
+              </p>
+              <p>
+                <strong>Note:</strong> Pricing is <span id="price-render-detail" class="manifest-loading-placeholder">loading...</span>.
+                Solo pricing applies to 1 part; ensemble pricing applies when part count exceeds the boundary.
+              </p>
+            </div>
+
+            <div class="endpoint-item">
+              <h3><code>GET /v1/jobs/{id}</code></h3>
+              <p><span id="price-jobs" class="manifest-loading-placeholder price"><span class="loading">Loading...</span></span> - Poll job status and retrieve artifacts.</p>
+              <h4>Response:</h4>
+              <pre><code>{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "facts": {
+    "partCount": 1,
+    "tempo": 120,
+    "key": { "fifths": 0, "mode": "major" },
+    "scoreDurationSeconds": 60
+  },
+  "qc": {
+    "status": "passed",
+    "checks": ["validation", "renderer_exit", "artifacts_present", ...]
+  },
+  "payment": { "status": "settled" },
+  "receipt": { ... },
+  "expires_at": "2026-01-01T00:00:00.000Z",
+  "artifacts": [
+    {
+      "name": "receipt.json",
+      "sha256": "abc123...",
+      "bytes": 1234,
+      "url": "/v1/artifacts/.../receipt.json?expires=...&token=..."
+    },
+    { "name": "output.pdf", ... }
+  ]
+}</code></pre>
+              <p>Poll until <code>status</code> is <code>completed</code> or <code>failed_not_charged</code>.</p>
+            </div>
+
+            <div class="endpoint-item">
+              <h3><code>GET /v1/artifacts/{jobId}/{name}</code></h3>
+              <p><strong>Free</strong> - Download a signed artifact URL.</p>
+              <p>Artifact URLs are signed, expire with the job retention window (30+ days), and return the named binary artifact.</p>
+            </div>
+          </div>
+
+          <div class="endpoint-list">
+            <div class="endpoint-item">
+              <h3><code>GET /manifest</code></h3>
+              <p><strong>Free</strong> - Machine-readable service manifest with all endpoints, pricing, and capabilities.</p>
+            </div>
+            <div class="endpoint-item">
+              <h3><code>GET /.well-known/x402</code></h3>
+              <p><strong>Free</strong> - x402-specific payment configuration for automated client discovery.</p>
+            </div>
+            <div class="endpoint-item">
+              <h3><code>GET /health</code></h3>
+              <p><strong>Free</strong> - Renderer readiness probe.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h2>Payment Explainer</h2>
+          
+          <div class="card">
+            <h3>Testnet vs Mainnet</h3>
+            <p>
+              <strong>Musicwire Phase 3 uses Base Sepolia testnet only.</strong>
+            </p>
+            <ul>
+              <li><strong>Network:</strong> Base Sepolia (<code>eip155:84532</code>)</li>
+              <li><strong>Asset:</strong> Test USDC (<code>0x036CbD53842c5426634e7929541eC2318f3dCF7e</code>)</li>
+              <li><strong>Receiver:</strong> <code>0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f</code></li>
+              <li><strong>Payment Mode:</strong> x402 Exact via CDP Facilitator</li>
+            </ul>
+            <p>
+              <strong>Do not send mainnet funds.</strong> The API will not accept them.
+            </p>
+            <p>
+              Get test USDC from the <a href="https://sepolia.paraswap.io/" target="_blank">Paraswap Base Sepolia faucet</a> or any Base Sepolia faucet.
+            </p>
+          </div>
+
+          <div class="card">
+            <h3>How Payment Works</h3>
+            <ol>
+              <li><strong>Discovery:</strong> You send a request. Musicwire returns <code>402 Payment Required</code> with the exact quote including network, asset, amount, and payment requirements.</li>
+              <li><strong>Authorization:</strong> Your x402 client reads the <code>Payment-Required</code> header, signs an EIP-7143 Exact authorization with your buyer wallet, and retries the identical request with <code>Payment-Signature</code> header.</li>
+              <li><strong>Verification:</strong> Musicwire verifies the authorization before starting any work.</li>
+              <li><strong>QC Pass:</strong> For paid endpoints (<code>validate</code>, <code>render</code>), Musicwire runs quality control on the result.</li>
+              <li><strong>Settlement:</strong> Only after QC passes, Musicwire settles the payment via the CDP facilitator and returns the receipt with transaction hash.</li>
+            </ol>
+            <p>
+              <strong>Important:</strong> A charge is structurally impossible until QC passes. Failed validation or rendering is <code>failed_not_charged</code> with no settlement.
+            </p>
+          </div>
+
+          <div class="card">
+            <h3>Payment Statuses</h3>
+            <table>
+              <thead>
+                <tr><th>Status</th><th>Meaning</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>not_charged</code></td><td>No payment was authorized or attempted</td></tr>
+                <tr><td><code>verified_pending_qc</code></td><td>Authorization verified, waiting for QC result</td></tr>
+                <tr><td><code>settled</code></td><td>Payment settled on-chain, transaction confirmed</td></tr>
+                <tr><td><code>settlement_pending</code></td><td>Settlement in progress, will retry</td></tr>
+                <tr><td><code>failed_not_charged</code></td><td>QC failed, no charge was made</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h3>Idempotency</h3>
+            <p>
+              Use the <code>Idempotency-Key</code> header to safely retry requests without double-charging.
+            </p>
+            <ul>
+              <li>Replays the original outcome for 24 hours</li>
+              <li>Works across <code>POST /v1/validate</code> and <code>POST /v1/render</code></li>
+              <li>Replay includes the original payment status and receipt</li>
+              <li>No payment authorization comparison needed - the key is the source of truth</li>
+            </ul>
+            <p>
+              <strong>Best practice:</strong> Always use an idempotency key for paid requests.
+            </p>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h2>Attribution</h2>
+          <div class="card">
+            <p>
+              Each completed render includes <code>NOTICE.txt</code> containing:
+            </p>
+            <ul>
+              <li>MS Basic license text</li>
+              <li>FluidR3 font attribution</li>
+              <li>Michael Cowgill attribution</li>
+              <li>S. Christian Collins attribution</li>
+            </ul>
+            <p>
+              <code>receipt.json</code> includes:
+            </p>
+            <ul>
+              <li>Renderer version</li>
+              <li>Sound profile</li>
+              <li>Soundfont SHA-256</li>
+              <li><code>rendered_by: "Musicwire"</code></li>
+              <li>This repository URL</li>
+            </ul>
+            <p>
+              <strong>Customers own their compositions.</strong> Audio can be used commercially when the NOTICE travels with it.
+            </p>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h2>Rate Limits &amp; Retention</h2>
+          <div class="card">
+            <h3>Rate Limiting</h3>
+            <p>Default: 60 requests per minute per IP address.</p>
+            <p>Rate limited responses return <code>429 Too Many Requests</code> with a retry-after hint.</p>
+          </div>
+          <div class="card">
+            <h3>Artifact Retention</h3>
+            <p>Completed artifacts are retained for a minimum of 30 days.</p>
+            <p>Artifact URLs are signed and expire with the job retention window.</p>
+            <p>Deployments should provision adequate storage and implement cleanup policies for long-term operation.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="/">Home</a>
+        <a href="/docs">Documentation</a>
+        <a href="https://github.com/thatdudealso/musicwire" target="_blank">GitHub</a>
+        <a href="https://github.com/thatdudealso/musicwire/tree/main/mcp" target="_blank">MCP Package</a>
+        <a href="https://github.com/thatdudealso/musicwire/issues" target="_blank">Issues</a>
+      </div>
+      <p class="mt-4">
+        Musicwire &copy; 2025 &mdash; 
+        Uses <a href="https://musescore.org/" target="_blank">MuseScore</a> with MS Basic soundfont.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    // Docs-specific manifest handling
+    (function() {
+      'use strict';
+      
+      // Update render price detail
+      function updateRenderDetail(manifest) {
+        const render = manifest.endpoints?.render;
+        if (render && render.price_usd && typeof render.price_usd === 'object') {
+          const detailEl = document.getElementById('price-render-detail');
+          if (detailEl) {
+            detailEl.innerHTML = 
+              `$${render.price_usd.solo} for solo (1 part), $${render.price_usd.multi_instrument} for ensemble (${render.price_usd.part_boundary}+ parts)`;
+          }
+        }
+      }
+      
+      // Extend the existing app.js logic
+      window.addEventListener('DOMContentLoaded', function() {
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+          if (url === '/manifest') {
+            return originalFetch(url, options).then(response => {
+              if (response.ok) {
+                return response.json().then(manifest => {
+                  updateRenderDetail(manifest);
+                  return manifest;
+                });
+              }
+              return response;
+            });
+          }
+          return originalFetch(url, options);
+        };
+      });
+    })();
+    
+    // Load the shared app.js
+  </script>
+  <script src="/app.js"></script>
+</body>
+</html>

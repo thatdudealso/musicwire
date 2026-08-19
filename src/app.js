@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { spawn } from 'node:child_process';
+import { resolve } from 'node:path';
 import { config as defaultConfig, supportedFormats } from './config.js';
 import { composeGuide } from './compose-guide.js';
 import { validateMusicXml, scoreFacts } from './validate.js';
@@ -51,6 +52,22 @@ export function createApp(overrides = {}) {
   for (const target of store.listSettlementPending()) reconciler.schedule(target);
   app.disable('x-powered-by');
   app.use(rateLimit(limiter, config));
+
+  // Serve static landing page and docs - BEFORE body parsers
+  const staticDir = resolve(process.cwd(), 'static');
+  console.log('Static dir:', staticDir);
+  
+  app.get('/', (_request, response) => {
+    response.type('text/html').sendFile('index.html', { root: staticDir });
+  });
+  app.get('/docs', (_request, response) => {
+    response.type('text/html').sendFile('docs.html', { root: staticDir });
+  });
+  app.get('/docs/', (_request, response) => {
+    response.type('text/html').sendFile('docs.html', { root: staticDir });
+  });
+  app.use(express.static(staticDir, { index: false }));
+
   app.use(
     express.raw({
       type: ['application/xml', 'text/xml', 'application/vnd.recordare.musicxml+xml'],
@@ -339,6 +356,8 @@ export function createApp(overrides = {}) {
   });
 
   app.use((error, _request, response, _next) => {
+    // DEBUG: Log the error
+    console.log('ERROR HANDLER:', error.constructor.name, error.message, error.type);
     if (error instanceof PaymentConfigurationError)
       return response.status(503).json({
         error: { code: 'payment_unavailable', message: error.message },
