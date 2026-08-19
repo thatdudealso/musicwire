@@ -1099,6 +1099,77 @@ test('a replacement task retains completed jobs and payment records on its durab
   }
 });
 
+test('local stub reviews require a settled render transaction and publish reputation stats', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-reviews-e2e-'));
+  const server = createApp({
+    dataDirectory,
+    requestsPerMinute: 10_000,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  }).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const unpaid = await fetch(`${base}/reviews`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tx_hash: 'not-a-musicwire-settlement',
+        rating: 5,
+        comment: 'Unverifiable review.',
+      }),
+    });
+    assert.equal(unpaid.status, 422);
+    assert.equal((await unpaid.json()).error.code, 'review_payment_not_settled');
+
+    const render = await renderRequest(base, 'local-stub-payment');
+    assert.equal(render.status, 202);
+    const job = await waitForJob(base, (await render.json()).job_id);
+    assert.equal(job.payment.status, 'settled');
+
+    const accepted = await fetch(`${base}/reviews`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tx_hash: job.receipt.tx_hash,
+        rating: 4,
+        comment: 'Reliable PDF output.',
+      }),
+    });
+    assert.equal(accepted.status, 201);
+    const acceptedBody = await accepted.json();
+    assert.equal(acceptedBody.review.rating, 4);
+    assert.equal(acceptedBody.review.comment, 'Reliable PDF output.');
+    assert.equal(acceptedBody.review.tx_hash, job.receipt.tx_hash);
+    assert.equal(acceptedBody.review.network, 'eip155:84532');
+    assert.match(acceptedBody.review.created_at, /^\d{4}-\d{2}-\d{2}T/);
+
+    const duplicate = await fetch(`${base}/reviews`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tx_hash: job.receipt.tx_hash, rating: 1 }),
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal((await duplicate.json()).error.code, 'review_already_exists');
+
+    const reviews = await (await fetch(`${base}/reviews?page=1&limit=1`)).json();
+    assert.equal(reviews.reviews.length, 1);
+    assert.equal(reviews.reviews[0].tx_hash, job.receipt.tx_hash);
+    assert.deepEqual(reviews.pagination, { page: 1, limit: 1, total: 1, total_pages: 1 });
+
+    const manifest = await (await fetch(`${base}/manifest`)).json();
+    assert.deepEqual(manifest.review_stats, { count: 1, average_rating: 4 });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 async function startServer({ events, renderer = undefined, gateway = undefined, ...overrides }) {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-payments-'));
   const server = createApp({

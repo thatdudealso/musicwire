@@ -108,6 +108,15 @@ MusicXML supplied in a JSON request body must be a UTF-8 string. Render requests
 // GET /v1/jobs/{id}
 { "job_id": "uuid", "status": "completed", "facts": { "partCount": 1, "tempo": 84, "key": { "fifths": -1, "mode": "minor" }, "scoreDurationSeconds": 30 }, "qc": { "status": "passed" }, "error": null, "payment": { "status": "settled" }, "receipt": { "status": "settled", "tx_hash": "0x...", "amount_usd": "0.25", "amount_atomic": "250000", "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e", "network": "eip155:84532", "pay_to": "0x2855..." }, "expires_at": "2026-01-01T00:00:00.000Z", "artifacts": [{ "name": "receipt.json", "sha256": "hex", "bytes": 1234, "url": "/v1/artifacts/uuid/receipt.json?expires=...&token=..." }] }
 
+// POST /reviews - tx_hash must be from a settled Musicwire render payment
+{ "tx_hash": "0x...", "rating": 5, "comment": "Accurate output and clean artifacts." }
+
+// 201 review response. The transaction anchor is public and independently verifiable on Base Sepolia.
+{ "review": { "rating": 5, "comment": "Accurate output and clean artifacts.", "tx_hash": "0x...", "network": "eip155:84532", "created_at": "2026-01-01T00:00:00.000Z" } }
+
+// GET /reviews?page=1&limit=20
+{ "reviews": [{ "rating": 5, "comment": "Accurate output and clean artifacts.", "tx_hash": "0x...", "network": "eip155:84532", "created_at": "2026-01-01T00:00:00.000Z" }], "pagination": { "page": 1, "limit": 20, "total": 1, "total_pages": 1 } }
+
 // Error envelope: 400, 413, 415, 422, or 429 as appropriate
 { "error": { "code": "invalid_formats", "message": "..." } }
 ```
@@ -116,19 +125,21 @@ Artifact URLs are signed and expire with the job retention window. A local-stora
 
 ## API contract
 
-| Endpoint                             |                      Price | Result                                                  |
-| ------------------------------------ | -------------------------: | ------------------------------------------------------- |
-| `GET /v1/compose-guide`              |                       Free | Static, versioned BYO-LLM authoring guide.              |
-| `POST /v1/validate`                  |                      $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`. |
-| `POST /v1/render`                    | $0.25 solo, $0.50 ensemble | Returns `job_id` and `estimated_seconds`.               |
-| `GET /v1/jobs/{id}`                  |                       Free | Status, QC outcome, receipt, and signed artifact URLs.  |
-| `GET /manifest`, `/.well-known/x402` |                       Free | Machine-readable service and payment requirements.      |
-| `GET /health`                        |                       Free | Renderer readiness.                                     |
-| `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.   |
+| Endpoint                             |                      Price | Result                                                   |
+| ------------------------------------ | -------------------------: | -------------------------------------------------------- |
+| `GET /v1/compose-guide`              |                       Free | Static, versioned BYO-LLM authoring guide.               |
+| `POST /v1/validate`                  |                      $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`.  |
+| `POST /v1/render`                    | $0.25 solo, $0.50 ensemble | Returns `job_id` and `estimated_seconds`.                |
+| `GET /v1/jobs/{id}`                  |                       Free | Status, QC outcome, receipt, and signed artifact URLs.   |
+| `POST /reviews`                      |                       Free | Creates one 1-5 review for a settled render `tx_hash`.   |
+| `GET /reviews`                       |                       Free | Paginated public reviews with their transaction anchors. |
+| `GET /manifest`, `/.well-known/x402` |                       Free | Machine-readable service and payment requirements.       |
+| `GET /health`                        |                       Free | Renderer readiness.                                      |
+| `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.    |
 
 The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mscz`, `pdf`, `svg`, `png`, `midi`, `mp3`, and `wav`.
 
-Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. Payment statuses are `verified_pending_qc`, `settled`, `settlement_pending`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. Payment requirements use x402 Exact USDC through the CDP facilitator on the configured network: Base mainnet in production, Base Sepolia for local and stub runs. `GET /manifest` publishes that network and its human-readable label, and `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
+Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. Payment statuses are `verified_pending_qc`, `settled`, `settlement_pending`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. `POST /reviews` accepts a transaction hash only when it matches a settled Musicwire render and permits one review per transaction. Payment requirements use x402 Exact USDC through the CDP facilitator on the configured network: Base mainnet in production, Base Sepolia for local and stub runs. `GET /manifest` publishes that network and its human-readable label plus `review_stats.count` and `review_stats.average_rating`, and `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
 
 QC passes only when MusicXML validates, MuseScore exits successfully, every requested artifact exists, requested audio has a valid container, non-silent RMS, and score-duration agreement within 10%, with a bounded two-second natural release-tail allowance, and optional key, tempo, and duration constraints match. Failures return a typed catalogued error and are not charged.
 

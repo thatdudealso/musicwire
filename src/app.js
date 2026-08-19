@@ -108,19 +108,75 @@ export function createApp(overrides = {}) {
     });
   });
 
-  app.get('/manifest', (_request, response) => response.json(manifest(config)));
+  app.get('/manifest', (_request, response) => response.json(manifest(config, store)));
   app.get('/.well-known/x402', async (_request, response, next) => {
     try {
       response.json({
-        ...manifest(config).payment,
+        ...manifest(config, store).payment,
         receiver: await payments.description(),
-        endpoints: manifest(config).endpoints,
+        endpoints: manifest(config, store).endpoints,
       });
     } catch (error) {
       next(error);
     }
   });
   app.get('/v1/compose-guide', (request, response) => response.json(composeGuide(request.query)));
+
+  app.post('/reviews', (request, response) => {
+    const input = reviewInput(request.body);
+    if (input.error) return response.status(400).json(input.error);
+    if (store.getReviewByTransaction(input.txHash))
+      return response.status(409).json({
+        error: {
+          code: 'review_already_exists',
+          message: 'A review already exists for this settled payment transaction.',
+        },
+      });
+    const job = store.getSettledRenderByTransaction(input.txHash);
+    if (!job)
+      return response.status(422).json({
+        error: {
+          code: 'review_payment_not_settled',
+          message: 'tx_hash must identify a render payment settled by Musicwire.',
+        },
+      });
+    const review = store.createReview({
+      id: crypto.randomUUID(),
+      jobId: job.id,
+      txHash: input.txHash,
+      network: job.payment.network,
+      rating: input.rating,
+      comment: input.comment,
+      createdAt: new Date().toISOString(),
+    });
+    if (!review)
+      return response.status(409).json({
+        error: {
+          code: 'review_already_exists',
+          message: 'A review already exists for this settled payment transaction.',
+        },
+      });
+    return response.status(201).json({ review: publicReview(review) });
+  });
+
+  app.get('/reviews', (request, response) => {
+    const pagination = reviewsPagination(request.query);
+    if (pagination.error) return response.status(400).json(pagination.error);
+    const total = store.reviewStats().count;
+    const reviews = store.listReviews({
+      limit: pagination.limit,
+      offset: (pagination.page - 1) * pagination.limit,
+    });
+    return response.json({
+      reviews: reviews.map(publicReview),
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        total_pages: Math.ceil(total / pagination.limit),
+      },
+    });
+  });
 
   app.post('/v1/validate', async (request, response) => {
     const input = extractInput(request, config);
@@ -622,6 +678,61 @@ function extractInput(request, config) {
   return { musicxml: value };
 }
 
+function reviewInput(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return reviewInputError('Request body must be a JSON object.');
+  if (typeof value.tx_hash !== 'string') return reviewInputError('tx_hash must be a string.');
+  const txHash = value.tx_hash.trim().toLowerCase();
+  if (!txHash || txHash.length > 128)
+    return reviewInputError(
+      'tx_hash must be a non-empty transaction identifier of at most 128 characters.',
+    );
+  if (!Number.isInteger(value.rating) || value.rating < 1 || value.rating > 5)
+    return reviewInputError('rating must be an integer from 1 through 5.');
+  if (value.comment !== undefined && typeof value.comment !== 'string')
+    return reviewInputError('comment must be a string when provided.');
+  const comment = value.comment?.trim() ?? null;
+  if (comment !== null && comment.length > 2_000)
+    return reviewInputError('comment may not exceed 2000 characters.');
+  return { txHash, rating: value.rating, comment };
+}
+
+function reviewInputError(message) {
+  return { error: { error: { code: 'invalid_review', message } } };
+}
+
+function reviewsPagination(query) {
+  const page = positiveInteger(query.page, 1);
+  const limit = positiveInteger(query.limit, 20);
+  if (page === null || limit === null || limit > 100)
+    return {
+      error: {
+        error: {
+          code: 'invalid_pagination',
+          message: 'page and limit must be positive integers; limit may not exceed 100.',
+        },
+      },
+    };
+  return { page, limit };
+}
+
+function positiveInteger(value, fallback) {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function publicReview(review) {
+  return {
+    rating: review.rating,
+    comment: review.comment,
+    tx_hash: review.txHash,
+    network: review.network,
+    created_at: review.createdAt,
+  };
+}
+
 function publicJob(job, artifactStore, payments) {
   const expires = new Date(job.expires_at).getTime();
   return {
@@ -798,7 +909,8 @@ async function commandReady(binary, args, executable = binary) {
   });
 }
 
-function manifest(config) {
+function manifest(config, store) {
+  const reviewStats = store.reviewStats();
   return {
     name: 'Musicwire',
     version: 'v1',
@@ -841,6 +953,11 @@ function manifest(config) {
         },
       },
       jobs: { method: 'GET', path: '/v1/jobs/{id}', price_usd: '0.00' },
+      reviews: { methods: ['GET', 'POST'], path: '/reviews', price_usd: '0.00' },
+    },
+    review_stats: {
+      count: reviewStats.count,
+      average_rating: reviewStats.averageRating,
     },
     formats: {
       always: ['musicxml', 'NOTICE.txt', 'receipt.json'],
