@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Musicwire production API on ECS Fargate Spot behind the shared 5432wire API Gateway VPC Link and NLB.
+Description: Musicwire production API on on-demand ECS Fargate behind the shared 5432wire API Gateway VPC Link and NLB.
 
 Parameters:
   ImageUri:
