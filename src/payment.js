@@ -183,7 +183,7 @@ export class CdpReceiverWallet {
       address: account.address,
       network: this.config.x402Network,
     });
-    console.info(`Musicwire Base Sepolia receiving address: ${account.address}`);
+    console.info(`Musicwire ${this.config.x402Network} receiving address: ${account.address}`);
     return account.address;
   }
 }
@@ -242,7 +242,7 @@ export class CdpX402Gateway {
       verification = await server.verifyPayment(paymentPayload, matchedRequirements);
     } catch {
       throw new PaymentVerificationError(
-        'The Base Sepolia facilitator could not verify this payment. No payment was settled.',
+        'The Base facilitator could not verify this payment. No payment was settled.',
       );
     }
     if (!verification.isValid)

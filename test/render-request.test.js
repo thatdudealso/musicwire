@@ -244,6 +244,52 @@ test('production startup requires CDP credentials for x402 payments', () => {
   assert.match(result.stderr.toString(), /CDP_WALLET_SECRET/);
 });
 
+test('production startup requires CDP API credentials for x402 payments', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        X402_NETWORK: 'eip155:8453',
+        X402_RPC_URL: 'https://mainnet.base.org',
+        CDP_API_KEY_ID: '',
+        CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+        CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /CDP_API_KEY_ID/);
+});
+
+test('production startup requires Base mainnet x402 configuration', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        X402_NETWORK: 'eip155:84532',
+        X402_RPC_URL: 'https://mainnet.base.org',
+        CDP_API_KEY_ID: 'test-cdp-api-id',
+        CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+        CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /X402_NETWORK=eip155:8453/);
+});
+
 test('production startup refuses stub payments', () => {
   const result = spawnSync(
     process.execPath,

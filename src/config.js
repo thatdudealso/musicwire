@@ -11,6 +11,8 @@ const decimal = (name, fallback) => {
 };
 
 const developmentArtifactSigningSecret = 'development-only-change-before-deploy';
+const baseSepoliaX402Network = 'eip155:84532';
+const baseMainnetX402Network = 'eip155:8453';
 const artifactSigningSecret =
   process.env.ARTIFACT_SIGNING_SECRET ?? developmentArtifactSigningSecret;
 
@@ -50,7 +52,7 @@ export const config = {
   renderSoloPriceUsd: process.env.RENDER_SOLO_PRICE_USD ?? '0.25',
   renderMultiPriceUsd: process.env.RENDER_MULTI_PRICE_USD ?? '0.50',
   paymentMode: process.env.MUSICWIRE_PAYMENT_MODE ?? 'stub',
-  x402Network: 'eip155:84532',
+  x402Network: process.env.X402_NETWORK ?? baseSepoliaX402Network,
   x402PaymentTimeoutSeconds: integer('X402_PAYMENT_TIMEOUT_SECONDS', 300),
   x402SettlementRetrySeconds: decimal('X402_SETTLEMENT_RETRY_SECONDS', 5),
   x402RpcUrl: process.env.X402_RPC_URL ?? 'https://sepolia.base.org',
@@ -69,6 +71,15 @@ if (process.env.NODE_ENV === 'production' && config.paymentMode !== 'x402')
 
 if (process.env.NODE_ENV === 'production' && !process.env.CDP_WALLET_SECRET?.trim())
   throw new Error('CDP_WALLET_SECRET is required for production x402 payments.');
+
+if (process.env.NODE_ENV === 'production' && !process.env.CDP_API_KEY_ID?.trim())
+  throw new Error('CDP_API_KEY_ID is required for production x402 payments.');
+
+if (process.env.NODE_ENV === 'production' && !process.env.CDP_API_KEY_SECRET?.trim())
+  throw new Error('CDP_API_KEY_SECRET is required for production x402 payments.');
+
+if (process.env.NODE_ENV === 'production' && config.x402Network !== baseMainnetX402Network)
+  throw new Error(`X402_NETWORK=${baseMainnetX402Network} is required in production.`);
 
 if (process.env.NODE_ENV === 'production' && !isHttpsUrl(config.x402RpcUrl))
   throw new Error('X402_RPC_URL must be an HTTPS URL in production.');

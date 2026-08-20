@@ -35,7 +35,7 @@ curl http://localhost:8787/v1/jobs/JOB_ID
 
 ## How agents pay
 
-Musicwire Phase 2 accepts **test USDC on Base Sepolia only** (`eip155:84532`). Do not send mainnet funds. The receiving CDP Server Wallet is `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f`.
+Local and stub x402 runs default to **test USDC on Base Sepolia** (`eip155:84532`). The production deployment is pinned to **Base mainnet** (`eip155:8453`) and creates or reuses its named CDP Server Wallet from the supplied credentials. Do not send funds to a local or test deployment.
 
 Run a payment-enabled server by sourcing local CDP credentials without printing them. The durable local database stores only the named wallet identity and receiving address, never the wallet secret.
 
@@ -160,12 +160,12 @@ The end-to-end test skips cleanly where MuseScore is absent. It renders a real s
 
 ## Container deployment
 
-The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image sets `NODE_ENV=production`; the startup guards in `src/config.js` are authoritative and refuse a production boot without `MUSICWIRE_PAYMENT_MODE=x402` and `CDP_WALLET_SECRET`.
+The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image sets `NODE_ENV=production`; the startup guards in `src/config.js` are authoritative and refuse a production boot without `MUSICWIRE_PAYMENT_MODE=x402`, all three CDP credentials, an explicit non-development artifact signing secret, and `X402_NETWORK=eip155:8453`.
 
 `compose.yaml` defines two services:
 
 - `musicwire` (the default for `docker compose up`) is a clearly labeled non-production local test service. It overrides `NODE_ENV=test` and pins `MUSICWIRE_PAYMENT_MODE=stub`, so it needs no CDP credentials and can never reach the facilitator or settle on-chain.
-- `musicwire-production` (compose profile `production`) keeps the image's `NODE_ENV=production`, sets `MUSICWIRE_PAYMENT_MODE=x402`, and passes `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`, and `MUSICWIRE_PUBLIC_BASE_URL` through from the host environment (or an uncommitted `env_file` you add locally). The startup guards refuse a production boot without `CDP_WALLET_SECRET`, so a true production run starts only when the operator supplies real credentials. No secret is committed to the repository and production never defaults to stub.
+- `musicwire-production` (compose profile `production`) keeps the image's `NODE_ENV=production`, pins Base mainnet, and passes `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`, and `MUSICWIRE_PUBLIC_BASE_URL` through from the host environment (or an uncommitted `env_file` you add locally). No secret is committed to the repository and production never defaults to stub.
 
 ```sh
 docker build -t musicwire .
@@ -183,6 +183,22 @@ docker compose up musicwire-production
 ```
 
 The full published-port container rendering smoke test remains a deploy-phase follow-up because Docker Desktop reset loopback connections during the initial probe; the native MuseScore E2E remains the pipeline proof for this phase.
+
+### AWS production deployment
+
+`scripts/deploy-production.sh` deploys the production service on the shared ECS Fargate Spot cluster through the existing API Gateway VPC Link and internal NLB. It creates no new load balancer or fixed-cost infrastructure. The script requires Docker, the configured AWS CLI credentials used by `aws-axi`, and a readable `MUSICWIRE_SECRETS_ENV_FILE` (default: `$HOME/.config/ai-keys.env`) containing these values:
+
+- `CDP_API_KEY_ID`
+- `CDP_API_KEY_SECRET`
+- `CDP_WALLET_SECRET`
+
+It copies those credentials and an opaque `ARTIFACT_SIGNING_SECRET` into AWS Secrets Manager at deployment time. They are supplied to ECS as task-definition secrets, never plaintext environment values. For a first deployment the signing secret is generated locally without printing it; later deployments retain the existing signing secret so active artifact URLs remain valid. Run the deploy script from a clean release commit:
+
+```sh
+./scripts/deploy-production.sh
+```
+
+The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, and an ECS service sized at 1 vCPU and 2 GiB for MuseScore and ffmpeg rendering. The service uses `FARGATE_SPOT`; its data directory remains task-local, so production artifact durability beyond a running task is not yet provided by this deployment.
 
 ## Rights, attribution, and acceptable use
 
