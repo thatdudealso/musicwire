@@ -198,7 +198,7 @@ It copies those credentials and an opaque `ARTIFACT_SIGNING_SECRET` into AWS Sec
 ./scripts/deploy-production.sh
 ```
 
-The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, and an ECS service sized at 1 vCPU and 2 GiB for MuseScore and ffmpeg rendering. The service uses on-demand `FARGATE` with one base task. Its data directory remains task-local, so task replacement does not preserve jobs or artifacts. `JobStore.recoverInterruptedJobs()` can mark interrupted jobs `failed_not_charged` only when its SQLite file survives a process restart; durable external job storage is required before treating task replacement as a safe recovery path.
+The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, and an ECS service sized at 1 vCPU and 2 GiB for MuseScore and ffmpeg rendering. The service uses native ARM64 on-demand `FARGATE` with one base task. Its data directory remains task-local, so task replacement does not preserve jobs or artifacts. `JobStore.recoverInterruptedJobs()` can mark interrupted jobs `failed_not_charged` only when its SQLite file survives a process restart; durable external job storage is required before treating task replacement as a safe recovery path.
 
 ## Rights, attribution, and acceptable use
 
