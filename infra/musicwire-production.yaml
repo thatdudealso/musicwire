@@ -183,7 +183,8 @@ Resources:
       EnableExecuteCommand: true
       HealthCheckGracePeriodSeconds: 90
       CapacityProviderStrategy:
-        - CapacityProvider: FARGATE_SPOT
+        - CapacityProvider: FARGATE
+          Base: 1
           Weight: 1
       DeploymentConfiguration:
         DeploymentCircuitBreaker:
