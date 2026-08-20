@@ -17,7 +17,6 @@ require_command() {
   }
 }
 
-require_command docker
 require_command git
 require_command node
 
@@ -75,20 +74,18 @@ else
   axi secretsmanager create-secret --name "$RUNTIME_SECRET" --secret-string "file://$secret_file"
 fi
 
-if ! axi ecr describe-repositories --repository-names "$REPOSITORY" >/dev/null 2>&1; then
-  axi ecr create-repository --repository-name "$REPOSITORY" --image-scanning-configuration scanOnPush=true
+registry="$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
+image_uri="${MUSICWIRE_IMAGE_URI:-}"
+if [[ -z "$image_uri" ]]; then
+  echo 'MUSICWIRE_IMAGE_URI is required. Build and push the immutable AMD64 image with the GitHub Actions workflow first.' >&2
+  exit 1
+fi
+if [[ "$image_uri" != "$registry/$REPOSITORY:"* ]]; then
+  echo "MUSICWIRE_IMAGE_URI must point at $registry/$REPOSITORY" >&2
+  exit 1
 fi
 
-registry="$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
-token="$(axi ecr get-authorization-token --query 'authorizationData[0].authorizationToken')"
-printf '%s' "$token" | base64 --decode | cut -d: -f2- | docker login --username AWS --password-stdin "$registry" >/dev/null
-
-image_tag="$(git rev-parse --verify HEAD)"
-image_uri="$registry/$REPOSITORY:$image_tag"
-docker build --tag "$image_uri" .
-docker push "$image_uri"
-
-runtime_secret_arn="arn:aws:secretsmanager:$REGION:$ACCOUNT_ID:secret:$RUNTIME_SECRET"
+runtime_secret_arn="$(axi secretsmanager describe-secret --secret-id "$RUNTIME_SECRET" --query 'ARN')"
 axi cloudformation deploy \
   --stack-name "$STACK" \
   --template-file "$TEMPLATE" \

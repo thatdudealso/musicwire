@@ -186,7 +186,15 @@ The full published-port container rendering smoke test remains a deploy-phase fo
 
 ### AWS production deployment
 
-`scripts/deploy-production.sh` deploys the production service on the shared ECS Fargate Spot cluster through the existing API Gateway VPC Link and internal NLB. It creates no new load balancer or fixed-cost infrastructure. The script requires Docker, the configured AWS CLI credentials used by `aws-axi`, and a readable `MUSICWIRE_SECRETS_ENV_FILE` (default: `$HOME/.config/ai-keys.env`) containing these values:
+`scripts/deploy-production.sh` deploys the production service on the shared on-demand ECS Fargate cluster through the existing API Gateway VPC Link and internal NLB. It creates no new load balancer or fixed-cost infrastructure. AMD64 images are built and pushed by the public-repository GitHub Actions workflow, avoiding unreliable local ARM-to-AMD64 emulation. Prepare its narrowly scoped OIDC role once, then dispatch the workflow using the immutable release commit SHA:
+
+```sh
+./scripts/prepare-production-image-build.sh
+gh-axi workflow run build-production-image.yml --repo thatdudealso/musicwire --ref main \
+  --field image_tag="$(git rev-parse HEAD)"
+```
+
+The deploy script requires the configured AWS credentials used by `aws-axi`, a readable `MUSICWIRE_SECRETS_ENV_FILE` (default: `$HOME/.config/ai-keys.env`) containing these values, and the pushed image URI:
 
 - `CDP_API_KEY_ID`
 - `CDP_API_KEY_SECRET`
@@ -195,10 +203,11 @@ The full published-port container rendering smoke test remains a deploy-phase fo
 It copies those credentials and an opaque `ARTIFACT_SIGNING_SECRET` into AWS Secrets Manager at deployment time. They are supplied to ECS as task-definition secrets, never plaintext environment values. For a first deployment the signing secret is generated locally without printing it; later deployments retain the existing signing secret so active artifact URLs remain valid. Run the deploy script from a clean release commit:
 
 ```sh
-./scripts/deploy-production.sh
+MUSICWIRE_IMAGE_URI="841162711749.dkr.ecr.us-east-1.amazonaws.com/musicwire:$(git rev-parse HEAD)" \
+  ./scripts/deploy-production.sh
 ```
 
-The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, and an ECS service sized at 1 vCPU and 2 GiB for MuseScore and ffmpeg rendering. The service uses native ARM64 on-demand `FARGATE` with one base task. Its data directory remains task-local, so task replacement does not preserve jobs or artifacts. `JobStore.recoverInterruptedJobs()` can mark interrupted jobs `failed_not_charged` only when its SQLite file survives a process restart; durable external job storage is required before treating task replacement as a safe recovery path.
+The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, and an ECS service sized at 1 vCPU and 2 GiB for MuseScore and ffmpeg rendering. The service uses AMD64 on-demand `FARGATE` with one base task because the pinned MuseScore release requires a newer glibc on ARM64 than Bookworm provides. Its data directory remains task-local, so task replacement does not preserve jobs or artifacts. `JobStore.recoverInterruptedJobs()` can mark interrupted jobs `failed_not_charged` only when its SQLite file survives a process restart; durable external job storage is required before treating task replacement as a safe recovery path.
 
 ## Rights, attribution, and acceptable use
 
