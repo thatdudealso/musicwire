@@ -13,6 +13,7 @@ import {
   PaymentConfigurationError,
   PaymentSettlementError,
   PaymentVerificationError,
+  paymentPayerIdentity,
 } from './payment.js';
 import { Renderer } from './renderer.js';
 import { failureCodes } from './qc.js';
@@ -289,13 +290,7 @@ export function createApp(overrides = {}) {
         ? config.renderMultiPriceUsd
         : config.renderSoloPriceUsd;
     const idempotencyKey = request.get('Idempotency-Key');
-    const existing = store.getByIdempotencyKey(idempotencyKey);
-    if (existing) return response.status(202).json(renderResponse(existing, config));
-    if (!queue.reserve())
-      return response.status(503).json({
-        error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' },
-      });
-    let reservationReleased = false;
+    let reservationReleased = true;
     let pendingPayment = null;
     try {
       const authorization = await payments.authorize({
@@ -305,11 +300,23 @@ export function createApp(overrides = {}) {
         outputSchema: paymentOutputSchema('render'),
       });
       if (!authorization.authorized) {
-        queue.release();
-        reservationReleased = true;
         return sendPaymentChallenge(response, authorization.challenge);
       }
       pendingPayment = authorization.payment;
+      const replayIdentity = renderReplayIdentity(
+        pendingPayment,
+        input.musicxml,
+        formats,
+        constraints,
+        idempotencyKey,
+      );
+      const existing = replayIdentity && store.getByRenderIdentity(replayIdentity);
+      if (existing) return response.status(202).json(renderResponse(existing, config));
+      if (!queue.reserve())
+        return response.status(503).json({
+          error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' },
+        });
+      reservationReleased = false;
       if (!claimPaymentAuthorization(store, payments, pendingPayment, 'render', idempotencyKey)) {
         queue.release();
         reservationReleased = true;
@@ -333,7 +340,7 @@ export function createApp(overrides = {}) {
         ).toISOString(),
       };
       job.payment.job_id = job.id;
-      const record = store.create(job, idempotencyKey);
+      const record = store.create(job, replayIdentity);
       if (record.id === job.id) queue.enqueue(record.id);
       else {
         await payments.cancelNotCharged(pendingPayment, 'idempotent_request_replayed');
@@ -871,16 +878,41 @@ function manifest(config) {
 }
 
 function validateReplayIdentity(payment, musicxml, idempotencyKey) {
+  return paymentReplayIdentity(payment, idempotencyKey, { musicxml }, 'validate');
+}
+
+function renderReplayIdentity(payment, musicxml, formats, constraints, idempotencyKey) {
+  return paymentReplayIdentity(
+    payment,
+    idempotencyKey,
+    { musicxml, formats, constraints },
+    'render',
+  );
+}
+
+function paymentReplayIdentity(payment, idempotencyKey, request, endpoint) {
   if (!idempotencyKey) return null;
-  if (typeof payment.payer !== 'string' || !payment.payer.trim())
+  const payerIdentity = paymentPayerIdentity(payment);
+  if (!payerIdentity)
     throw new PaymentVerificationError(
-      'The verified payment did not provide a payer identity for idempotent validation.',
+      'The verified payment did not provide a payer identity for idempotent replay.',
     );
   return {
     idempotencyKey,
-    payerIdentity: payment.payer.toLowerCase(),
-    requestContext: sha256(`validate:${musicxml}`),
+    payerIdentity,
+    requestContext: sha256(`${endpoint}:${JSON.stringify(canonicalRequest(request))}`),
   };
+}
+
+function canonicalRequest(value) {
+  if (Array.isArray(value)) return value.map(canonicalRequest);
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalRequest(value[key])]),
+    );
+  return value;
 }
 
 function paymentOutputSchema(endpoint) {

@@ -17,11 +17,17 @@ const job = (id) => ({
   expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
 });
 
+const renderIdentity = (idempotencyKey) => ({
+  idempotencyKey,
+  payerIdentity: 'payer-a',
+  requestContext: 'render-context-a',
+});
+
 test('committed state is durable without a write-ahead log, which EFS cannot support', () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-store-'));
   try {
     const store = new JobStore(dataDirectory);
-    store.create(job('11111111-1111-4111-8111-111111111111'), 'durable-key');
+    store.create(job('11111111-1111-4111-8111-111111111111'), renderIdentity('durable-key'));
     store.savePaymentWallet({
       provider: 'cdp_server_wallet',
       accountName: 'musicwire-x402-receiver',
@@ -98,11 +104,13 @@ test('payment proof outlives the idempotency window and is never swept', () => {
         ...job('44444444-4444-4444-8444-444444444444'),
         createdAt: longAgo,
       },
-      'expired-render-key',
+      renderIdentity('expired-render-key'),
     );
     store.db
-      .prepare('UPDATE idempotency_keys SET created_at = ? WHERE key = ?')
-      .run(longAgo, 'expired-render-key');
+      .prepare(
+        'UPDATE idempotency_keys SET created_at = ? WHERE key = ? AND payer_identity = ? AND request_context = ?',
+      )
+      .run(longAgo, 'expired-render-key', 'payer-a', 'render-context-a');
 
     // Runs the sweep the way an ordinary later request does.
     store.expireIdempotencyKeys();
@@ -127,7 +135,7 @@ test('payment proof outlives the idempotency window and is never swept', () => {
     assert.equal(store.get('44444444-4444-4444-8444-444444444444').state, 'queued');
 
     // Only the replay-protection key ages out, freeing the key for a new render.
-    assert.equal(store.getByIdempotencyKey('expired-render-key'), null);
+    assert.equal(store.getByRenderIdentity(renderIdentity('expired-render-key')), null);
   } finally {
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }

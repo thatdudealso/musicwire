@@ -27,9 +27,12 @@ export class JobStore {
         expires_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS idempotency_keys (
-        key TEXT PRIMARY KEY,
+        key TEXT NOT NULL,
+        payer_identity TEXT NOT NULL,
+        request_context TEXT NOT NULL,
         job_id TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (key, payer_identity, request_context)
       );
       CREATE TABLE IF NOT EXISTS payment_wallets (
         provider TEXT PRIMARY KEY,
@@ -57,12 +60,13 @@ export class JobStore {
         created_at TEXT NOT NULL
       );
     `);
+    this.migrateRenderIdempotencyIdentity();
     this.migrateValidateResultIdentity();
     this.expireIdempotencyKeys();
   }
 
-  create(job, idempotencyKey) {
-    const existing = this.getByIdempotencyKey(idempotencyKey);
+  create(job, replayIdentity = null) {
+    const existing = replayIdentity && this.getByRenderIdentity(replayIdentity);
     if (existing) return existing;
     this.db
       .prepare(
@@ -82,19 +86,31 @@ export class JobStore {
         job.createdAt,
         job.expiresAt,
       );
-    if (idempotencyKey)
+    if (replayIdentity)
       this.db
-        .prepare('INSERT INTO idempotency_keys (key, job_id, created_at) VALUES (?,?,?)')
-        .run(idempotencyKey, job.id, job.createdAt);
+        .prepare(
+          `INSERT INTO idempotency_keys
+           (key,payer_identity,request_context,job_id,created_at) VALUES (?,?,?,?,?)`,
+        )
+        .run(
+          replayIdentity.idempotencyKey,
+          replayIdentity.payerIdentity,
+          replayIdentity.requestContext,
+          job.id,
+          job.createdAt,
+        );
     return this.get(job.id);
   }
 
-  getByIdempotencyKey(idempotencyKey) {
-    if (!idempotencyKey) return null;
+  getByRenderIdentity({ idempotencyKey, payerIdentity, requestContext }) {
+    if (!idempotencyKey || !payerIdentity || !requestContext) return null;
     this.expireIdempotencyKeys();
     const existing = this.db
-      .prepare('SELECT job_id FROM idempotency_keys WHERE key = ?')
-      .get(idempotencyKey);
+      .prepare(
+        `SELECT job_id FROM idempotency_keys
+         WHERE key = ? AND payer_identity = ? AND request_context = ?`,
+      )
+      .get(idempotencyKey, payerIdentity, requestContext);
     return existing ? this.get(existing.job_id) : null;
   }
 
@@ -291,6 +307,29 @@ export class JobStore {
       SELECT id,idempotency_key,NULL,NULL,http_status,body_json,payment_json,created_at
       FROM legacy_validate_results;
       DROP TABLE legacy_validate_results;
+      COMMIT;
+    `);
+  }
+
+  migrateRenderIdempotencyIdentity() {
+    const columns = this.db.prepare('PRAGMA table_info(idempotency_keys)').all();
+    if (columns.some((column) => column.name === 'payer_identity')) return;
+    this.db.exec(`
+      BEGIN;
+      ALTER TABLE idempotency_keys RENAME TO legacy_idempotency_keys;
+      CREATE TABLE idempotency_keys (
+        key TEXT NOT NULL,
+        payer_identity TEXT NOT NULL,
+        request_context TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (key, payer_identity, request_context)
+      );
+      INSERT INTO idempotency_keys
+        (key,payer_identity,request_context,job_id,created_at)
+      SELECT key,'legacy','legacy:' || job_id,job_id,created_at
+      FROM legacy_idempotency_keys;
+      DROP TABLE legacy_idempotency_keys;
       COMMIT;
     `);
   }

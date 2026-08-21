@@ -501,7 +501,8 @@ export class StubPaymentGateway {
   }
 
   async authorize({ request, endpoint, priceUsd, outputSchema }) {
-    if (!request.get('payment-signature'))
+    const paymentSignature = request.get('payment-signature');
+    if (!paymentSignature)
       return {
         authorized: false,
         challenge: challenge(
@@ -521,7 +522,7 @@ export class StubPaymentGateway {
         asset: requirements.asset,
         network: requirements.network,
         pay_to: requirements.payTo,
-        payer: 'test-payer',
+        payer: `stub:${createHash('sha256').update(paymentSignature).digest('hex')}`,
         payment_payload: { stub: true },
         payment_requirements: requirements,
       },
@@ -593,12 +594,22 @@ function pendingPayment({
     asset: requirements.asset,
     network: requirements.network,
     pay_to: requirements.payTo,
-    payer: verification.payer ?? null,
+    payer: paymentPayerIdentity({
+      payer: verification.payer,
+      payment_payload: paymentPayload,
+    }),
     verified_at: new Date().toISOString(),
     authorization_fingerprint: authorizationFingerprint,
     payment_payload: paymentPayload,
     payment_requirements: requirements,
   };
+}
+
+export function paymentPayerIdentity(payment) {
+  const authorizationFrom = payment?.payment_payload?.payload?.authorization?.from;
+  if (isEvmAddress(authorizationFrom)) return authorizationFrom.toLowerCase();
+  if (typeof payment?.payer === 'string' && payment.payer.trim()) return payment.payer.toLowerCase();
+  return null;
 }
 
 function failedPayment(payment, reason) {

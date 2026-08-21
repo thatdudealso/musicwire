@@ -64,7 +64,6 @@ test('CDP gateway decodes the standard payment-signature header before verificat
     findMatchingRequirements: (available) => available[0],
     verifyPayment: async () => ({
       isValid: true,
-      payer: '0x2222222222222222222222222222222222222222',
     }),
   });
 
@@ -85,6 +84,7 @@ test('CDP gateway decodes the standard payment-signature header before verificat
   assert.equal(result.authorized, true);
   assert.deepEqual(result.payment.payment_payload, payload);
   assert.equal(result.payment.status, 'verified_pending_qc');
+  assert.equal(result.payment.payer, '0x2222222222222222222222222222222222222222');
 
   const reencodedPayload = {
     payload: {
@@ -308,12 +308,52 @@ test('successful QC settles once, persists a receipt, and idempotent retries do 
     );
     assert.equal(job.receipt.amount_usd, '0.25');
     assert.equal(job.receipt.network, 'eip155:84532');
-    assert.deepEqual(events, ['verify', 'render', 'settle']);
+    assert.deepEqual(events, ['verify', 'render', 'settle', 'verify']);
 
     const receiptArtifact = job.artifacts.find((artifact) => artifact.name === 'receipt.json');
     const receipt = await (await fetch(`${base}${receiptArtifact.url}`)).json();
     assert.equal(receipt.payment.tx_hash, job.receipt.tx_hash);
     assert.equal(receipt.payment.network, job.receipt.network);
+  } finally {
+    await close();
+  }
+});
+
+test('render idempotency isolates payer and request context after payment authorization', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const first = await renderRequest(base, 'payer-a-first', 'shared-render-key');
+    assert.equal(first.status, 202);
+    const firstBody = await first.json();
+    await waitForJob(base, firstBody.job_id);
+
+    const unpaid = await renderRequest(base, undefined, 'shared-render-key');
+    const unpaidBody = await unpaid.json();
+    assert.equal(unpaid.status, 402);
+    assert.equal(unpaidBody.resource.url, 'https://musicwire.test/v1/render');
+    assert.equal('job_id' in unpaidBody, false);
+    assert.equal('receipt' in unpaidBody, false);
+
+    const otherPayer = await renderRequest(base, 'payer-b', 'shared-render-key');
+    assert.equal(otherPayer.status, 202);
+    const otherPayerBody = await otherPayer.json();
+    assert.notEqual(otherPayerBody.job_id, firstBody.job_id);
+    await waitForJob(base, otherPayerBody.job_id);
+
+    const samePayerReplay = await renderRequest(base, 'payer-a-replay', 'shared-render-key');
+    assert.equal(samePayerReplay.status, 202);
+    assert.equal((await samePayerReplay.json()).job_id, firstBody.job_id);
+    assert.equal(events.filter((event) => event === 'settle').length, 2);
   } finally {
     await close();
   }
@@ -855,7 +895,11 @@ test('a replacement task retains completed jobs and payment records on its durab
         createdAt: now.toISOString(),
         expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
       },
-      'durable-job-key',
+      {
+        idempotencyKey: 'durable-job-key',
+        payerIdentity: 'durable-payer',
+        requestContext: 'durable-render-context',
+      },
     );
     original.update('completed-durable-job', {
       state: 'completed',

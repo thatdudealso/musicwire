@@ -291,7 +291,10 @@ npx -y musicwire-mcp</code></pre>
                 </p>
                 <h4>Headers:</h4>
                 <ul>
-                  <li><code>Idempotency-Key</code> - Optional: replay protection for 24 hours</li>
+                  <li>
+                    <code>Idempotency-Key</code> - Optional: indefinite replay only for the same
+                    verified payer and MusicXML request context
+                  </li>
                   <li>
                     <code>Payment-Signature</code> - x402 payment authorization (auto-added by MCP
                     client)
@@ -333,8 +336,8 @@ npx -y musicwire-mcp</code></pre>
                 <h4>Headers:</h4>
                 <ul>
                   <li>
-                    <code>Idempotency-Key</code> - Strongly recommended: replay protection for 24
-                    hours
+                    <code>Idempotency-Key</code> - Strongly recommended: 24-hour replay only for
+                    the same verified payer and render request context
                   </li>
                   <li><code>Payment-Signature</code> - x402 payment authorization</li>
                 </ul>
@@ -558,7 +561,10 @@ npx -y musicwire-mcp</code></pre>
                 double-charging.
               </p>
               <ul>
-                <li><code>POST /v1/render</code> replays the original outcome for 24 hours.</li>
+                <li>
+                  <code>POST /v1/render</code> replays for 24 hours only when the same verified
+                  payer submits the same render request context with the same key.
+                </li>
                 <li>
                   <code>POST /v1/validate</code> replays indefinitely only when the same verified
                   payer submits the same MusicXML request context with the same key.
