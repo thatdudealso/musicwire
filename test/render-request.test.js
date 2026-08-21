@@ -290,6 +290,30 @@ test('production startup requires Base mainnet x402 configuration', () => {
   assert.match(result.stderr.toString(), /X402_NETWORK=eip155:8453/);
 });
 
+test('production startup requires S3 artifact storage', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        X402_NETWORK: 'eip155:8453',
+        X402_RPC_URL: 'https://mainnet.base.org',
+        CDP_API_KEY_ID: 'test-cdp-api-id',
+        CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+        CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+        MUSICWIRE_ARTIFACT_STORAGE: 'local',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /MUSICWIRE_ARTIFACT_STORAGE=s3/);
+});
+
 test('production startup refuses stub payments', () => {
   const result = spawnSync(
     process.execPath,

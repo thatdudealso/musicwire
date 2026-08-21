@@ -207,7 +207,18 @@ MUSICWIRE_IMAGE_URI="841162711749.dkr.ecr.us-east-1.amazonaws.com/musicwire:$(gi
   ./scripts/deploy-production.sh
 ```
 
-The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, and an ECS service sized at 1 vCPU and 2 GiB for MuseScore and ffmpeg rendering. The service uses AMD64 on-demand `FARGATE` with one base task because the pinned MuseScore release requires a newer glibc on ARM64 than Bookworm provides. Its data directory remains task-local, so task replacement does not preserve jobs or artifacts. `JobStore.recoverInterruptedJobs()` can mark interrupted jobs `failed_not_charged` only when its SQLite file survives a process restart; durable external job storage is required before treating task replacement as a safe recovery path.
+The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, an encrypted S3 artifact bucket, and an encrypted EFS access point for `/var/lib/musicwire/data`. `MUSICWIRE_ARTIFACT_STORAGE=s3` is required in production and `MUSICWIRE_ARTIFACT_BUCKET` defaults to `musicwire-artifacts-841162711749`; the bucket retains content-addressed downloadable artifacts for 30 days and the API streams them after validating the existing signed-token URL.
+
+The SQLite database on EFS durably preserves the `jobs`, `idempotency_keys`, `payment_wallets`, `payment_authorizations`, and `validate_results` tables, including payment and settlement JSON. On restart, `JobStore.recoverInterruptedJobs()` marks a queued or running render `failed_not_charged` with `render_interrupted`, while completed jobs and their S3 artifacts remain available. This design is intentionally limited to one task: the ECS deployment maximum is also one task, so do not scale Musicwire above one task without replacing SQLite-over-EFS with a multi-writer-safe design.
+
+To verify replacement recovery after a completed paid render, retain its `job_id`, run a forced ECS deployment, wait for the task to become healthy, then fetch the job and one signed artifact URL again. The job, payment receipt, and artifact must remain available; an in-flight job must instead become the visible `failed_not_charged` recovery outcome.
+
+```sh
+npx -y aws-axi ecs update-service --cluster 5432wire-cluster --service musicwire \
+  --force-new-deployment --region us-east-1
+curl -sS "https://musicwire.5432wire.com/v1/jobs/$JOB_ID"
+curl -sS -L "$SIGNED_ARTIFACT_URL" -o /dev/null
+```
 
 ## Rights, attribution, and acceptable use
 

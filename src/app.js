@@ -24,6 +24,10 @@ export function createApp(overrides = {}) {
     config.dataDirectory,
     config.artifactSigningSecret,
     config.artifactRetentionDays,
+    {
+      bucket: config.artifactStorage === 's3' ? config.artifactBucket : '',
+      s3Client: overrides.s3Client,
+    },
   );
   const payments = overrides.payments ?? createPaymentService(config, store);
   const renderer = overrides.renderer ?? new Renderer(config, artifactStore);
@@ -347,17 +351,21 @@ export function createApp(overrides = {}) {
     response.json(publicJob(job, artifactStore, payments));
   });
 
-  app.get('/v1/artifacts/:jobId/:name', (request, response) => {
-    const job = store.get(request.params.jobId);
-    const artifact = job?.artifacts.find((item) => item.name === request.params.name);
-    if (
-      !artifact ||
-      !artifactStore.isValidToken(job.id, artifact, request.query.expires, request.query.token)
-    )
-      return response.status(403).json({
-        error: { code: 'artifact_access_denied', message: 'Artifact URL is expired or invalid.' },
-      });
-    response.type(contentType(artifact.name)).send(artifactStore.read(artifact));
+  app.get('/v1/artifacts/:jobId/:name', async (request, response, next) => {
+    try {
+      const job = store.get(request.params.jobId);
+      const artifact = job?.artifacts.find((item) => item.name === request.params.name);
+      if (
+        !artifact ||
+        !artifactStore.isValidToken(job.id, artifact, request.query.expires, request.query.token)
+      )
+        return response.status(403).json({
+          error: { code: 'artifact_access_denied', message: 'Artifact URL is expired or invalid.' },
+        });
+      response.type(contentType(artifact.name)).send(await artifactStore.read(artifact));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use((error, _request, response, _next) => {
@@ -422,7 +430,7 @@ async function processJob(id, services) {
   };
   const artifacts = [
     ...result.artifacts,
-    services.artifactStore.put(
+    await services.artifactStore.put(
       'receipt.json',
       Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
     ),
@@ -450,7 +458,7 @@ async function processJob(id, services) {
   services.store.update(id, {
     payment_json: JSON.stringify(settlement.payment),
     artifacts_json: JSON.stringify(
-      refreshReceiptArtifact(
+      await refreshReceiptArtifact(
         services.artifactStore,
         services.payments,
         artifacts,
@@ -460,13 +468,18 @@ async function processJob(id, services) {
   });
 }
 
-function refreshReceiptArtifact(artifactStore, payments, artifacts, payment) {
-  return artifacts.map((artifact) => {
-    if (artifact.name !== 'receipt.json') return artifact;
-    const receipt = JSON.parse(artifactStore.read(artifact).toString('utf8'));
-    receipt.payment = payments.receipt(payment);
-    return artifactStore.put('receipt.json', Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`));
-  });
+async function refreshReceiptArtifact(artifactStore, payments, artifacts, payment) {
+  return Promise.all(
+    artifacts.map(async (artifact) => {
+      if (artifact.name !== 'receipt.json') return artifact;
+      const receipt = JSON.parse((await artifactStore.read(artifact)).toString('utf8'));
+      receipt.payment = payments.receipt(payment);
+      return artifactStore.put(
+        'receipt.json',
+        Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
+      );
+    }),
+  );
 }
 
 function createSettlementReconciler({ store, payments, artifactStore, config }) {
@@ -479,7 +492,7 @@ function createSettlementReconciler({ store, payments, artifactStore, config }) 
     store.update(id, {
       payment_json: JSON.stringify(settlement.payment),
       artifacts_json: JSON.stringify(
-        refreshReceiptArtifact(artifactStore, payments, job.artifacts, settlement.payment),
+        await refreshReceiptArtifact(artifactStore, payments, job.artifacts, settlement.payment),
       ),
     });
     return true;
@@ -788,7 +801,10 @@ function manifest(config) {
     failure_codes: failureCodes,
     retention: {
       minimum_days: config.artifactRetentionDays,
-      storage: 'content-addressed sha256 local storage',
+      storage:
+        config.artifactStorage === 's3'
+          ? 'content-addressed sha256 S3 storage'
+          : 'content-addressed sha256 local storage',
       access: 'signed token URLs',
     },
     license_terms: {

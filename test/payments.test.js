@@ -786,6 +786,79 @@ test('restart recovery retains durable settlement intents for reconciliation', (
   }
 });
 
+test('a replacement task retains completed jobs and payment records on its durable database volume', () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-durable-volume-'));
+  const now = new Date();
+  try {
+    const original = new JobStore(dataDirectory);
+    original.create(
+      {
+        id: 'completed-durable-job',
+        inputXml: musicxml,
+        formats: ['pdf'],
+        constraints: {},
+        facts: {},
+        priceUsd: '0.25',
+        payment: { provider: 'cdp', status: 'verified_pending_qc' },
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
+      },
+      'durable-job-key',
+    );
+    original.update('completed-durable-job', {
+      state: 'completed',
+      artifacts_json: JSON.stringify([{ name: 'score.pdf', storageKey: 'artifacts/durable' }]),
+      payment_json: JSON.stringify({ provider: 'cdp', status: 'settled', tx_hash: '0xdurable' }),
+    });
+    original.savePaymentWallet({
+      provider: 'cdp',
+      accountName: 'musicwire-x402-receiver',
+      address: '0x1111111111111111111111111111111111111111',
+      network: 'eip155:8453',
+    });
+    original.claimPaymentAuthorization({
+      fingerprint: 'durable-payment-authorization',
+      endpoint: 'render',
+      idempotencyKey: 'durable-job-key',
+      createdAt: now.toISOString(),
+    });
+    original.saveValidateResult({
+      id: 'durable-validation',
+      idempotencyKey: 'durable-validation-key',
+      httpStatus: 200,
+      body: { valid: true },
+      payment: { provider: 'cdp', status: 'settled', tx_hash: '0xdurable-validation' },
+      createdAt: now.toISOString(),
+    });
+
+    const replacement = new JobStore(dataDirectory);
+    assert.deepEqual(replacement.get('completed-durable-job').artifacts, [
+      { name: 'score.pdf', storageKey: 'artifacts/durable' },
+    ]);
+    assert.deepEqual(replacement.get('completed-durable-job').payment, {
+      provider: 'cdp',
+      status: 'settled',
+      tx_hash: '0xdurable',
+    });
+    assert.equal(replacement.getPaymentWallet('cdp').account_name, 'musicwire-x402-receiver');
+    assert.equal(
+      replacement.claimPaymentAuthorization({
+        fingerprint: 'durable-payment-authorization',
+        endpoint: 'render',
+        idempotencyKey: 'another-key',
+        createdAt: now.toISOString(),
+      }).claimed,
+      false,
+    );
+    assert.equal(
+      replacement.getValidateResultByKey('durable-validation-key').payment.tx_hash,
+      '0xdurable-validation',
+    );
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 async function startServer({ events, renderer = undefined, gateway = undefined, ...overrides }) {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-payments-'));
   const server = createApp({

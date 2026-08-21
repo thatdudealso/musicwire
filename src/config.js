@@ -35,6 +35,8 @@ export const config = {
   soundfontPath: process.env.MS_BASIC_SOUNDFONT ?? '',
   soundfontLicensePath: process.env.MS_BASIC_LICENSE ?? '',
   artifactSigningSecret,
+  artifactStorage: process.env.MUSICWIRE_ARTIFACT_STORAGE ?? 'local',
+  artifactBucket: process.env.MUSICWIRE_ARTIFACT_BUCKET ?? 'musicwire-artifacts-841162711749',
   maxUploadBytes: integer('MAX_UPLOAD_BYTES', 1_000_000),
   maxDecompressedBytes: integer('MAX_DECOMPRESSED_BYTES', 1_000_000),
   maxRenderSeconds: integer('MAX_RENDER_SECONDS', 60),
@@ -66,6 +68,9 @@ export const config = {
 if (!['stub', 'x402'].includes(config.paymentMode))
   throw new Error('MUSICWIRE_PAYMENT_MODE must be either "stub" or "x402".');
 
+if (!['local', 's3'].includes(config.artifactStorage))
+  throw new Error('MUSICWIRE_ARTIFACT_STORAGE must be either "local" or "s3".');
+
 if (process.env.NODE_ENV === 'production' && config.paymentMode !== 'x402')
   throw new Error('MUSICWIRE_PAYMENT_MODE=x402 is required in production.');
 
@@ -83,6 +88,12 @@ if (process.env.NODE_ENV === 'production' && config.x402Network !== baseMainnetX
 
 if (process.env.NODE_ENV === 'production' && !isHttpsUrl(config.x402RpcUrl))
   throw new Error('X402_RPC_URL must be an HTTPS URL in production.');
+
+if (process.env.NODE_ENV === 'production' && config.artifactStorage !== 's3')
+  throw new Error('MUSICWIRE_ARTIFACT_STORAGE=s3 is required in production.');
+
+if (process.env.NODE_ENV === 'production' && !config.artifactBucket.trim())
+  throw new Error('MUSICWIRE_ARTIFACT_BUCKET is required for production artifact storage.');
 
 export const supportedFormats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'];
 

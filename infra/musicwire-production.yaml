@@ -62,6 +62,16 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-and-write-rendered-artifacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub '${ArtifactBucket.Arn}/artifacts/*'
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -83,6 +93,83 @@ Resources:
       SecurityGroupEgress:
         - IpProtocol: '-1'
           CidrIp: 0.0.0.0/0
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow the Musicwire task to mount its durable SQLite volume.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ServiceSecurityGroup
+          Description: NFS from the single Musicwire ECS task.
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+
+  DurableDataFileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: musicwire-durable-data
+
+  DurableDataAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref DurableDataFileSystem
+      PosixUser:
+        Uid: '1000'
+        Gid: '1000'
+      RootDirectory:
+        CreationInfo:
+          OwnerUid: '1000'
+          OwnerGid: '1000'
+          Permissions: '0750'
+        Path: /musicwire
+
+  DurableDataMountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref DurableDataFileSystem
+      SubnetId: !Select [0, !Ref PublicSubnets]
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+  DurableDataMountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref DurableDataFileSystem
+      SubnetId: !Select [1, !Ref PublicSubnets]
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'musicwire-artifacts-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts-after-retention-window
+            Prefix: artifacts/
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -132,6 +219,10 @@ Resources:
           PortMappings:
             - ContainerPort: 8787
               Protocol: tcp
+          MountPoints:
+            - ContainerPath: /var/lib/musicwire/data
+              SourceVolume: musicwire-durable-data
+              ReadOnly: false
           Environment:
             - Name: MUSICWIRE_PAYMENT_MODE
               Value: x402
@@ -143,6 +234,10 @@ Resources:
               Value: https://mainnet.base.org
             - Name: ARTIFACT_RETENTION_DAYS
               Value: '30'
+            - Name: MUSICWIRE_ARTIFACT_STORAGE
+              Value: s3
+            - Name: MUSICWIRE_ARTIFACT_BUCKET
+              Value: !Ref ArtifactBucket
             - Name: MAX_RENDER_SECONDS
               Value: '60'
             - Name: MAX_RENDER_CPU_SECONDS
@@ -174,10 +269,21 @@ Resources:
             Timeout: 5
             Retries: 3
             StartPeriod: 90
+      Volumes:
+        - Name: musicwire-durable-data
+          EFSVolumeConfiguration:
+            FileSystemId: !Ref DurableDataFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref DurableDataAccessPoint
+              IAM: DISABLED
 
   Service:
     Type: AWS::ECS::Service
-    DependsOn: Listener
+    DependsOn:
+      - Listener
+      - DurableDataMountTargetA
+      - DurableDataMountTargetB
     Properties:
       ServiceName: musicwire
       Cluster: !Ref ClusterName
@@ -193,7 +299,7 @@ Resources:
         DeploymentCircuitBreaker:
           Enable: true
           Rollback: true
-        MaximumPercent: 200
+        MaximumPercent: 100
         MinimumHealthyPercent: 0
       LoadBalancers:
         - ContainerName: musicwire
