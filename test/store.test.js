@@ -71,3 +71,58 @@ test('a job interrupted by task replacement becomes visibly failed_not_charged',
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
+
+test('payment proof outlives the idempotency window and is never swept', () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-store-retention-'));
+  try {
+    const store = new JobStore(dataDirectory);
+    const longAgo = new Date(Date.now() - 90 * 86_400_000).toISOString();
+    store.saveValidateResult({
+      id: '33333333-3333-4333-8333-333333333333',
+      idempotencyKey: 'settled-validation-key',
+      httpStatus: 200,
+      body: { valid: true },
+      payment: { status: 'settled', tx_hash: '0xsettled', amount_usd: '0.10' },
+      createdAt: longAgo,
+    });
+    store.claimPaymentAuthorization({
+      fingerprint: 'long-past-authorization',
+      endpoint: 'validate',
+      idempotencyKey: 'settled-validation-key',
+      createdAt: longAgo,
+    });
+    store.create(
+      {
+        ...job('44444444-4444-4444-8444-444444444444'),
+        createdAt: longAgo,
+      },
+      'expired-render-key',
+    );
+    store.db
+      .prepare('UPDATE idempotency_keys SET created_at = ? WHERE key = ?')
+      .run(longAgo, 'expired-render-key');
+
+    // Runs the sweep the way an ordinary later request does.
+    store.expireIdempotencyKeys();
+
+    assert.equal(
+      store.getValidateResultByKey('settled-validation-key').payment.tx_hash,
+      '0xsettled',
+    );
+    assert.equal(
+      store.claimPaymentAuthorization({
+        fingerprint: 'long-past-authorization',
+        endpoint: 'validate',
+        idempotencyKey: 'another-key',
+        createdAt: new Date().toISOString(),
+      }).claimed,
+      false,
+    );
+    assert.equal(store.get('44444444-4444-4444-8444-444444444444').state, 'queued');
+
+    // Only the replay-protection key ages out, freeing the key for a new render.
+    assert.equal(store.getByIdempotencyKey('expired-render-key'), null);
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});

@@ -311,7 +311,9 @@ export class CdpX402Gateway {
       !isEvmAddress(asset)
     )
       return { outcome: 'unknown' };
-    const rpc = new JsonRpcClient(this.config.x402RpcUrl);
+    const rpc = new JsonRpcClient(this.config.x402RpcUrl, {
+      timeoutMs: rpcTimeoutMs(this.config),
+    });
     const state = await rpc.request('eth_call', [
       {
         to: asset,
@@ -382,7 +384,7 @@ export async function verifyRpcNetwork(config, { rpc } = {}) {
     throw new PaymentConfigurationError(
       `X402_NETWORK ${config.x402Network} is not an eip155 network identifier.`,
     );
-  const client = rpc ?? new JsonRpcClient(config.x402RpcUrl);
+  const client = rpc ?? new JsonRpcClient(config.x402RpcUrl, { timeoutMs: rpcTimeoutMs(config) });
   let served;
   try {
     served = Number(await client.request('eth_chainId', []));
@@ -399,6 +401,11 @@ export async function verifyRpcNetwork(config, { rpc } = {}) {
   return served;
 }
 
+function rpcTimeoutMs(config) {
+  const seconds = Number(config.x402RpcTimeoutSeconds);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 10_000;
+}
+
 function evmChainId(network) {
   const [namespace, reference] = String(network).split(':');
   if (namespace !== 'eip155') return null;
@@ -407,8 +414,9 @@ function evmChainId(network) {
 }
 
 export class JsonRpcClient {
-  constructor(url) {
+  constructor(url, { timeoutMs = 10_000 } = {}) {
     this.url = url;
+    this.timeoutMs = timeoutMs;
     this.id = 0;
   }
 
@@ -417,6 +425,7 @@ export class JsonRpcClient {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: (this.id += 1), method, params }),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok) throw new Error(`RPC ${method} failed with HTTP ${response.status}.`);
     const body = await response.json();

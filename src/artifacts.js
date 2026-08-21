@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { failureCodes } from './qc.js';
 
 export function sha256(data) {
@@ -46,13 +47,21 @@ export class ArtifactStore {
     dataDirectory,
     signingSecret,
     retentionDays,
-    { bucket = '', region = '', s3Client = null } = {},
+    {
+      bucket = '',
+      region = '',
+      s3Client = null,
+      presigner = getSignedUrl,
+      downloadUrlTtlSeconds = 900,
+    } = {},
   ) {
     this.directory = path.join(dataDirectory, 'artifacts');
     this.signingSecret = signingSecret;
     this.retentionDays = retentionDays;
     this.bucket = bucket;
     this.s3 = bucket ? (s3Client ?? new S3Client(region ? { region } : {})) : null;
+    this.presigner = presigner;
+    this.downloadUrlTtlSeconds = downloadUrlTtlSeconds;
     if (!this.s3) fs.mkdirSync(this.directory, { recursive: true });
   }
 
@@ -92,6 +101,19 @@ export class ArtifactStore {
     const actual = Buffer.from(token ?? '');
     const expectedBytes = Buffer.from(expected);
     return actual.length === expectedBytes.length && crypto.timingSafeEqual(expectedBytes, actual);
+  }
+
+  async downloadUrl(artifact) {
+    if (!this.s3) return null;
+    try {
+      return await this.presigner(
+        this.s3,
+        new GetObjectCommand({ Bucket: this.bucket, Key: artifact.storageKey }),
+        { expiresIn: this.downloadUrlTtlSeconds },
+      );
+    } catch (error) {
+      throw storageUnavailable(error);
+    }
   }
 
   async read(artifact) {

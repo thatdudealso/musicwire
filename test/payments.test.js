@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -966,4 +967,29 @@ test('startup chain verification fails closed when the RPC endpoint is unreachab
       return true;
     },
   );
+});
+
+test('startup chain verification gives up on a half-open RPC endpoint', async () => {
+  const stalled = http.createServer(() => {});
+  stalled.listen(0, '127.0.0.1');
+  await new Promise((resolve) => stalled.once('listening', resolve));
+  const startedAt = Date.now();
+  try {
+    await assert.rejects(
+      verifyRpcNetwork({
+        x402Network: 'eip155:8453',
+        x402RpcUrl: `http://127.0.0.1:${stalled.address().port}`,
+        x402RpcTimeoutSeconds: 0.25,
+      }),
+      (error) => {
+        assert.ok(error instanceof PaymentConfigurationError);
+        assert.match(error.message, /could not be reached to confirm it serves eip155:8453/);
+        return true;
+      },
+    );
+    assert.ok(Date.now() - startedAt < 5_000, 'the boot check must not wait on undici defaults');
+  } finally {
+    stalled.closeAllConnections();
+    await new Promise((resolve) => stalled.close(resolve));
+  }
 });

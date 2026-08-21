@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -50,29 +51,20 @@ test('S3 artifact storage survives replacement of the API task', async () => {
   }
 });
 
-test('the API streams a signed artifact from S3', async () => {
+test('the API delivers a signed S3 artifact by redirect, including one over 10 MB', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-api-'));
   const s3 = new MemoryS3();
-  const bytes = Buffer.from('score delivered from S3');
-  const hash = crypto.createHash('sha256').update(bytes).digest('hex');
-  const artifact = {
-    name: 'score.pdf',
-    sha256: hash,
-    bytes: bytes.length,
-    storageKey: `artifacts/${hash}`,
-  };
-  await s3.send(
-    new (class PutObjectCommand {
-      constructor(input) {
-        this.input = input;
-      }
-    })({ Bucket: 'musicwire-test-artifacts', Key: artifact.storageKey, Body: bytes }),
-  );
+  // Larger than the API Gateway 10 MB payload quota the redirect exists to avoid.
+  const bytes = Buffer.alloc(11 * 1024 * 1024, 'wav-audio-payload');
+  const artifact = storedArtifact('score.wav', bytes);
+  s3.seed('musicwire-test-artifacts', artifact.storageKey, bytes);
+  const objectStore = await startObjectServer(s3, 'musicwire-test-artifacts');
   const server = createApp({
     dataDirectory,
     artifactStorage: 's3',
     artifactBucket: 'musicwire-test-artifacts',
     s3Client: s3,
+    presigner: objectStore.presigner,
     renderer: {
       render: async () => ({
         ok: true,
@@ -84,25 +76,65 @@ test('the API streams a signed artifact from S3', async () => {
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    const queued = await (
-      await fetch(`${base}/v1/render`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-        body: JSON.stringify({ musicxml, formats: ['pdf'] }),
-      })
-    ).json();
-    let job;
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      job = await (await fetch(`${base}/v1/jobs/${queued.job_id}`)).json();
-      if (job.status === 'completed') break;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    assert.equal(job.status, 'completed');
-    const delivered = await fetch(
-      `${base}${job.artifacts.find((item) => item.name === 'score.pdf').url}`,
-    );
+    const job = await renderAndPoll(base, 'completed');
+    const signedUrl = `${base}${job.artifacts.find((item) => item.name === 'score.wav').url}`;
+
+    const redirect = await fetch(signedUrl, { redirect: 'manual' });
+    assert.equal(redirect.status, 302);
+    const location = redirect.headers.get('location');
+    assert.match(location, /X-Amz-Expires=900/);
+    assert.equal(Number(redirect.headers.get('content-length') ?? 0) < bytes.length, true);
+
+    const delivered = await fetch(signedUrl);
     assert.equal(delivered.status, 200);
     assert.deepEqual(Buffer.from(await delivered.arrayBuffer()), bytes);
+    assert.deepEqual(objectStore.servedKeys, [artifact.storageKey]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await objectStore.close();
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('an unsigned or tampered artifact request never reaches S3', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-authz-'));
+  const s3 = new MemoryS3();
+  const bytes = Buffer.from('private score bytes');
+  const artifact = storedArtifact('score.pdf', bytes);
+  s3.seed('musicwire-test-artifacts', artifact.storageKey, bytes);
+  const presigned = [];
+  const server = createApp({
+    dataDirectory,
+    artifactStorage: 's3',
+    artifactBucket: 'musicwire-test-artifacts',
+    s3Client: s3,
+    presigner: async (_client, command) => {
+      presigned.push(command.input.Key);
+      return 'https://s3.invalid/should-not-be-issued';
+    },
+    renderer: {
+      render: async () => ({ ok: true, artifacts: [artifact], receipt: {} }),
+    },
+  }).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const job = await renderAndPoll(base, 'completed');
+    const signedUrl = new URL(
+      `${base}${job.artifacts.find((item) => item.name === 'score.pdf').url}`,
+    );
+
+    const unsigned = await fetch(`${signedUrl.origin}${signedUrl.pathname}`, {
+      redirect: 'manual',
+    });
+    assert.equal(unsigned.status, 403);
+    assert.equal((await unsigned.json()).error.code, 'artifact_access_denied');
+
+    const tampered = new URL(signedUrl);
+    tampered.searchParams.set('token', 'not-the-signature');
+    assert.equal((await fetch(tampered, { redirect: 'manual' })).status, 403);
+
+    assert.deepEqual(presigned, []);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
@@ -144,28 +176,52 @@ test('an S3 write failure fails the job visibly instead of crashing the render q
   }
 });
 
-test('artifact read failures report storage status rather than a parse error', async () => {
+test('the store reports a missing object as expired and a transient fault as unavailable', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-read-fail-'));
   const s3 = new MemoryS3();
-  const pdfBytes = Buffer.from('%PDF-1.7 rendered score');
-  const pdf = {
-    name: 'score.pdf',
-    sha256: crypto.createHash('sha256').update(pdfBytes).digest('hex'),
-    bytes: pdfBytes.length,
-    storageKey: `artifacts/${crypto.createHash('sha256').update(pdfBytes).digest('hex')}`,
-  };
-  s3.seed('musicwire-test-artifacts', pdf.storageKey, pdfBytes);
-  const server = createApp({
-    dataDirectory,
-    artifactStorage: 's3',
-    artifactBucket: 'musicwire-test-artifacts',
+  const store = new ArtifactStore(dataDirectory, 'test-signing-secret', 30, {
+    bucket: 'musicwire-test-artifacts',
     s3Client: s3,
+  });
+  try {
+    const artifact = await store.put('score.pdf', Buffer.from('%PDF-1.7 rendered score'));
+    assert.deepEqual(await store.read(artifact), Buffer.from('%PDF-1.7 rendered score'));
+
+    s3.expireEverything();
+    await assert.rejects(store.read(artifact), (error) => {
+      assert.equal(error.code, 'artifact_expired');
+      assert.equal(error.expired, true);
+      return true;
+    });
+
+    s3.breakReads();
+    await assert.rejects(store.read(artifact), (error) => {
+      assert.equal(error.code, 'artifact_storage_unavailable');
+      assert.equal(error.expired, false);
+      return true;
+    });
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('a locally stored artifact that expired answers 404 as JSON, not as its own media type', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-local-expired-'));
+  const localStore = new ArtifactStore(dataDirectory, 'unused-for-writes', 30, {});
+  const artifact = await localStore.put('score.pdf', Buffer.from('%PDF-1.7 rendered score'));
+  const listening = createApp({
+    dataDirectory,
+    artifactStorage: 'local',
     renderer: {
-      render: async () => ({ ok: true, artifacts: [pdf], receipt: { rendered_by: 'Musicwire' } }),
+      render: async () => ({
+        ok: true,
+        artifacts: [artifact],
+        receipt: { rendered_by: 'Musicwire' },
+      }),
     },
   }).listen(0, '127.0.0.1');
-  await new Promise((resolve) => server.once('listening', resolve));
-  const base = `http://127.0.0.1:${server.address().port}`;
+  await new Promise((resolve) => listening.once('listening', resolve));
+  const base = `http://127.0.0.1:${listening.address().port}`;
   const urlFor = (job, name) => `${base}${job.artifacts.find((item) => item.name === name).url}`;
   try {
     const job = await renderAndPoll(base, 'completed');
@@ -173,27 +229,84 @@ test('artifact read failures report storage status rather than a parse error', a
     assert.equal(delivered.status, 200);
     assert.match(delivered.headers.get('content-type'), /application\/pdf/);
 
-    s3.expireEverything();
-    const expired = await fetch(urlFor(job, 'receipt.json'));
-    assert.equal(expired.status, 404);
-    assert.equal((await expired.json()).error.code, 'artifact_expired');
+    fs.rmSync(path.join(dataDirectory, 'artifacts'), { recursive: true, force: true });
 
     // A failed binary download must not be labelled as the binary it could not deliver.
-    const expiredPdf = await fetch(urlFor(job, 'score.pdf'));
-    assert.equal(expiredPdf.status, 404);
-    assert.match(expiredPdf.headers.get('content-type'), /application\/json/);
-    assert.equal((await expiredPdf.json()).error.code, 'artifact_expired');
+    const expired = await fetch(urlFor(job, 'score.pdf'));
+    assert.equal(expired.status, 404);
+    assert.match(expired.headers.get('content-type'), /application\/json/);
+    assert.equal((await expired.json()).error.code, 'artifact_expired');
+  } finally {
+    await new Promise((resolve) => listening.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
 
-    s3.breakReads();
-    const unavailable = await fetch(urlFor(job, 'score.pdf'));
-    assert.equal(unavailable.status, 503);
-    assert.match(unavailable.headers.get('content-type'), /application\/json/);
-    assert.equal((await unavailable.json()).error.code, 'artifact_storage_unavailable');
+test('a presign failure answers 503 as JSON rather than the artifact media type', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-presign-fail-'));
+  const s3 = new MemoryS3();
+  const bytes = Buffer.from('%PDF-1.7 rendered score');
+  const artifact = storedArtifact('score.pdf', bytes);
+  s3.seed('musicwire-test-artifacts', artifact.storageKey, bytes);
+  const server = createApp({
+    dataDirectory,
+    artifactStorage: 's3',
+    artifactBucket: 'musicwire-test-artifacts',
+    s3Client: s3,
+    presigner: async () => {
+      throw new Error('credentials could not be resolved');
+    },
+    renderer: {
+      render: async () => ({ ok: true, artifacts: [artifact], receipt: {} }),
+    },
+  }).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const job = await renderAndPoll(base, 'completed');
+    const response = await fetch(
+      `${base}${job.artifacts.find((item) => item.name === 'score.pdf').url}`,
+      { redirect: 'manual' },
+    );
+
+    assert.equal(response.status, 503);
+    assert.match(response.headers.get('content-type'), /application\/json/);
+    assert.equal((await response.json()).error.code, 'artifact_storage_unavailable');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
+
+function storedArtifact(name, bytes) {
+  const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+  return { name, sha256: hash, bytes: bytes.length, storageKey: `artifacts/${hash}` };
+}
+
+// Stands in for S3 itself: the presigned URL is fetched directly by the caller,
+// so nothing about the object's size passes back through the Musicwire process.
+async function startObjectServer(s3, bucket) {
+  const servedKeys = [];
+  const server = http.createServer((request, response) => {
+    const key = decodeURIComponent(new URL(request.url, 'http://objects.test').pathname.slice(1));
+    const value = s3.get(bucket, key);
+    if (!value) {
+      response.writeHead(404).end();
+      return;
+    }
+    servedKeys.push(key);
+    response.writeHead(200, { 'content-type': 'application/octet-stream' }).end(value);
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  return {
+    servedKeys,
+    presigner: async (_client, command, { expiresIn }) =>
+      `${origin}/${encodeURIComponent(command.input.Key)}?X-Amz-Expires=${expiresIn}`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
 
 async function renderAndPoll(base, terminalStatus) {
   const queued = await (

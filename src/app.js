@@ -28,6 +28,8 @@ export function createApp(overrides = {}) {
       bucket: config.artifactStorage === 's3' ? config.artifactBucket : '',
       region: config.artifactRegion,
       s3Client: overrides.s3Client,
+      ...(overrides.presigner ? { presigner: overrides.presigner } : {}),
+      downloadUrlTtlSeconds: config.artifactDownloadUrlTtlSeconds,
     },
   );
   const payments = overrides.payments ?? createPaymentService(config, store);
@@ -363,6 +365,8 @@ export function createApp(overrides = {}) {
         return response.status(403).json({
           error: { code: 'artifact_access_denied', message: 'Artifact URL is expired or invalid.' },
         });
+      const downloadUrl = await artifactStore.downloadUrl(artifact);
+      if (downloadUrl) return response.redirect(302, downloadUrl);
       const bytes = await artifactStore.read(artifact);
       response.type(contentType(artifact.name)).send(bytes);
     } catch (error) {

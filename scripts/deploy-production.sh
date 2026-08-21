@@ -58,6 +58,7 @@ fi
 if [[ -z "${ARTIFACT_SIGNING_SECRET:-}" ]]; then
   ARTIFACT_SIGNING_SECRET="$(node -e "process.stdout.write(require('node:crypto').randomBytes(48).toString('base64url'))")"
 fi
+export ARTIFACT_SIGNING_SECRET
 
 secret_file="$(mktemp)"
 trap 'rm -f "$secret_file"' EXIT
@@ -66,6 +67,11 @@ chmod 600 "$secret_file"
 node -e '
   const fs = require("node:fs");
   const keys = ["CDP_API_KEY_ID", "CDP_API_KEY_SECRET", "CDP_WALLET_SECRET", "ARTIFACT_SIGNING_SECRET"];
+  const missing = keys.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    console.error(`blocked: the runtime secret payload is missing ${missing.join(", ")}`);
+    process.exit(1);
+  }
   fs.writeFileSync(process.argv[1], JSON.stringify(Object.fromEntries(keys.map((key) => [key, process.env[key]]))));
 ' "$secret_file"
 

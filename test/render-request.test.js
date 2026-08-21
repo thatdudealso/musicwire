@@ -372,13 +372,6 @@ test('production startup requires a region for S3 artifact storage', () => {
   assert.match(result.stderr.toString(), /AWS_REGION is required/);
 });
 
-test('production startup refuses an RPC endpoint serving a different network', () => {
-  const result = loadConfig(productionEnv({ X402_RPC_URL: 'https://sepolia.base.org' }));
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr.toString(), /X402_RPC_URL must serve eip155:8453/);
-});
-
 test('the settlement RPC endpoint defaults to the configured network', () => {
   const mainnet = loadConfig(productionEnv(), printRpcUrl);
   const sepolia = loadConfig(

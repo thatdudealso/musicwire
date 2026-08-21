@@ -249,13 +249,6 @@ export class JobStore {
   expireIdempotencyKeys() {
     const cutoff = new Date(Date.now() - this.idempotencyWindowMs).toISOString();
     this.db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?').run(cutoff);
-    this.db.prepare('DELETE FROM payment_authorizations WHERE created_at < ?').run(cutoff);
-    this.db
-      .prepare(
-        `DELETE FROM validate_results
-         WHERE created_at < ? AND payment_json NOT LIKE '%"status":"settlement_pending"%'`,
-      )
-      .run(cutoff);
   }
 }
 

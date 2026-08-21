@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
+    "@aws-sdk/s3-request-presigner": "^3.1115.0",
     "@coinbase/cdp-sdk": "^1.55.0",
     "@x402/core": "^2.22.0",
     "@x402/evm": "^2.22.0",

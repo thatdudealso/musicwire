@@ -55,6 +55,7 @@ export const config = {
   artifactStorage: process.env.MUSICWIRE_ARTIFACT_STORAGE ?? 'local',
   artifactBucket: process.env.MUSICWIRE_ARTIFACT_BUCKET ?? 'musicwire-artifacts-841162711749',
   artifactRegion: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? '',
+  artifactDownloadUrlTtlSeconds: integer('MUSICWIRE_ARTIFACT_URL_TTL_SECONDS', 900),
   maxUploadBytes: integer('MAX_UPLOAD_BYTES', 1_000_000),
   maxDecompressedBytes: integer('MAX_DECOMPRESSED_BYTES', 1_000_000),
   maxRenderSeconds: integer('MAX_RENDER_SECONDS', 60),
@@ -79,6 +80,7 @@ export const config = {
     process.env.X402_RPC_URL ??
     defaultX402RpcUrls[x402Network] ??
     defaultX402RpcUrls[baseSepoliaX402Network],
+  x402RpcTimeoutSeconds: decimal('X402_RPC_TIMEOUT_SECONDS', 10),
   x402ReceiverWalletName:
     process.env.MUSICWIRE_X402_RECEIVER_WALLET_NAME ?? 'musicwire-x402-receiver',
   publicBaseUrl: process.env.MUSICWIRE_PUBLIC_BASE_URL ?? '',
@@ -123,15 +125,13 @@ if (
 )
   throw new Error('AWS_REGION is required to reach S3 artifact storage in production.');
 
-const configuredRpcNetwork = rpcUrlNetwork(config.x402RpcUrl);
-
 if (
-  process.env.NODE_ENV === 'production' &&
-  configuredRpcNetwork !== null &&
-  configuredRpcNetwork !== config.x402Network
+  !Number.isSafeInteger(config.artifactDownloadUrlTtlSeconds) ||
+  config.artifactDownloadUrlTtlSeconds <= 0 ||
+  config.artifactDownloadUrlTtlSeconds > 3_600
 )
   throw new Error(
-    `X402_RPC_URL must serve ${config.x402Network}, but ${config.x402RpcUrl} serves ${configuredRpcNetwork}.`,
+    'MUSICWIRE_ARTIFACT_URL_TTL_SECONDS must be a positive number of seconds no greater than 3600.',
   );
 
 export const supportedFormats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'];
@@ -142,16 +142,4 @@ function isHttpsUrl(value) {
   } catch {
     return false;
   }
-}
-
-function rpcUrlNetwork(value) {
-  let host;
-  try {
-    host = new URL(value).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-  if (/(^|[.-])(sepolia|testnet|goerli)([.-]|$)/.test(host)) return baseSepoliaX402Network;
-  if (/(^|[.-])mainnet([.-]|$)/.test(host)) return baseMainnetX402Network;
-  return null;
 }
