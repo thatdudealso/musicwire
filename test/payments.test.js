@@ -9,7 +9,13 @@ import {
   encodePaymentSignatureHeader,
 } from '@x402/core/http';
 import { createApp } from '../src/app.js';
-import { CdpX402Gateway, PaymentService, PaymentSettlementError } from '../src/payment.js';
+import {
+  CdpX402Gateway,
+  PaymentConfigurationError,
+  PaymentService,
+  PaymentSettlementError,
+  verifyRpcNetwork,
+} from '../src/payment.js';
 import { JobStore } from '../src/store.js';
 
 const musicxml = fs.readFileSync(
@@ -907,3 +913,57 @@ function usdToAtomic(priceUsd) {
   const [whole, fractional = ''] = priceUsd.split('.');
   return `${whole}${fractional.padEnd(6, '0')}`.replace(/^0+(?=\d)/, '');
 }
+
+test('startup chain verification accepts an RPC endpoint on the configured network', async () => {
+  const requests = [];
+  const rpc = {
+    request: async (method, params) => {
+      requests.push([method, params]);
+      return '0x2105';
+    },
+  };
+
+  const served = await verifyRpcNetwork(
+    { x402Network: 'eip155:8453', x402RpcUrl: 'https://rpc.example/base' },
+    { rpc },
+  );
+
+  assert.equal(served, 8453);
+  assert.deepEqual(requests, [['eth_chainId', []]]);
+});
+
+test('startup chain verification refuses an RPC endpoint serving another chain', async () => {
+  const rpc = { request: async () => '0x14a34' };
+
+  await assert.rejects(
+    verifyRpcNetwork(
+      {
+        x402Network: 'eip155:8453',
+        x402RpcUrl: 'https://api.provider.example/rpc/v1/base-sepolia',
+      },
+      { rpc },
+    ),
+    (error) => {
+      assert.ok(error instanceof PaymentConfigurationError);
+      assert.match(error.message, /serves chain 84532, but X402_NETWORK eip155:8453/);
+      return true;
+    },
+  );
+});
+
+test('startup chain verification fails closed when the RPC endpoint is unreachable', async () => {
+  const rpc = {
+    request: async () => {
+      throw new Error('RPC eth_chainId failed with HTTP 503.');
+    },
+  };
+
+  await assert.rejects(
+    verifyRpcNetwork({ x402Network: 'eip155:8453', x402RpcUrl: 'https://down.example' }, { rpc }),
+    (error) => {
+      assert.ok(error instanceof PaymentConfigurationError);
+      assert.match(error.message, /could not be reached to confirm it serves eip155:8453/);
+      return true;
+    },
+  );
+});

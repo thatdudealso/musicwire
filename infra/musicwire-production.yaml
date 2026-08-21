@@ -74,7 +74,14 @@ Resources:
                 Action:
                   - s3:GetObject
                   - s3:PutObject
+                  - s3:DeleteObject
                 Resource: !Sub '${ArtifactBucket.Arn}/artifacts/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: artifacts/*
 
   LogGroup:
     Type: AWS::Logs::LogGroup

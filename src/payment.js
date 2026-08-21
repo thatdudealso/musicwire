@@ -376,7 +376,37 @@ export class CdpX402Gateway {
   }
 }
 
-class JsonRpcClient {
+export async function verifyRpcNetwork(config, { rpc } = {}) {
+  const expected = evmChainId(config.x402Network);
+  if (expected === null)
+    throw new PaymentConfigurationError(
+      `X402_NETWORK ${config.x402Network} is not an eip155 network identifier.`,
+    );
+  const client = rpc ?? new JsonRpcClient(config.x402RpcUrl);
+  let served;
+  try {
+    served = Number(await client.request('eth_chainId', []));
+  } catch (error) {
+    throw new PaymentConfigurationError(
+      `X402_RPC_URL ${config.x402RpcUrl} could not be reached to confirm it serves ${config.x402Network}: ${error.message}`,
+      { cause: error },
+    );
+  }
+  if (!Number.isSafeInteger(served) || served !== expected)
+    throw new PaymentConfigurationError(
+      `X402_RPC_URL ${config.x402RpcUrl} serves chain ${served}, but X402_NETWORK ${config.x402Network} requires chain ${expected}.`,
+    );
+  return served;
+}
+
+function evmChainId(network) {
+  const [namespace, reference] = String(network).split(':');
+  if (namespace !== 'eip155') return null;
+  const chainId = Number(reference);
+  return Number.isSafeInteger(chainId) && chainId > 0 ? chainId : null;
+}
+
+export class JsonRpcClient {
   constructor(url) {
     this.url = url;
     this.id = 0;

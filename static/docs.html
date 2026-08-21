@@ -177,12 +177,20 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/validate \
                 Or use <code>x402curl</code> (note: x402curl 0.2.0 signed retry does not currently
                 complete with the CDP facilitator - use MCP client or raw HTTP flow):
               </p>
-              <pre><code>X402_PRIVATE_KEY="$TESTNET_PRIVATE_KEY" x402curl \
-  --x402-rpc-url https://sepolia.base.org \
+              <pre><code>X402_PRIVATE_KEY="$MAINNET_PRIVATE_KEY" x402curl \
+  --x402-rpc-url https://mainnet.base.org \
   -X POST \
   -H 'content-type: application/json' \
   --data-binary @request.json \
   https://musicwire.5432wire.com/v1/validate</code></pre>
+              <p class="text-muted">
+                This snippet targets the hosted deployment, which settles on
+                <span data-live="network-label">Base mainnet</span>
+                (<code data-live="network-id">eip155:8453</code>) with real USDC, so the buyer key
+                and the <code>--x402-rpc-url</code> must both be for that network. Against a local
+                Base Sepolia deployment, use a throwaway testnet key with
+                <code>--x402-rpc-url https://sepolia.base.org</code> and your local URL instead.
+              </p>
             </div>
 
             <div class="card">
