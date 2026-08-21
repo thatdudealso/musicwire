@@ -182,7 +182,10 @@ class RecordingGateway {
         asset: requirements.asset,
         network: requirements.network,
         pay_to: requirements.payTo,
-        payer: '0x2222222222222222222222222222222222222222',
+        payer:
+          request.get('payment-signature') === 'payer-b'
+            ? '0x3333333333333333333333333333333333333333'
+            : '0x2222222222222222222222222222222222222222',
         authorization_fingerprint: request.get('payment-signature'),
         payment_payload: { test: true },
         payment_requirements: requirements,
@@ -639,7 +642,49 @@ test('validate replays the same paid outcome for an idempotency key without a se
     assert.equal(replay.status, 200);
     assert.deepEqual(await replay.json(), firstBody);
     assert.ok(replay.headers.get('payment-response'));
-    assert.deepEqual(events, ['verify', 'settle']);
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('validate scopes idempotency results to the payer and MusicXML request context', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  const validate = (signature, document) =>
+    fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Payment-Signature': signature,
+        'Idempotency-Key': 'shared-validation-key',
+      },
+      body: JSON.stringify({ musicxml: document }),
+    });
+  try {
+    const first = await validate('payer-a-first', musicxml);
+    const firstBody = await first.json();
+    assert.equal(first.status, 200);
+    assert.equal(firstBody.receipt.payer, '0x2222222222222222222222222222222222222222');
+
+    const otherPayer = await validate('payer-b', musicxml);
+    const otherPayerBody = await otherPayer.json();
+    assert.equal(otherPayer.status, 200);
+    assert.equal(otherPayerBody.receipt.payer, '0x3333333333333333333333333333333333333333');
+    assert.notDeepEqual(otherPayerBody, firstBody);
+
+    const samePayerReplay = await validate('payer-a-replay', musicxml);
+    assert.deepEqual(await samePayerReplay.json(), firstBody);
+
+    const otherContext = await validate(
+      'payer-a-other-context',
+      musicxml.replace(
+        '<work-title>Musicwire Test Waltz</work-title>',
+        '<work-title>Different Score</work-title>',
+      ),
+    );
+    assert.equal(otherContext.status, 200);
+    assert.equal(events.filter((event) => event === 'settle').length, 3);
   } finally {
     await close();
   }
@@ -680,7 +725,7 @@ test('validate maps a definitive settlement refusal to 502 payment_settlement_fa
     });
     assert.equal(replay.status, 502);
     assert.equal((await replay.json()).error.code, 'payment_settlement_failed');
-    assert.equal(events.filter((event) => event === 'verify').length, 1);
+    assert.equal(events.filter((event) => event === 'verify').length, 2);
   } finally {
     await close();
   }
@@ -832,6 +877,8 @@ test('a replacement task retains completed jobs and payment records on its durab
     original.saveValidateResult({
       id: 'durable-validation',
       idempotencyKey: 'durable-validation-key',
+      payerIdentity: 'durable-payer',
+      requestContext: 'durable-context',
       httpStatus: 200,
       body: { valid: true },
       payment: { provider: 'cdp', status: 'settled', tx_hash: '0xdurable-validation' },
@@ -858,7 +905,11 @@ test('a replacement task retains completed jobs and payment records on its durab
       false,
     );
     assert.equal(
-      replacement.getValidateResultByKey('durable-validation-key').payment.tx_hash,
+      replacement.getValidateResultByIdentity({
+        idempotencyKey: 'durable-validation-key',
+        payerIdentity: 'durable-payer',
+        requestContext: 'durable-context',
+      }).payment.tx_hash,
       '0xdurable-validation',
     );
   } finally {

@@ -1,12 +1,28 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { failureCodes } from './qc.js';
 
 export function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+export function artifactContentType(name) {
+  if (name.endsWith('.musicxml')) return 'application/vnd.recordare.musicxml+xml';
+  if (name.endsWith('.json')) return 'application/json';
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.svg')) return 'image/svg+xml';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.mp3')) return 'audio/mpeg';
+  if (name.endsWith('.wav')) return 'audio/wav';
+  return 'application/octet-stream';
 }
 
 export class ArtifactStorageError extends Error {
@@ -106,12 +122,20 @@ export class ArtifactStore {
   async downloadUrl(artifact) {
     if (!this.s3) return null;
     try {
+      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: artifact.storageKey }));
       return await this.presigner(
         this.s3,
-        new GetObjectCommand({ Bucket: this.bucket, Key: artifact.storageKey }),
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: artifact.storageKey,
+          ResponseContentType: artifactContentType(artifact.name),
+          ResponseContentDisposition: `attachment; filename="${downloadName(artifact.name)}"`,
+        }),
         { expiresIn: this.downloadUrlTtlSeconds },
       );
     } catch (error) {
+      if (error instanceof ArtifactStorageError) throw error;
+      if (isMissingObject(error)) throw artifactExpired(artifact.storageKey, error);
       throw storageUnavailable(error);
     }
   }
@@ -132,6 +156,10 @@ export class ArtifactStore {
       throw storageUnavailable(error);
     }
   }
+}
+
+function downloadName(name) {
+  return path.basename(name).replace(/["\\\r\n]/g, '_');
 }
 
 function writeContentAddressedFile(destination, bytes) {

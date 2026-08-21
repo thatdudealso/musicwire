@@ -41,11 +41,14 @@ export class JobStore {
       );
       CREATE TABLE IF NOT EXISTS validate_results (
         id TEXT PRIMARY KEY,
-        idempotency_key TEXT UNIQUE,
+        idempotency_key TEXT,
+        payer_identity TEXT,
+        request_context TEXT,
         http_status INTEGER NOT NULL,
         body_json TEXT NOT NULL,
         payment_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        UNIQUE(idempotency_key, payer_identity, request_context)
       );
       CREATE TABLE IF NOT EXISTS payment_authorizations (
         fingerprint TEXT PRIMARY KEY,
@@ -54,6 +57,7 @@ export class JobStore {
         created_at TEXT NOT NULL
       );
     `);
+    this.migrateValidateResultIdentity();
     this.expireIdempotencyKeys();
   }
 
@@ -114,15 +118,27 @@ export class JobStore {
     };
   }
 
-  saveValidateResult({ id, idempotencyKey, httpStatus, body, payment, createdAt }) {
+  saveValidateResult({
+    id,
+    idempotencyKey,
+    payerIdentity = null,
+    requestContext = null,
+    httpStatus,
+    body,
+    payment,
+    createdAt,
+  }) {
     this.db
       .prepare(
-        `INSERT INTO validate_results (id,idempotency_key,http_status,body_json,payment_json,created_at)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO validate_results
+         (id,idempotency_key,payer_identity,request_context,http_status,body_json,payment_json,created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(
         id,
         idempotencyKey ?? null,
+        payerIdentity,
+        requestContext,
         httpStatus,
         JSON.stringify(body),
         JSON.stringify(payment),
@@ -136,12 +152,14 @@ export class JobStore {
     return row ? decodeValidateResult(row) : null;
   }
 
-  getValidateResultByKey(idempotencyKey) {
-    if (!idempotencyKey) return null;
-    this.expireIdempotencyKeys();
+  getValidateResultByIdentity({ idempotencyKey, payerIdentity, requestContext }) {
+    if (!idempotencyKey || !payerIdentity || !requestContext) return null;
     const row = this.db
-      .prepare('SELECT * FROM validate_results WHERE idempotency_key = ?')
-      .get(idempotencyKey);
+      .prepare(
+        `SELECT * FROM validate_results
+         WHERE idempotency_key = ? AND payer_identity = ? AND request_context = ?`,
+      )
+      .get(idempotencyKey, payerIdentity, requestContext);
     return row ? decodeValidateResult(row) : null;
   }
 
@@ -250,12 +268,40 @@ export class JobStore {
     const cutoff = new Date(Date.now() - this.idempotencyWindowMs).toISOString();
     this.db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?').run(cutoff);
   }
+
+  migrateValidateResultIdentity() {
+    const columns = this.db.prepare('PRAGMA table_info(validate_results)').all();
+    if (columns.some((column) => column.name === 'payer_identity')) return;
+    this.db.exec(`
+      BEGIN;
+      ALTER TABLE validate_results RENAME TO legacy_validate_results;
+      CREATE TABLE validate_results (
+        id TEXT PRIMARY KEY,
+        idempotency_key TEXT,
+        payer_identity TEXT,
+        request_context TEXT,
+        http_status INTEGER NOT NULL,
+        body_json TEXT NOT NULL,
+        payment_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(idempotency_key, payer_identity, request_context)
+      );
+      INSERT INTO validate_results
+        (id,idempotency_key,payer_identity,request_context,http_status,body_json,payment_json,created_at)
+      SELECT id,idempotency_key,NULL,NULL,http_status,body_json,payment_json,created_at
+      FROM legacy_validate_results;
+      DROP TABLE legacy_validate_results;
+      COMMIT;
+    `);
+  }
 }
 
 function decodeValidateResult(row) {
   return {
     id: row.id,
     idempotencyKey: row.idempotency_key,
+    payerIdentity: row.payer_identity,
+    requestContext: row.request_context,
     httpStatus: row.http_status,
     body: JSON.parse(row.body_json),
     payment: JSON.parse(row.payment_json),

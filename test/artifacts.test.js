@@ -83,15 +83,56 @@ test('the API delivers a signed S3 artifact by redirect, including one over 10 M
     assert.equal(redirect.status, 302);
     const location = redirect.headers.get('location');
     assert.match(location, /X-Amz-Expires=900/);
+    const presigned = new URL(location);
+    assert.equal(presigned.searchParams.get('response-content-type'), 'audio/wav');
+    assert.equal(
+      presigned.searchParams.get('response-content-disposition'),
+      'attachment; filename="score.wav"',
+    );
     assert.equal(Number(redirect.headers.get('content-length') ?? 0) < bytes.length, true);
 
     const delivered = await fetch(signedUrl);
     assert.equal(delivered.status, 200);
+    assert.equal(delivered.headers.get('content-type'), 'audio/wav');
+    assert.equal(delivered.headers.get('content-disposition'), 'attachment; filename="score.wav"');
     assert.deepEqual(Buffer.from(await delivered.arrayBuffer()), bytes);
+    assert.deepEqual(s3.headedKeys, [artifact.storageKey, artifact.storageKey]);
     assert.deepEqual(objectStore.servedKeys, [artifact.storageKey]);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await objectStore.close();
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('an expired S3 artifact answers the documented JSON 404 before redirecting', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-expired-api-'));
+  const s3 = new MemoryS3();
+  const artifact = storedArtifact('score.pdf', Buffer.from('%PDF-1.7 expired score'));
+  const server = createApp({
+    dataDirectory,
+    artifactStorage: 's3',
+    artifactBucket: 'musicwire-test-artifacts',
+    s3Client: s3,
+    presigner: async () => 'https://s3.invalid/should-not-be-issued',
+    renderer: {
+      render: async () => ({ ok: true, artifacts: [artifact], receipt: {} }),
+    },
+  }).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const job = await renderAndPoll(base, 'completed');
+    const response = await fetch(
+      `${base}${job.artifacts.find((item) => item.name === 'score.pdf').url}`,
+      { redirect: 'manual' },
+    );
+
+    assert.equal(response.status, 404);
+    assert.match(response.headers.get('content-type'), /application\/json/);
+    assert.equal((await response.json()).error.code, 'artifact_expired');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -288,22 +329,34 @@ function storedArtifact(name, bytes) {
 async function startObjectServer(s3, bucket) {
   const servedKeys = [];
   const server = http.createServer((request, response) => {
-    const key = decodeURIComponent(new URL(request.url, 'http://objects.test').pathname.slice(1));
+    const url = new URL(request.url, 'http://objects.test');
+    const key = decodeURIComponent(url.pathname.slice(1));
     const value = s3.get(bucket, key);
     if (!value) {
       response.writeHead(404).end();
       return;
     }
     servedKeys.push(key);
-    response.writeHead(200, { 'content-type': 'application/octet-stream' }).end(value);
+    response
+      .writeHead(200, {
+        'content-type': url.searchParams.get('response-content-type') ?? 'application/octet-stream',
+        'content-disposition': url.searchParams.get('response-content-disposition') ?? '',
+      })
+      .end(value);
   });
   server.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
   return {
     servedKeys,
-    presigner: async (_client, command, { expiresIn }) =>
-      `${origin}/${encodeURIComponent(command.input.Key)}?X-Amz-Expires=${expiresIn}`,
+    presigner: async (_client, command, { expiresIn }) => {
+      const query = new URLSearchParams({ 'X-Amz-Expires': String(expiresIn) });
+      if (command.input.ResponseContentType)
+        query.set('response-content-type', command.input.ResponseContentType);
+      if (command.input.ResponseContentDisposition)
+        query.set('response-content-disposition', command.input.ResponseContentDisposition);
+      return `${origin}/${encodeURIComponent(command.input.Key)}?${query}`;
+    },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -328,6 +381,7 @@ class MemoryS3 {
   #objects = new Map();
   #failPuts;
   #readsBroken = false;
+  headedKeys = [];
 
   constructor({ failPuts = false } = {}) {
     this.#failPuts = failPuts;
@@ -346,6 +400,12 @@ class MemoryS3 {
       const value = this.#objects.get(objectKey);
       if (!value) throw noSuchKey(objectKey);
       return { Body: { transformToByteArray: async () => value } };
+    }
+    if (command.constructor.name === 'HeadObjectCommand') {
+      this.headedKeys.push(Key);
+      if (this.#readsBroken) throw serviceUnavailable();
+      if (!this.#objects.has(objectKey)) throw noSuchKey(objectKey);
+      return {};
     }
     throw new Error(`Unexpected S3 command ${command.constructor.name}`);
   }

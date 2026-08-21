@@ -7,7 +7,7 @@ import { config as defaultConfig, supportedFormats, x402NetworkLabel } from './c
 import { composeGuide } from './compose-guide.js';
 import { validateMusicXml, scoreFacts } from './validate.js';
 import { JobStore } from './store.js';
-import { ArtifactStore, ArtifactStorageError } from './artifacts.js';
+import { ArtifactStore, ArtifactStorageError, artifactContentType, sha256 } from './artifacts.js';
 import {
   createPaymentService,
   PaymentConfigurationError,
@@ -125,16 +125,17 @@ export function createApp(overrides = {}) {
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
     const idempotencyKey = request.get('Idempotency-Key');
-    const replay = store.getValidateResultByKey(idempotencyKey);
+    const authorization = await payments.authorize({
+      request,
+      endpoint: 'validate',
+      priceUsd: config.validatePriceUsd,
+      outputSchema: paymentOutputSchema('validate'),
+    });
+    if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
+    const replayIdentity = validateReplayIdentity(authorization.payment, input.musicxml, idempotencyKey);
+    const replay = replayIdentity && store.getValidateResultByIdentity(replayIdentity);
     if (replay) return sendValidateResult(response, payments, replay);
     const execute = async () => {
-      const authorization = await payments.authorize({
-        request,
-        endpoint: 'validate',
-        priceUsd: config.validatePriceUsd,
-        outputSchema: paymentOutputSchema('validate'),
-      });
-      if (!authorization.authorized) return { challenge: authorization.challenge };
       if (
         !claimPaymentAuthorization(
           store,
@@ -163,6 +164,7 @@ export function createApp(overrides = {}) {
         return store.saveValidateResult({
           id: crypto.randomUUID(),
           idempotencyKey,
+          ...replayIdentity,
           httpStatus: 422,
           body,
           payment,
@@ -173,6 +175,7 @@ export function createApp(overrides = {}) {
       const record = store.saveValidateResult({
         id: crypto.randomUUID(),
         idempotencyKey: idempotencyKey ?? null,
+        ...replayIdentity,
         httpStatus: 200,
         body: validationBody(validation, intent),
         payment: intent,
@@ -201,12 +204,13 @@ export function createApp(overrides = {}) {
         payment: settlement.payment,
       });
     };
-    let pending = idempotencyKey ? inflightValidations.get(idempotencyKey) : null;
+    const inflightKey = replayIdentity && JSON.stringify(replayIdentity);
+    let pending = inflightKey ? inflightValidations.get(inflightKey) : null;
     if (!pending) {
       pending = execute();
-      if (idempotencyKey) {
-        inflightValidations.set(idempotencyKey, pending);
-        pending.finally(() => inflightValidations.delete(idempotencyKey)).catch(() => {});
+      if (inflightKey) {
+        inflightValidations.set(inflightKey, pending);
+        pending.finally(() => inflightValidations.delete(inflightKey)).catch(() => {});
       }
     }
     const outcome = await pending;
@@ -368,7 +372,7 @@ export function createApp(overrides = {}) {
       const downloadUrl = await artifactStore.downloadUrl(artifact);
       if (downloadUrl) return response.redirect(302, downloadUrl);
       const bytes = await artifactStore.read(artifact);
-      response.type(contentType(artifact.name)).send(bytes);
+      response.type(artifactContentType(artifact.name)).send(bytes);
     } catch (error) {
       next(error);
     }
@@ -784,17 +788,6 @@ async function commandReady(binary, args, executable = binary) {
   });
 }
 
-function contentType(name) {
-  if (name.endsWith('.musicxml')) return 'application/vnd.recordare.musicxml+xml';
-  if (name.endsWith('.json')) return 'application/json';
-  if (name.endsWith('.pdf')) return 'application/pdf';
-  if (name.endsWith('.svg')) return 'image/svg+xml';
-  if (name.endsWith('.png')) return 'image/png';
-  if (name.endsWith('.mp3')) return 'audio/mpeg';
-  if (name.endsWith('.wav')) return 'audio/wav';
-  return 'application/octet-stream';
-}
-
 function manifest(config) {
   return {
     name: 'Musicwire',
@@ -874,6 +867,19 @@ function manifest(config) {
       'Original, owned, or public-domain material only. Musicwire is not a copyrighted-melody transcription service.',
       'Rate limits and isolated resource-capped render workspaces apply.',
     ],
+  };
+}
+
+function validateReplayIdentity(payment, musicxml, idempotencyKey) {
+  if (!idempotencyKey) return null;
+  if (typeof payment.payer !== 'string' || !payment.payer.trim())
+    throw new PaymentVerificationError(
+      'The verified payment did not provide a payer identity for idempotent validation.',
+    );
+  return {
+    idempotencyKey,
+    payerIdentity: payment.payer.toLowerCase(),
+    requestContext: sha256(`validate:${musicxml}`),
   };
 }
 

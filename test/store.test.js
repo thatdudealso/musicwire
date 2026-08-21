@@ -80,6 +80,8 @@ test('payment proof outlives the idempotency window and is never swept', () => {
     store.saveValidateResult({
       id: '33333333-3333-4333-8333-333333333333',
       idempotencyKey: 'settled-validation-key',
+      payerIdentity: 'payer-a',
+      requestContext: 'context-a',
       httpStatus: 200,
       body: { valid: true },
       payment: { status: 'settled', tx_hash: '0xsettled', amount_usd: '0.10' },
@@ -106,7 +108,11 @@ test('payment proof outlives the idempotency window and is never swept', () => {
     store.expireIdempotencyKeys();
 
     assert.equal(
-      store.getValidateResultByKey('settled-validation-key').payment.tx_hash,
+      store.getValidateResultByIdentity({
+        idempotencyKey: 'settled-validation-key',
+        payerIdentity: 'payer-a',
+        requestContext: 'context-a',
+      }).payment.tx_hash,
       '0xsettled',
     );
     assert.equal(
