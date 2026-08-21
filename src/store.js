@@ -336,7 +336,10 @@ export class JobStore {
     } catch (error) {
       try {
         this.db.exec('ROLLBACK;');
-      } catch {}
+      } catch {
+        // The transaction never opened, so there is nothing to roll back.
+        // Always rethrow the original migration failure below.
+      }
       throw error;
     }
   }

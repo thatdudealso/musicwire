@@ -94,9 +94,10 @@ test(
       const svg = (await download('score-1.svg')).toString('utf8');
       assert.equal(XMLValidator.validate(svg), true);
       assert.match(svg, /<svg\b/i);
-      assert.deepEqual([...((await download('score-1.png')).subarray(0, 8))], [
-        137, 80, 78, 71, 13, 10, 26, 10,
-      ]);
+      assert.deepEqual(
+        [...(await download('score-1.png')).subarray(0, 8)],
+        [137, 80, 78, 71, 13, 10, 26, 10],
+      );
       assert.equal((await download('score.mid')).subarray(0, 4).toString(), 'MThd');
       for (const name of ['score.mp3', 'score.wav']) {
         const destination = path.join(dataDirectory, name);

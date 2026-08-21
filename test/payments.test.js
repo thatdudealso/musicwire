@@ -389,12 +389,10 @@ test('render idempotency isolates payer and request context after payment author
     const firstBody = await first.json();
     await waitForJob(base, firstBody.job_id);
 
-    const reordered = await renderRequest(
-      base,
-      'payer-a-reordered',
-      'shared-render-key',
-      ['svg', 'pdf'],
-    );
+    const reordered = await renderRequest(base, 'payer-a-reordered', 'shared-render-key', [
+      'svg',
+      'pdf',
+    ]);
     assert.equal(reordered.status, 202);
     assert.equal((await reordered.json()).job_id, firstBody.job_id);
 

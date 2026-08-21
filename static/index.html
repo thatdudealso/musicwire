@@ -214,8 +214,9 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
             <strong>Failed QC = No charge.</strong> You only pay for successful, validated renders.
           </p>
           <p>
-            Idempotency keys replay the original outcome for 24 hours, ensuring you're never charged
-            twice for the same request.
+            Idempotency keys replay the original outcome to the same verified payer, ensuring you're
+            never charged twice for the same request. See the
+            <a href="/docs">idempotency documentation</a> for the exact replay windows.
           </p>
         </div>
       </section>

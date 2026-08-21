@@ -336,8 +336,8 @@ npx -y musicwire-mcp</code></pre>
                 <h4>Headers:</h4>
                 <ul>
                   <li>
-                    <code>Idempotency-Key</code> - Strongly recommended: 24-hour replay only for
-                    the same verified payer and render request context
+                    <code>Idempotency-Key</code> - Strongly recommended: 24-hour replay only for the
+                    same verified payer and render request context
                   </li>
                   <li><code>Payment-Signature</code> - x402 payment authorization</li>
                 </ul>
@@ -418,8 +418,8 @@ npx -y musicwire-mcp</code></pre>
                 <p><strong>Free</strong> - Download a signed artifact URL.</p>
                 <p>
                   The signed API URL authorizes access, then responds with a 302 redirect to a
-                  short-lived, artifact-scoped presigned URL in the private S3 bucket. Clients
-                  must follow redirects to download the named binary artifact.
+                  short-lived, artifact-scoped presigned URL in the private S3 bucket. Clients must
+                  follow redirects to download the named binary artifact.
                 </p>
               </div>
             </div>
@@ -613,11 +613,14 @@ npx -y musicwire-mcp</code></pre>
             </div>
             <div class="card">
               <h3>Artifact Retention</h3>
-              <p>Completed artifacts are retained for a minimum of 30 days.</p>
+              <p>
+                Completed artifacts are retained for 30 days and then removed. Download what you
+                need before then.
+              </p>
               <p>Artifact URLs are signed and expire with the job retention window.</p>
               <p>
-                Deployments should provision adequate storage and implement cleanup policies for
-                long-term operation.
+                Job records, payment status, and receipts are retained after an artifact expires, so
+                payment proof always outlives the artifact it paid for.
               </p>
             </div>
           </div>

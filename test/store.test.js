@@ -184,11 +184,14 @@ test('legacy idempotency and validation records migrate atomically', () => {
     const render = store.db
       .prepare('SELECT payer_identity,request_context,job_id FROM idempotency_keys WHERE key = ?')
       .get('legacy-render-key');
-  assert.deepEqual({ ...render }, {
-      payer_identity: 'legacy',
-      request_context: 'legacy:legacy-job',
-      job_id: 'legacy-job',
-    });
+    assert.deepEqual(
+      { ...render },
+      {
+        payer_identity: 'legacy',
+        request_context: 'legacy:legacy-job',
+        job_id: 'legacy-job',
+      },
+    );
     const validation = store.getValidateResultById('legacy-validation');
     assert.equal(validation.body.valid, true);
     assert.equal(validation.payment.tx_hash, '0xlegacy');

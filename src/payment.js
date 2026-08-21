@@ -615,7 +615,8 @@ function pendingPayment({
 export function paymentPayerIdentity(payment) {
   const authorizationFrom = payment?.payment_payload?.payload?.authorization?.from;
   if (isEvmAddress(authorizationFrom)) return authorizationFrom.toLowerCase();
-  if (typeof payment?.payer === 'string' && payment.payer.trim()) return payment.payer.toLowerCase();
+  if (typeof payment?.payer === 'string' && payment.payer.trim())
+    return payment.payer.toLowerCase();
   return null;
 }
 
