@@ -44,7 +44,7 @@ test(
       const facts = scoreFacts(musicxml);
       const submitted = await fetch(`${base}/v1/render`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({
           musicxml,
           formats: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'],
@@ -117,7 +117,7 @@ test(
 
       const rejected = await fetch(`${base}/v1/render`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({
           musicxml,
           formats: ['pdf'],

@@ -332,10 +332,19 @@ test('render idempotency isolates payer and request context after payment author
     },
   });
   try {
-    const first = await renderRequest(base, 'payer-a-first', 'shared-render-key');
+    const first = await renderRequest(base, 'payer-a-first', 'shared-render-key', ['pdf', 'svg']);
     assert.equal(first.status, 202);
     const firstBody = await first.json();
     await waitForJob(base, firstBody.job_id);
+
+    const reordered = await renderRequest(
+      base,
+      'payer-a-reordered',
+      'shared-render-key',
+      ['svg', 'pdf'],
+    );
+    assert.equal(reordered.status, 202);
+    assert.equal((await reordered.json()).job_id, firstBody.job_id);
 
     const unpaid = await renderRequest(base, undefined, 'shared-render-key');
     const unpaidBody = await unpaid.json();
@@ -350,10 +359,12 @@ test('render idempotency isolates payer and request context after payment author
     assert.notEqual(otherPayerBody.job_id, firstBody.job_id);
     await waitForJob(base, otherPayerBody.job_id);
 
-    const samePayerReplay = await renderRequest(base, 'payer-a-replay', 'shared-render-key');
-    assert.equal(samePayerReplay.status, 202);
-    assert.equal((await samePayerReplay.json()).job_id, firstBody.job_id);
-    assert.equal(events.filter((event) => event === 'settle').length, 2);
+    const differentContext = await renderRequest(base, 'payer-a-replay', 'shared-render-key');
+    assert.equal(differentContext.status, 202);
+    const differentContextBody = await differentContext.json();
+    assert.notEqual(differentContextBody.job_id, firstBody.job_id);
+    await waitForJob(base, differentContextBody.job_id);
+    assert.equal(events.filter((event) => event === 'settle').length, 3);
   } finally {
     await close();
   }
@@ -984,7 +995,7 @@ async function startServer({ events, renderer = undefined, gateway = undefined, 
   };
 }
 
-function renderRequest(base, signature, idempotencyKey) {
+function renderRequest(base, signature, idempotencyKey, formats = ['pdf']) {
   return fetch(`${base}/v1/render`, {
     method: 'POST',
     headers: {
@@ -992,7 +1003,7 @@ function renderRequest(base, signature, idempotencyKey) {
       ...(signature ? { 'Payment-Signature': signature } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
-    body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+    body: JSON.stringify({ musicxml, formats }),
   });
 }
 

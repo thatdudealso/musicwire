@@ -215,7 +215,6 @@ export function createApp(overrides = {}) {
       }
     }
     const outcome = await pending;
-    if (outcome.challenge) return sendPaymentChallenge(response, outcome.challenge);
     return sendValidateResult(response, payments, outcome);
   });
 
@@ -885,7 +884,7 @@ function renderReplayIdentity(payment, musicxml, formats, constraints, idempoten
   return paymentReplayIdentity(
     payment,
     idempotencyKey,
-    { musicxml, formats, constraints },
+    { musicxml, formats: [...formats].sort(), constraints },
     'render',
   );
 }
