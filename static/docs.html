@@ -558,12 +558,13 @@ npx -y musicwire-mcp</code></pre>
                 double-charging.
               </p>
               <ul>
-                <li>Replays the original outcome for 24 hours</li>
+                <li><code>POST /v1/render</code> replays the original outcome for 24 hours.</li>
                 <li>
-                  Works across <code>POST /v1/validate</code> and <code>POST /v1/render</code>
+                  <code>POST /v1/validate</code> replays indefinitely only when the same verified
+                  payer submits the same MusicXML request context with the same key.
                 </li>
                 <li>Replay includes the original payment status and receipt</li>
-                <li>No payment authorization comparison needed - the key is the source of truth</li>
+                <li>A key presented by a different payer never resolves another payer's result.</li>
               </ul>
               <p>
                 <strong>Best practice:</strong> Always use an idempotency key for paid requests.

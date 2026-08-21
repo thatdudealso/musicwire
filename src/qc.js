@@ -43,7 +43,7 @@ export async function probeAudio(ffprobeBin, filename) {
     '-v',
     'error',
     '-show_entries',
-    'format=duration,format_name:stream=codec_type,codec_name',
+    'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate',
     '-of',
     'json',
     filename,
@@ -59,7 +59,17 @@ export async function probeAudio(ffprobeBin, filename) {
     const output = JSON.parse(stdout);
     const duration = Number(output.format?.duration);
     const audioStream = output.streams?.find((stream) => stream.codec_type === 'audio');
-    if (!audioStream || !Number.isFinite(duration) || duration <= 0)
+    const channels = Number(audioStream?.channels);
+    const sampleRate = Number(audioStream?.sample_rate);
+    if (
+      !audioStream ||
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      !Number.isSafeInteger(channels) ||
+      channels < 1 ||
+      !Number.isSafeInteger(sampleRate) ||
+      sampleRate < 1
+    )
       return {
         ok: false,
         code: failureCodes.audioInvalid,
@@ -70,6 +80,8 @@ export async function probeAudio(ffprobeBin, filename) {
       duration,
       codec: audioStream.codec_name,
       container: output.format?.format_name,
+      channels,
+      sampleRate,
     };
   } catch (error) {
     return {
