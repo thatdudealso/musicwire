@@ -241,6 +241,8 @@ Resources:
               Value: s3
             - Name: MUSICWIRE_ARTIFACT_BUCKET
               Value: !Ref ArtifactBucket
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
             - Name: MAX_RENDER_SECONDS
               Value: '60'
             - Name: MAX_RENDER_CPU_SECONDS

@@ -147,29 +147,47 @@ test('an S3 write failure fails the job visibly instead of crashing the render q
 test('artifact read failures report storage status rather than a parse error', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-read-fail-'));
   const s3 = new MemoryS3();
+  const pdfBytes = Buffer.from('%PDF-1.7 rendered score');
+  const pdf = {
+    name: 'score.pdf',
+    sha256: crypto.createHash('sha256').update(pdfBytes).digest('hex'),
+    bytes: pdfBytes.length,
+    storageKey: `artifacts/${crypto.createHash('sha256').update(pdfBytes).digest('hex')}`,
+  };
+  s3.seed('musicwire-test-artifacts', pdf.storageKey, pdfBytes);
   const server = createApp({
     dataDirectory,
     artifactStorage: 's3',
     artifactBucket: 'musicwire-test-artifacts',
     s3Client: s3,
     renderer: {
-      render: async () => ({ ok: true, artifacts: [], receipt: { rendered_by: 'Musicwire' } }),
+      render: async () => ({ ok: true, artifacts: [pdf], receipt: { rendered_by: 'Musicwire' } }),
     },
   }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  const urlFor = (job, name) => `${base}${job.artifacts.find((item) => item.name === name).url}`;
   try {
     const job = await renderAndPoll(base, 'completed');
-    const receiptUrl = `${base}${job.artifacts.find((item) => item.name === 'receipt.json').url}`;
+    const delivered = await fetch(urlFor(job, 'score.pdf'));
+    assert.equal(delivered.status, 200);
+    assert.match(delivered.headers.get('content-type'), /application\/pdf/);
 
     s3.expireEverything();
-    const expired = await fetch(receiptUrl);
+    const expired = await fetch(urlFor(job, 'receipt.json'));
     assert.equal(expired.status, 404);
     assert.equal((await expired.json()).error.code, 'artifact_expired');
 
+    // A failed binary download must not be labelled as the binary it could not deliver.
+    const expiredPdf = await fetch(urlFor(job, 'score.pdf'));
+    assert.equal(expiredPdf.status, 404);
+    assert.match(expiredPdf.headers.get('content-type'), /application\/json/);
+    assert.equal((await expiredPdf.json()).error.code, 'artifact_expired');
+
     s3.breakReads();
-    const unavailable = await fetch(receiptUrl);
+    const unavailable = await fetch(urlFor(job, 'score.pdf'));
     assert.equal(unavailable.status, 503);
+    assert.match(unavailable.headers.get('content-type'), /application\/json/);
     assert.equal((await unavailable.json()).error.code, 'artifact_storage_unavailable');
   } finally {
     await new Promise((resolve) => server.close(resolve));
@@ -221,6 +239,10 @@ class MemoryS3 {
 
   get(bucket, key) {
     return this.#objects.get(`${bucket}/${key}`);
+  }
+
+  seed(bucket, key, value) {
+    this.#objects.set(`${bucket}/${key}`, value);
   }
 
   expireEverything() {

@@ -23,6 +23,13 @@ export function x402NetworkLabel(network) {
   return x402NetworkLabels[network] ?? network;
 }
 
+const x402Network = process.env.X402_NETWORK ?? baseSepoliaX402Network;
+
+const defaultX402RpcUrls = {
+  [baseMainnetX402Network]: 'https://mainnet.base.org',
+  [baseSepoliaX402Network]: 'https://sepolia.base.org',
+};
+
 const artifactSigningSecret =
   process.env.ARTIFACT_SIGNING_SECRET ?? developmentArtifactSigningSecret;
 
@@ -47,6 +54,7 @@ export const config = {
   artifactSigningSecret,
   artifactStorage: process.env.MUSICWIRE_ARTIFACT_STORAGE ?? 'local',
   artifactBucket: process.env.MUSICWIRE_ARTIFACT_BUCKET ?? 'musicwire-artifacts-841162711749',
+  artifactRegion: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? '',
   maxUploadBytes: integer('MAX_UPLOAD_BYTES', 1_000_000),
   maxDecompressedBytes: integer('MAX_DECOMPRESSED_BYTES', 1_000_000),
   maxRenderSeconds: integer('MAX_RENDER_SECONDS', 60),
@@ -64,10 +72,13 @@ export const config = {
   renderSoloPriceUsd: process.env.RENDER_SOLO_PRICE_USD ?? '0.25',
   renderMultiPriceUsd: process.env.RENDER_MULTI_PRICE_USD ?? '0.50',
   paymentMode: process.env.MUSICWIRE_PAYMENT_MODE ?? 'stub',
-  x402Network: process.env.X402_NETWORK ?? baseSepoliaX402Network,
+  x402Network,
   x402PaymentTimeoutSeconds: integer('X402_PAYMENT_TIMEOUT_SECONDS', 300),
   x402SettlementRetrySeconds: decimal('X402_SETTLEMENT_RETRY_SECONDS', 5),
-  x402RpcUrl: process.env.X402_RPC_URL ?? 'https://sepolia.base.org',
+  x402RpcUrl:
+    process.env.X402_RPC_URL ??
+    defaultX402RpcUrls[x402Network] ??
+    defaultX402RpcUrls[baseSepoliaX402Network],
   x402ReceiverWalletName:
     process.env.MUSICWIRE_X402_RECEIVER_WALLET_NAME ?? 'musicwire-x402-receiver',
   publicBaseUrl: process.env.MUSICWIRE_PUBLIC_BASE_URL ?? '',
@@ -105,6 +116,24 @@ if (process.env.NODE_ENV === 'production' && config.artifactStorage !== 's3')
 if (process.env.NODE_ENV === 'production' && !config.artifactBucket.trim())
   throw new Error('MUSICWIRE_ARTIFACT_BUCKET is required for production artifact storage.');
 
+if (
+  process.env.NODE_ENV === 'production' &&
+  config.artifactStorage === 's3' &&
+  !config.artifactRegion.trim()
+)
+  throw new Error('AWS_REGION is required to reach S3 artifact storage in production.');
+
+const configuredRpcNetwork = rpcUrlNetwork(config.x402RpcUrl);
+
+if (
+  process.env.NODE_ENV === 'production' &&
+  configuredRpcNetwork !== null &&
+  configuredRpcNetwork !== config.x402Network
+)
+  throw new Error(
+    `X402_RPC_URL must serve ${config.x402Network}, but ${config.x402RpcUrl} serves ${configuredRpcNetwork}.`,
+  );
+
 export const supportedFormats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'];
 
 function isHttpsUrl(value) {
@@ -113,4 +142,16 @@ function isHttpsUrl(value) {
   } catch {
     return false;
   }
+}
+
+function rpcUrlNetwork(value) {
+  let host;
+  try {
+    host = new URL(value).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (/(^|[.-])(sepolia|testnet|goerli)([.-]|$)/.test(host)) return baseSepoliaX402Network;
+  if (/(^|[.-])mainnet([.-]|$)/.test(host)) return baseMainnetX402Network;
+  return null;
 }

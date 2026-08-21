@@ -332,6 +332,66 @@ test('production startup refuses stub payments', () => {
   assert.match(result.stderr.toString(), /MUSICWIRE_PAYMENT_MODE=x402/);
 });
 
+const withEnv = (overrides) => {
+  const env = { ...process.env, ...overrides };
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[name];
+  }
+  return env;
+};
+
+const productionEnv = (overrides = {}) =>
+  withEnv({
+    NODE_ENV: 'production',
+    ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+    MUSICWIRE_PAYMENT_MODE: 'x402',
+    X402_NETWORK: 'eip155:8453',
+    CDP_API_KEY_ID: 'test-cdp-api-id',
+    CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+    CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+    MUSICWIRE_ARTIFACT_STORAGE: 's3',
+    AWS_REGION: 'us-east-1',
+    AWS_DEFAULT_REGION: undefined,
+    X402_RPC_URL: undefined,
+    ...overrides,
+  });
+
+const loadConfig = (env, expression = "import './src/config.js'") =>
+  spawnSync(process.execPath, ['--input-type=module', '--eval', expression], {
+    cwd: process.cwd(),
+    env,
+  });
+
+const printRpcUrl =
+  "import { config } from './src/config.js'; process.stdout.write(config.x402RpcUrl)";
+
+test('production startup requires a region for S3 artifact storage', () => {
+  const result = loadConfig(productionEnv({ AWS_REGION: undefined }));
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /AWS_REGION is required/);
+});
+
+test('production startup refuses an RPC endpoint serving a different network', () => {
+  const result = loadConfig(productionEnv({ X402_RPC_URL: 'https://sepolia.base.org' }));
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /X402_RPC_URL must serve eip155:8453/);
+});
+
+test('the settlement RPC endpoint defaults to the configured network', () => {
+  const mainnet = loadConfig(productionEnv(), printRpcUrl);
+  const sepolia = loadConfig(
+    withEnv({ NODE_ENV: 'test', X402_NETWORK: 'eip155:84532', X402_RPC_URL: undefined }),
+    printRpcUrl,
+  );
+
+  assert.equal(mainnet.status, 0, mainnet.stderr.toString());
+  assert.equal(mainnet.stdout.toString(), 'https://mainnet.base.org');
+  assert.equal(sepolia.status, 0, sepolia.stderr.toString());
+  assert.equal(sepolia.stdout.toString(), 'https://sepolia.base.org');
+});
+
 test('render rejects requests once the pending backlog is full', async () => {
   let releaseRender;
   const renderStarted = new Promise((resolve) => {

@@ -42,12 +42,17 @@ function isMissingObject(error) {
 }
 
 export class ArtifactStore {
-  constructor(dataDirectory, signingSecret, retentionDays, { bucket = '', s3Client = null } = {}) {
+  constructor(
+    dataDirectory,
+    signingSecret,
+    retentionDays,
+    { bucket = '', region = '', s3Client = null } = {},
+  ) {
     this.directory = path.join(dataDirectory, 'artifacts');
     this.signingSecret = signingSecret;
     this.retentionDays = retentionDays;
     this.bucket = bucket;
-    this.s3 = bucket ? (s3Client ?? new S3Client({})) : null;
+    this.s3 = bucket ? (s3Client ?? new S3Client(region ? { region } : {})) : null;
     if (!this.s3) fs.mkdirSync(this.directory, { recursive: true });
   }
 

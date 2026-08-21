@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Immutable image tag, normally the release commit SHA.
+        description: Full 40-character release commit SHA. The image is built from this exact commit and published under it.
         required: true
         type: string
 
@@ -20,6 +20,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_tag }}
+
+      - name: Verify the tag names the tree being built
+        run: |
+          checked_out="$(git rev-parse HEAD)"
+          if [ "$checked_out" != "${{ inputs.image_tag }}" ]; then
+            echo "image_tag ${{ inputs.image_tag }} is not the full commit SHA of the built tree ($checked_out)." >&2
+            exit 1
+          fi
 
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@v3

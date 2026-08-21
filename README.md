@@ -189,11 +189,18 @@ The full published-port container rendering smoke test remains a deploy-phase fo
 `scripts/deploy-production.sh` deploys the production service on the shared on-demand ECS Fargate cluster through the existing API Gateway VPC Link and internal NLB. It creates no new load balancer or fixed-cost infrastructure. AMD64 images are built natively on an `ubuntu-24.04` GitHub Actions runner and published to the public `ghcr.io/thatdudealso/musicwire` registry, avoiding both unreliable local ARM-to-AMD64 emulation and any AWS credential or OIDC role in CI. Dispatch the workflow with the immutable release commit SHA:
 
 ```sh
-gh-axi workflow run build-production-image.yml --repo thatdudealso/musicwire --ref main \
-  --field image_tag="$(git rev-parse HEAD)"
+RELEASE_SHA="$(git rev-parse HEAD)"
+gh-axi workflow run build-production-image.yml --repo thatdudealso/musicwire \
+  --ref "$RELEASE_SHA" --field image_tag="$RELEASE_SHA"
 ```
 
-The workflow authenticates with the built-in `GITHUB_TOKEN` alone and needs no AWS access. Set the published package to public visibility once so ECS can pull it without registry credentials.
+`image_tag` must be the full 40-character commit SHA. The workflow checks out exactly that commit and fails if the checked-out tree is not that SHA, so the published tag always names the source it was built from. `--ref` only selects which version of the workflow file runs; the built tree comes from `image_tag`. The workflow authenticates with the built-in `GITHUB_TOKEN` alone and needs no AWS access. Set the published package to public visibility once so ECS can pull it without registry credentials.
+
+GHCR does not enforce tag immutability the way an ECR repository with `IMMUTABLE` tags does, so a re-dispatch of the same SHA overwrites the tag. Immutability here is a convention backed by the workflow's SHA check: never re-dispatch a tag that has been deployed; cut a new commit instead.
+
+#### Recorded deviation from the original intent
+
+The Phase 4 intent asked for an immutable AMD64 **ECR** image published through a GitHub Actions workflow using least-privilege **GitHub OIDC**. This repository instead publishes to public GHCR with no AWS credentials in CI. That deviation was decided by FIRSTMATE under the captain's standing authorization; it was not chosen personally by the captain. The rationale: this is a public repository, the AWS account has no existing GitHub OIDC provider, and federating a public repository into the account is avoidable exposure for a build that needs no AWS access. No AWS credential is required in CI because every runtime secret is injected as an ECS task-definition secret from Secrets Manager. If ECS cannot pull from GHCR, the operator-machine ECR build-and-push fallback below uses local operator credentials and still creates no OIDC provider or role.
 
 The deploy script requires the configured AWS credentials used by `aws-axi`, a readable `MUSICWIRE_SECRETS_ENV_FILE` (default: `$HOME/.config/ai-keys.env`) containing these values, and the pushed image URI:
 
@@ -210,7 +217,7 @@ MUSICWIRE_IMAGE_URI="ghcr.io/thatdudealso/musicwire:$(git rev-parse HEAD)" \
 
 If ECS cannot pull from GHCR, the fallback is an operator-machine AMD64 build pushed to `841162711749.dkr.ecr.us-east-1.amazonaws.com/musicwire`. The deploy script accepts that URI too, and the task execution role already carries the ECR pull permissions.
 
-The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, an encrypted S3 artifact bucket, and an encrypted EFS access point for `/var/lib/musicwire/data`. `MUSICWIRE_ARTIFACT_STORAGE=s3` is required in production and `MUSICWIRE_ARTIFACT_BUCKET` defaults to `musicwire-artifacts-841162711749`; the bucket retains content-addressed downloadable artifacts for 30 days and the API streams them after validating the existing signed-token URL.
+The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, an encrypted S3 artifact bucket, and an encrypted EFS access point for `/var/lib/musicwire/data`. `MUSICWIRE_ARTIFACT_STORAGE=s3` is required in production and `MUSICWIRE_ARTIFACT_BUCKET` defaults to `musicwire-artifacts-841162711749`; the bucket retains content-addressed downloadable artifacts for 30 days and the API streams them after validating the existing signed-token URL. ECS Fargate injects no region of its own, so the task definition sets `AWS_REGION` and the production startup guards refuse to boot S3 artifact storage without one. `X402_RPC_URL` defaults to the RPC endpoint of the configured network, and a production boot is refused when the RPC host serves a different network than `X402_NETWORK`.
 
 SQLite is opened with `journal_mode = TRUNCATE` and `synchronous = FULL`, because write-ahead logging is unsupported on an NFS-backed EFS mount and a non-synchronous commit is not durable across a killed task. The database on EFS durably preserves the `jobs`, `idempotency_keys`, `payment_wallets`, `payment_authorizations`, and `validate_results` tables, including payment and settlement JSON. On restart, `JobStore.recoverInterruptedJobs()` marks a queued or running render `failed_not_charged` with `render_interrupted`, while completed jobs and their S3 artifacts remain available. This design is intentionally limited to one task: the ECS deployment maximum is also one task, so do not scale Musicwire above one task without replacing SQLite-over-EFS with a multi-writer-safe design.
 

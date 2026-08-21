@@ -33,6 +33,13 @@
     return payment.network_label || NETWORK_LABELS[payment.network] || payment.network;
   }
 
+  // Replace every documented placeholder with the value this deployment reports
+  function setLiveText(name, value) {
+    document.querySelectorAll(`[data-live="${name}"]`).forEach((el) => {
+      el.textContent = value;
+    });
+  }
+
   // Format price for display
   function formatPrice(priceUsd) {
     if (typeof priceUsd === 'string') {
@@ -122,10 +129,8 @@
         badgeEl.textContent = `Live on ${label}`;
       }
 
-      const detailEl = document.getElementById('network-detail');
-      if (detailEl) {
-        detailEl.innerHTML = `${escapeHtml(label)} (<code>${escapeHtml(network)}</code>)`;
-      }
+      setLiveText('network-label', label);
+      setLiveText('network-id', network);
     }
 
     // Remove loading state
@@ -168,8 +173,7 @@
   // Fill in the live receiving address where the page shows one. Best effort:
   // the documented static fallback stays in place when it is unavailable.
   function fetchPaymentDescription() {
-    const receiverEl = document.getElementById('payment-receiver');
-    if (!receiverEl) return;
+    if (document.querySelectorAll('[data-live="payment-receiver"]').length === 0) return;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -188,7 +192,7 @@
       .then((description) => {
         const payTo = description && description.receiver && description.receiver.pay_to;
         if (payTo) {
-          receiverEl.textContent = payTo;
+          setLiveText('payment-receiver', payTo);
         }
       })
       .catch(() => {});

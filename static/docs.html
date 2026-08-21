@@ -201,11 +201,18 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/validate \
     "tx_hash": "0x...",
     "amount_usd": "0.10",
     "amount_atomic": "100000",
-    "network": "eip155:84532",
-    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    "pay_to": "0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f"
+    "network": "<span data-live="network-id">eip155:8453</span>",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "pay_to": "<span data-live="payment-receiver">0x...</span>"
   }
 }</code></pre>
+              <p class="text-muted">
+                The literal values above are Base mainnet: <code>eip155:8453</code> and the Base
+                mainnet USDC contract. The <code>network</code> and <code>pay_to</code> fields are
+                replaced with this deployment's live values when it can be reached; a Base Sepolia
+                deployment returns <code>eip155:84532</code> and the Sepolia USDC contract instead.
+                Read <code>GET /.well-known/x402</code> for the authoritative receiver.
+              </p>
             </div>
 
             <h3>Local Development (Stub Mode)</h3>
@@ -438,11 +445,16 @@ npx -y musicwire-mcp</code></pre>
                 payment requirement is issued for that network only.
               </p>
               <ul>
-                <li><strong>Network:</strong> <span id="network-detail">Base</span></li>
+                <li>
+                  <strong>Network:</strong> <span data-live="network-label">Base</span> (<code
+                    data-live="network-id"
+                    >eip155:8453</code
+                  >)
+                </li>
                 <li><strong>Asset:</strong> USDC</li>
                 <li>
                   <strong>Receiver:</strong>
-                  <code id="payment-receiver">see GET /.well-known/x402</code>
+                  <code data-live="payment-receiver">see GET /.well-known/x402</code>
                 </li>
                 <li><strong>Payment Mode:</strong> x402 Exact via CDP Facilitator</li>
               </ul>
