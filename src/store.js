@@ -8,7 +8,8 @@ export class JobStore {
     this.db = new DatabaseSync(path.join(dataDirectory, 'musicwire.sqlite'));
     this.idempotencyWindowMs = Math.max(1, idempotencyWindowHours) * 3_600_000;
     this.db.exec(`
-      PRAGMA journal_mode = WAL;
+      PRAGMA journal_mode = TRUNCATE;
+      PRAGMA synchronous = FULL;
       CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
         state TEXT NOT NULL,

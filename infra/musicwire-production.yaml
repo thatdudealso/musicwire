@@ -4,7 +4,10 @@ Description: Musicwire production API on on-demand ECS Fargate behind the shared
 Parameters:
   ImageUri:
     Type: String
-    Description: Immutable ECR image URI for the Musicwire release.
+    Description: >-
+      Immutable image URI for the Musicwire release, normally the public
+      ghcr.io/thatdudealso/musicwire image built by GitHub Actions. An operator-pushed ECR image
+      is the fallback for the case where ECS cannot pull from GHCR.
   RuntimeSecretArn:
     Type: String
     Description: Secrets Manager ARN containing the CDP credentials and artifact signing secret.
@@ -289,7 +292,6 @@ Resources:
       Cluster: !Ref ClusterName
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1
-      EnableExecuteCommand: true
       HealthCheckGracePeriodSeconds: 90
       CapacityProviderStrategy:
         - CapacityProvider: FARGATE

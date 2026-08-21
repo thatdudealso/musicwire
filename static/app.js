@@ -5,7 +5,33 @@
   'use strict';
 
   const MANIFEST_URL = '/manifest';
+  const PAYMENT_DESCRIPTION_URL = '/.well-known/x402';
   const TIMEOUT_MS = 3000;
+
+  // Known network labels, used only when the service does not advertise its own
+  const NETWORK_LABELS = {
+    'eip155:8453': 'Base mainnet',
+    'eip155:84532': 'Base Sepolia',
+  };
+
+  function escapeHtml(value) {
+    return String(value).replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[character],
+    );
+  }
+
+  // Prefer the label the service publishes so the page can never drift from it
+  function networkLabel(payment) {
+    return payment.network_label || NETWORK_LABELS[payment.network] || payment.network;
+  }
 
   // Format price for display
   function formatPrice(priceUsd) {
@@ -80,13 +106,26 @@
       jobsPriceEl.innerHTML = formatPriceWithLabel(endpoints.jobs.price_usd, 'Job Status');
     }
 
-    // Update network info
-    const networkEl = document.getElementById('network-info');
-    if (networkEl && manifest.payment) {
-      const network = manifest.payment.network || 'eip155:84532';
+    // Update network labels from the network this deployment actually advertises
+    if (manifest.payment && manifest.payment.network) {
+      const network = manifest.payment.network;
       const asset = manifest.payment.asset || 'USDC';
-      const label = network === 'eip155:84532' ? 'Base Sepolia' : network;
-      networkEl.innerHTML = `<code>${label}</code> - Pay with ${asset}`;
+      const label = networkLabel(manifest.payment);
+
+      const networkEl = document.getElementById('network-info');
+      if (networkEl) {
+        networkEl.innerHTML = `<code>${escapeHtml(label)}</code> - Pay with ${escapeHtml(asset)}`;
+      }
+
+      const badgeEl = document.getElementById('network-badge');
+      if (badgeEl) {
+        badgeEl.textContent = `Live on ${label}`;
+      }
+
+      const detailEl = document.getElementById('network-detail');
+      if (detailEl) {
+        detailEl.innerHTML = `${escapeHtml(label)} (<code>${escapeHtml(network)}</code>)`;
+      }
     }
 
     // Remove loading state
@@ -126,6 +165,35 @@
       });
   }
 
+  // Fill in the live receiving address where the page shows one. Best effort:
+  // the documented static fallback stays in place when it is unavailable.
+  function fetchPaymentDescription() {
+    const receiverEl = document.getElementById('payment-receiver');
+    if (!receiverEl) return;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    fetch(PAYMENT_DESCRIPTION_URL, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    })
+      .then((response) => {
+        clearTimeout(timeout);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((description) => {
+        const payTo = description && description.receiver && description.receiver.pay_to;
+        if (payTo) {
+          receiverEl.textContent = payTo;
+        }
+      })
+      .catch(() => {});
+  }
+
   // Initialize when DOM is ready
   function init() {
     // Add loading state
@@ -133,6 +201,7 @@
 
     // Fetch manifest
     fetchManifest();
+    fetchPaymentDescription();
   }
 
   // Run on DOM ready

@@ -11,8 +11,18 @@ const decimal = (name, fallback) => {
 };
 
 const developmentArtifactSigningSecret = 'development-only-change-before-deploy';
-const baseSepoliaX402Network = 'eip155:84532';
-const baseMainnetX402Network = 'eip155:8453';
+export const baseSepoliaX402Network = 'eip155:84532';
+export const baseMainnetX402Network = 'eip155:8453';
+
+const x402NetworkLabels = {
+  [baseMainnetX402Network]: 'Base mainnet',
+  [baseSepoliaX402Network]: 'Base Sepolia',
+};
+
+export function x402NetworkLabel(network) {
+  return x402NetworkLabels[network] ?? network;
+}
+
 const artifactSigningSecret =
   process.env.ARTIFACT_SIGNING_SECRET ?? developmentArtifactSigningSecret;
 

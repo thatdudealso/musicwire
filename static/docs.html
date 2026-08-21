@@ -31,11 +31,11 @@
           <h1>Musicwire Documentation</h1>
           <p class="text-secondary">
             Deterministic MusicXML validation, MuseScore rendering, and automated QC API. Pay per
-            call in USDC via x402 on Base Sepolia.
+            call in USDC via x402 on Base.
           </p>
 
           <div class="mt-4">
-            <span class="badge">Phase 2: Live on Base Sepolia</span>
+            <span id="network-badge" class="badge">Live on Base</span>
             <span id="network-info" class="manifest-loading-placeholder badge">Loading...</span>
           </div>
         </div>
@@ -116,8 +116,8 @@ claude</code></pre>
                     <td><code>MUSICWIRE_X402_PRIVATE_KEY</code></td>
                     <td>For paid calls</td>
                     <td>
-                      Base Sepolia buyer private key (throws away). Also accepts
-                      <code>X402_PRIVATE_KEY</code>.
+                      Throwaway buyer private key, funded on the network this deployment advertises.
+                      Also accepts <code>X402_PRIVATE_KEY</code>.
                     </td>
                   </tr>
                   <tr>
@@ -128,8 +128,10 @@ claude</code></pre>
                 </tbody>
               </table>
               <p class="text-muted">
-                <strong>Important:</strong> Use test USDC on Base Sepolia only. Never send mainnet
-                funds. Treat your private key as a secret.
+                <strong>Important:</strong> <code>musicwire-mcp</code> selects its payment network
+                from the service manifest, so it always pays on the network the target deployment
+                advertises. Fund the buyer key for that network and treat the private key as a
+                secret.
               </p>
             </div>
 
@@ -429,24 +431,30 @@ npx -y musicwire-mcp</code></pre>
             <h2>Payment Explainer</h2>
 
             <div class="card">
-              <h3>Testnet vs Mainnet</h3>
+              <h3>Mainnet and testnet</h3>
               <p>
-                <strong>Musicwire Phase 2 uses Base Sepolia testnet only.</strong>
+                <strong>The network in force is the one this deployment advertises.</strong> Read it
+                from <code>GET /manifest</code> and from the <code>402</code> quote itself; every
+                payment requirement is issued for that network only.
               </p>
               <ul>
-                <li><strong>Network:</strong> Base Sepolia (<code>eip155:84532</code>)</li>
+                <li><strong>Network:</strong> <span id="network-detail">Base</span></li>
+                <li><strong>Asset:</strong> USDC</li>
                 <li>
-                  <strong>Asset:</strong> Test USDC
-                  (<code>0x036CbD53842c5426634e7929541eC2318f3dCF7e</code>)
-                </li>
-                <li>
-                  <strong>Receiver:</strong> <code>0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f</code>
+                  <strong>Receiver:</strong>
+                  <code id="payment-receiver">see GET /.well-known/x402</code>
                 </li>
                 <li><strong>Payment Mode:</strong> x402 Exact via CDP Facilitator</li>
               </ul>
-              <p><strong>Do not send mainnet funds.</strong> The API will not accept them.</p>
               <p>
-                Get test USDC from the
+                The hosted deployment at <code>musicwire.5432wire.com</code> is pinned to
+                <strong>Base mainnet</strong> (<code>eip155:8453</code>) and charges real USDC.
+                Local and stub deployments default to <strong>Base Sepolia</strong>
+                (<code>eip155:84532</code>) and charge test USDC. Never send mainnet funds to a test
+                deployment.
+              </p>
+              <p>
+                Get test USDC for Base Sepolia runs from the
                 <a href="https://faucet.circle.com/" target="_blank">Circle Base Sepolia faucet</a>
                 or the
                 <a href="https://base-sepolia-faucet.quicknode.com/" target="_blank"

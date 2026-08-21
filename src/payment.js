@@ -164,7 +164,7 @@ export class CdpReceiverWallet {
     if (saved) {
       if (saved.network !== this.config.x402Network)
         throw new PaymentConfigurationError(
-          'Stored receiving wallet is not configured for Base Sepolia.',
+          `Stored receiving wallet is configured for ${saved.network}, but this deployment requires ${this.config.x402Network}.`,
         );
       return saved.address;
     }

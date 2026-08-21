@@ -2,9 +2,43 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { failureCodes } from './qc.js';
 
 export function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+export class ArtifactStorageError extends Error {
+  constructor(message, { code, cause } = {}) {
+    super(message, { cause });
+    this.name = 'ArtifactStorageError';
+    this.code = code;
+    this.expired = code === failureCodes.artifactExpired;
+  }
+}
+
+function storageUnavailable(cause) {
+  return new ArtifactStorageError(
+    'Durable artifact storage is temporarily unavailable. Retry shortly.',
+    { code: failureCodes.artifactStorage, cause },
+  );
+}
+
+function artifactExpired(storageKey, cause) {
+  return new ArtifactStorageError(
+    `Artifact ${storageKey} is no longer stored. Rendered artifacts are retained for a limited window.`,
+    { code: failureCodes.artifactExpired, cause },
+  );
+}
+
+function isMissingObject(error) {
+  return (
+    error?.name === 'NoSuchKey' ||
+    error?.name === 'NotFound' ||
+    error?.Code === 'NoSuchKey' ||
+    error?.code === 'ENOENT' ||
+    error?.$metadata?.httpStatusCode === 404
+  );
 }
 
 export class ArtifactStore {
@@ -19,21 +53,25 @@ export class ArtifactStore {
 
   async put(name, bytes) {
     const hash = sha256(bytes);
-    if (this.s3) {
-      const storageKey = `artifacts/${hash}`;
-      await this.s3.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: storageKey,
-          Body: bytes,
-          ServerSideEncryption: 'AES256',
-        }),
-      );
-      return { name, sha256: hash, bytes: bytes.length, storageKey };
+    try {
+      if (this.s3) {
+        const storageKey = `artifacts/${hash}`;
+        await this.s3.send(
+          new PutObjectCommand({
+            Bucket: this.bucket,
+            Key: storageKey,
+            Body: bytes,
+            ServerSideEncryption: 'AES256',
+          }),
+        );
+        return { name, sha256: hash, bytes: bytes.length, storageKey };
+      }
+      const destination = path.join(this.directory, hash);
+      if (!fs.existsSync(destination)) writeContentAddressedFile(destination, bytes);
+      return { name, sha256: hash, bytes: bytes.length, storageKey: hash };
+    } catch (error) {
+      throw storageUnavailable(error);
     }
-    const destination = path.join(this.directory, hash);
-    if (!fs.existsSync(destination)) fs.writeFileSync(destination, bytes, { flag: 'wx' });
-    return { name, sha256: hash, bytes: bytes.length, storageKey: hash };
   }
 
   token(jobId, artifact, expires) {
@@ -52,13 +90,27 @@ export class ArtifactStore {
   }
 
   async read(artifact) {
-    if (this.s3) {
-      const response = await this.s3.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: artifact.storageKey }),
-      );
-      if (!response.Body) throw new Error(`Artifact ${artifact.storageKey} was missing from S3.`);
-      return Buffer.from(await response.Body.transformToByteArray());
+    try {
+      if (this.s3) {
+        const response = await this.s3.send(
+          new GetObjectCommand({ Bucket: this.bucket, Key: artifact.storageKey }),
+        );
+        if (!response.Body) throw artifactExpired(artifact.storageKey);
+        return Buffer.from(await response.Body.transformToByteArray());
+      }
+      return fs.readFileSync(path.join(this.directory, artifact.storageKey));
+    } catch (error) {
+      if (error instanceof ArtifactStorageError) throw error;
+      if (isMissingObject(error)) throw artifactExpired(artifact.storageKey, error);
+      throw storageUnavailable(error);
     }
-    return fs.readFileSync(path.join(this.directory, artifact.storageKey));
+  }
+}
+
+function writeContentAddressedFile(destination, bytes) {
+  try {
+    fs.writeFileSync(destination, bytes, { flag: 'wx' });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
   }
 }

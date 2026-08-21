@@ -109,19 +109,111 @@ test('the API streams a signed artifact from S3', async () => {
   }
 });
 
+test('an S3 write failure fails the job visibly instead of crashing the render queue', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-put-fail-'));
+  const s3 = new MemoryS3({ failPuts: true });
+  const rejections = [];
+  const recordRejection = (reason) => rejections.push(reason);
+  process.on('unhandledRejection', recordRejection);
+  const server = createApp({
+    dataDirectory,
+    artifactStorage: 's3',
+    artifactBucket: 'musicwire-test-artifacts',
+    s3Client: s3,
+    renderer: {
+      render: async () => ({ ok: true, artifacts: [], receipt: { rendered_by: 'Musicwire' } }),
+    },
+  }).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const job = await renderAndPoll(base, 'failed_not_charged');
+
+    assert.equal(job.status, 'failed_not_charged');
+    assert.equal(job.error.code, 'artifact_storage_unavailable');
+    assert.equal(job.payment.status, 'failed_not_charged');
+    assert.equal(job.receipt.tx_hash, null);
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(rejections, []);
+    assert.equal((await fetch(`${base}/manifest`)).status, 200);
+  } finally {
+    process.off('unhandledRejection', recordRejection);
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('artifact read failures report storage status rather than a parse error', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-read-fail-'));
+  const s3 = new MemoryS3();
+  const server = createApp({
+    dataDirectory,
+    artifactStorage: 's3',
+    artifactBucket: 'musicwire-test-artifacts',
+    s3Client: s3,
+    renderer: {
+      render: async () => ({ ok: true, artifacts: [], receipt: { rendered_by: 'Musicwire' } }),
+    },
+  }).listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const job = await renderAndPoll(base, 'completed');
+    const receiptUrl = `${base}${job.artifacts.find((item) => item.name === 'receipt.json').url}`;
+
+    s3.expireEverything();
+    const expired = await fetch(receiptUrl);
+    assert.equal(expired.status, 404);
+    assert.equal((await expired.json()).error.code, 'artifact_expired');
+
+    s3.breakReads();
+    const unavailable = await fetch(receiptUrl);
+    assert.equal(unavailable.status, 503);
+    assert.equal((await unavailable.json()).error.code, 'artifact_storage_unavailable');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+async function renderAndPoll(base, terminalStatus) {
+  const queued = await (
+    await fetch(`${base}/v1/render`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
+      body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+    })
+  ).json();
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const job = await (await fetch(`${base}/v1/jobs/${queued.job_id}`)).json();
+    if (job.status === terminalStatus) return job;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Job never reached ${terminalStatus}.`);
+}
+
 class MemoryS3 {
   #objects = new Map();
+  #failPuts;
+  #readsBroken = false;
+
+  constructor({ failPuts = false } = {}) {
+    this.#failPuts = failPuts;
+  }
 
   async send(command) {
     const { Bucket, Key, Body } = command.input;
     const objectKey = `${Bucket}/${Key}`;
     if (command.constructor.name === 'PutObjectCommand') {
+      if (this.#failPuts) throw serviceUnavailable();
       this.#objects.set(objectKey, Buffer.from(Body));
       return {};
     }
     if (command.constructor.name === 'GetObjectCommand') {
+      if (this.#readsBroken) throw serviceUnavailable();
       const value = this.#objects.get(objectKey);
-      if (!value) throw new Error(`Missing object ${objectKey}`);
+      if (!value) throw noSuchKey(objectKey);
       return { Body: { transformToByteArray: async () => value } };
     }
     throw new Error(`Unexpected S3 command ${command.constructor.name}`);
@@ -130,4 +222,26 @@ class MemoryS3 {
   get(bucket, key) {
     return this.#objects.get(`${bucket}/${key}`);
   }
+
+  expireEverything() {
+    this.#objects.clear();
+  }
+
+  breakReads() {
+    this.#readsBroken = true;
+  }
+}
+
+function noSuchKey(objectKey) {
+  const error = new Error(`The specified key ${objectKey} does not exist.`);
+  error.name = 'NoSuchKey';
+  error.$metadata = { httpStatusCode: 404 };
+  return error;
+}
+
+function serviceUnavailable() {
+  const error = new Error('Please reduce your request rate.');
+  error.name = 'SlowDown';
+  error.$metadata = { httpStatusCode: 503 };
+  return error;
 }

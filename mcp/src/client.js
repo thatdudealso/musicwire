@@ -2,7 +2,10 @@ import { x402Client, wrapFetchWithPayment } from '@x402/fetch';
 import { ExactEvmScheme } from '@x402/evm';
 import { privateKeyToAccount } from 'viem/accounts';
 
-const baseSepoliaNetwork = 'eip155:84532';
+const supportedNetworks = new Map([
+  ['eip155:8453', 'Base mainnet'],
+  ['eip155:84532', 'Base Sepolia'],
+]);
 
 export class MusicwireApiError extends Error {
   constructor({ status, body }) {
@@ -79,24 +82,52 @@ export function createPaidFetch({ apiBaseUrl, paymentMode, privateKey, fetchImpl
   if (paymentMode === 'stub') return createStubPaymentFetch({ apiBaseUrl, fetchImpl });
   if (paymentMode !== 'x402')
     throw new Error('MUSICWIRE_MCP_PAYMENT_MODE must be either "x402" or "stub".');
-  let payingFetch;
+  let payingFetch = null;
   return async (input, init) => {
-    if (payingFetch) return payingFetch(input, init);
+    if (payingFetch) return (await payingFetch)(input, init);
     const response = await fetchImpl(input, init);
     if (response.status !== 402) return response;
-    payingFetch = createSignedPaymentFetch({ privateKey, fetchImpl });
-    return payingFetch(input, init);
+    payingFetch = createSignedPaymentFetch({ apiBaseUrl, privateKey, fetchImpl }).catch((error) => {
+      payingFetch = null;
+      throw error;
+    });
+    return (await payingFetch)(input, init);
   };
 }
 
-function createSignedPaymentFetch({ privateKey, fetchImpl }) {
+async function createSignedPaymentFetch({ apiBaseUrl, privateKey, fetchImpl }) {
+  const network = await resolvePaymentNetwork({ apiBaseUrl, fetchImpl });
   if (!privateKey)
     throw new Error(
-      'Musicwire requires payment for this call, and no buyer key is configured. Set MUSICWIRE_X402_PRIVATE_KEY (or X402_PRIVATE_KEY) to a funded Base Sepolia test buyer private key.',
+      `Musicwire requires payment for this call, and no buyer key is configured. Set MUSICWIRE_X402_PRIVATE_KEY (or X402_PRIVATE_KEY) to a buyer private key funded on ${supportedNetworks.get(network)}.`,
     );
   const signer = privateKeyToAccount(privateKey);
-  const client = new x402Client().register(baseSepoliaNetwork, new ExactEvmScheme(signer));
+  const client = new x402Client().register(network, new ExactEvmScheme(signer));
   return wrapFetchWithPayment(fetchImpl, client);
+}
+
+// The payment network always comes from the service manifest so this client
+// cannot drift from the network the server actually quotes.
+async function resolvePaymentNetwork({ apiBaseUrl, fetchImpl }) {
+  let manifest;
+  try {
+    const response = await fetchImpl(new URL('manifest', apiBaseUrl), {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    manifest = await response.json();
+  } catch (error) {
+    throw new Error(
+      `Musicwire requires payment for this call, but its manifest could not be read to select a payment network: ${error.message}`,
+      { cause: error },
+    );
+  }
+  const network = manifest?.payment?.network;
+  if (!supportedNetworks.has(network))
+    throw new Error(
+      `Musicwire advertises the payment network ${network ?? 'unknown'}, which musicwire-mcp does not support. Supported networks: ${[...supportedNetworks.keys()].join(', ')}.`,
+    );
+  return network;
 }
 
 function createStubPaymentFetch({ apiBaseUrl, fetchImpl }) {

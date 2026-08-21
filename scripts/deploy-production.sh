@@ -5,6 +5,7 @@ set +x
 readonly REGION='us-east-1'
 readonly ACCOUNT_ID='841162711749'
 readonly REPOSITORY='musicwire'
+readonly PUBLIC_IMAGE='ghcr.io/thatdudealso/musicwire'
 readonly STACK='musicwire-production'
 readonly RUNTIME_SECRET='musicwire/production/runtime'
 readonly TEMPLATE='infra/musicwire-production.yaml'
@@ -74,14 +75,14 @@ else
   axi secretsmanager create-secret --name "$RUNTIME_SECRET" --secret-string "file://$secret_file"
 fi
 
-registry="$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
+fallback_registry="$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
 image_uri="${MUSICWIRE_IMAGE_URI:-}"
 if [[ -z "$image_uri" ]]; then
-  echo 'MUSICWIRE_IMAGE_URI is required. Build and push the immutable AMD64 image with the GitHub Actions workflow first.' >&2
+  echo 'MUSICWIRE_IMAGE_URI is required. Publish the immutable AMD64 image with the build-production-image.yml GitHub Actions workflow first.' >&2
   exit 1
 fi
-if [[ "$image_uri" != "$registry/$REPOSITORY:"* ]]; then
-  echo "MUSICWIRE_IMAGE_URI must point at $registry/$REPOSITORY" >&2
+if [[ "$image_uri" != "$PUBLIC_IMAGE:"* && "$image_uri" != "$fallback_registry/$REPOSITORY:"* ]]; then
+  echo "MUSICWIRE_IMAGE_URI must point at $PUBLIC_IMAGE, or at the $fallback_registry/$REPOSITORY operator fallback" >&2
   exit 1
 fi
 

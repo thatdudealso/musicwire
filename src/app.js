@@ -3,11 +3,11 @@ import express from 'express';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config as defaultConfig, supportedFormats } from './config.js';
+import { config as defaultConfig, supportedFormats, x402NetworkLabel } from './config.js';
 import { composeGuide } from './compose-guide.js';
 import { validateMusicXml, scoreFacts } from './validate.js';
 import { JobStore } from './store.js';
-import { ArtifactStore } from './artifacts.js';
+import { ArtifactStore, ArtifactStorageError } from './artifacts.js';
 import {
   createPaymentService,
   PaymentConfigurationError,
@@ -395,6 +395,10 @@ export function createApp(overrides = {}) {
           message: 'Compressed request bodies are not accepted.',
         },
       });
+    if (error instanceof ArtifactStorageError)
+      return response
+        .status(error.expired ? 404 : 503)
+        .json({ error: { code: error.code, message: error.message } });
     return response
       .status(400)
       .json({ error: { code: 'invalid_request', message: 'Request body could not be parsed.' } });
@@ -403,24 +407,51 @@ export function createApp(overrides = {}) {
 }
 
 async function processJob(id, services) {
+  try {
+    await renderAndSettleJob(id, services);
+  } catch (error) {
+    console.error(`Musicwire render job ${id} failed unexpectedly.`, error);
+    const job = services.store.get(id);
+    if (job?.state === 'running') await failJobNotCharged(services, job, unexpectedFailure(error));
+  }
+}
+
+function unexpectedFailure(error) {
+  if (error instanceof ArtifactStorageError)
+    return {
+      code: failureCodes.artifactStorage,
+      message: 'Durable artifact storage was unavailable, so no payment was captured.',
+    };
+  return {
+    code: failureCodes.unexpected,
+    message: 'The render job failed unexpectedly, so no payment was captured.',
+  };
+}
+
+async function failJobNotCharged(services, job, error) {
+  const payment = await services.payments.cancelNotCharged(job.payment, error.code);
+  services.store.update(job.id, {
+    state: 'failed_not_charged',
+    qc_json: JSON.stringify({ status: 'failed', ...error }),
+    error_json: JSON.stringify(error),
+    payment_json: JSON.stringify(payment),
+  });
+}
+
+async function renderAndSettleJob(id, services) {
   const job = services.store.update(id, { state: 'running' });
   let result;
   try {
     result = await services.renderer.render(job);
-  } catch {
+  } catch (error) {
+    if (error instanceof ArtifactStorageError) throw error;
     result = {
       ok: false,
       error: { code: failureCodes.renderer, message: 'Unexpected isolated renderer failure.' },
     };
   }
   if (!result.ok) {
-    const payment = await services.payments.cancelNotCharged(job.payment, result.error.code);
-    services.store.update(id, {
-      state: 'failed_not_charged',
-      qc_json: JSON.stringify({ status: 'failed', ...result.error }),
-      error_json: JSON.stringify(result.error),
-      payment_json: JSON.stringify(payment),
-    });
+    await failJobNotCharged(services, job, result.error);
     return;
   }
   const intent = services.payments.settlementIntent(job.payment);
@@ -458,7 +489,7 @@ async function processJob(id, services) {
   services.store.update(id, {
     payment_json: JSON.stringify(settlement.payment),
     artifacts_json: JSON.stringify(
-      await refreshReceiptArtifact(
+      await refreshReceiptArtifactOrKeep(
         services.artifactStore,
         services.payments,
         artifacts,
@@ -466,6 +497,15 @@ async function processJob(id, services) {
       ),
     ),
   });
+}
+
+async function refreshReceiptArtifactOrKeep(artifactStore, payments, artifacts, payment) {
+  try {
+    return await refreshReceiptArtifact(artifactStore, payments, artifacts, payment);
+  } catch (error) {
+    console.error('Musicwire could not rewrite receipt.json after settlement.', error);
+    return artifacts;
+  }
 }
 
 async function refreshReceiptArtifact(artifactStore, payments, artifacts, payment) {
@@ -492,7 +532,12 @@ function createSettlementReconciler({ store, payments, artifactStore, config }) 
     store.update(id, {
       payment_json: JSON.stringify(settlement.payment),
       artifacts_json: JSON.stringify(
-        await refreshReceiptArtifact(artifactStore, payments, job.artifacts, settlement.payment),
+        await refreshReceiptArtifactOrKeep(
+          artifactStore,
+          payments,
+          job.artifacts,
+          settlement.payment,
+        ),
       ),
     });
     return true;
@@ -663,6 +708,8 @@ function createRenderQueue(maxConcurrentRenders, maxPendingRenders, run) {
       setImmediate(async () => {
         try {
           await run(id);
+        } catch (error) {
+          console.error(`Musicwire render queue could not complete job ${id}.`, error);
         } finally {
           active -= 1;
           drain();
@@ -751,6 +798,7 @@ function manifest(config) {
       x402_version: 2,
       mode: config.paymentMode,
       network: config.x402Network,
+      network_label: x402NetworkLabel(config.x402Network),
       asset: 'USDC',
       scheme: 'exact',
       facilitator: 'CDP',
