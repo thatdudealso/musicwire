@@ -116,6 +116,36 @@ test('CDP gateway decodes the standard payment-signature header before verificat
     result.payment.authorization_fingerprint,
   );
 
+  gateway.serverPromise = Promise.resolve({
+    buildPaymentRequirements: async () => [requirements],
+    createPaymentRequiredResponse: async (_requirements, resource) => ({
+      x402Version: 2,
+      resource,
+      accepts: [requirements],
+    }),
+    findMatchingRequirements: (available) => available[0],
+    verifyPayment: async () => ({
+      isValid: false,
+      invalidReason: 'invalid_exact_evm_nonce_already_used',
+      payer: '0x2222222222222222222222222222222222222222',
+    }),
+  });
+  const consumed = await gateway.authorize({
+    request: {
+      protocol: 'https',
+      originalUrl: '/v1/render',
+      get: (name) =>
+        name.toLowerCase() === 'payment-signature'
+          ? encodePaymentSignatureHeader(payload)
+          : 'musicwire.test',
+    },
+    endpoint: 'render',
+    priceUsd: '0.25',
+    outputSchema: {},
+  });
+  assert.equal(consumed.authorized, false);
+  assert.equal(consumed.replayPayment.payer, '0x2222222222222222222222222222222222222222');
+
   const malformed = await gateway.authorize({
     request: {
       protocol: 'https',
@@ -172,24 +202,46 @@ class RecordingGateway {
         },
       };
     this.events.push('verify');
+    const payment = {
+      provider: 'recording_gateway',
+      status: 'verified_pending_qc',
+      amount_usd: priceUsd,
+      amount_atomic: requirements.amount,
+      asset: requirements.asset,
+      network: requirements.network,
+      pay_to: requirements.payTo,
+      payer:
+        request.get('payment-signature') === 'payer-b' ||
+        request.get('payment-signature') === 'consumed-b'
+          ? '0x3333333333333333333333333333333333333333'
+          : '0x2222222222222222222222222222222222222222',
+      authorization_fingerprint: request.get('payment-signature'),
+      payment_payload: { test: true },
+      payment_requirements: requirements,
+    };
+    if (request.get('payment-signature').startsWith('consumed-'))
+      return {
+        authorized: false,
+        replayPayment: payment,
+        challenge: {
+          headers: {
+            'payment-required': encodePaymentRequiredHeader(paymentRequired),
+            'cache-control': 'no-store',
+          },
+          body: {
+            ...paymentRequired,
+            quote: {
+              currency: 'USDC',
+              price_usd: priceUsd,
+              settlement: 'after_qc_pass',
+              output_schema: outputSchema,
+            },
+          },
+        },
+      };
     return {
       authorized: true,
-      payment: {
-        provider: 'recording_gateway',
-        status: 'verified_pending_qc',
-        amount_usd: priceUsd,
-        amount_atomic: requirements.amount,
-        asset: requirements.asset,
-        network: requirements.network,
-        pay_to: requirements.payTo,
-        payer:
-          request.get('payment-signature') === 'payer-b'
-            ? '0x3333333333333333333333333333333333333333'
-            : '0x2222222222222222222222222222222222222222',
-        authorization_fingerprint: request.get('payment-signature'),
-        payment_payload: { test: true },
-        payment_requirements: requirements,
-      },
+      payment,
     };
   }
 
@@ -365,6 +417,83 @@ test('render idempotency isolates payer and request context after payment author
     assert.notEqual(differentContextBody.job_id, firstBody.job_id);
     await waitForJob(base, differentContextBody.job_id);
     assert.equal(events.filter((event) => event === 'settle').length, 3);
+  } finally {
+    await close();
+  }
+});
+
+test('consumed signatures replay only matching payer-owned render records', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const first = await renderRequest(base, 'payer-a-first', 'consumed-render-key');
+    assert.equal(first.status, 202);
+    const firstBody = await first.json();
+    await waitForJob(base, firstBody.job_id);
+
+    const replay = await renderRequest(base, 'consumed-a', 'consumed-render-key');
+    assert.equal(replay.status, 202);
+    assert.equal((await replay.json()).job_id, firstBody.job_id);
+
+    for (const [signature, key] of [
+      ['consumed-b', 'consumed-render-key'],
+      [undefined, 'consumed-render-key'],
+      ['consumed-a', 'unused-consumed-render-key'],
+    ]) {
+      const response = await renderRequest(base, signature, key);
+      assert.equal(response.status, 402);
+      const body = await response.json();
+      assert.equal('job_id' in body, false);
+      assert.equal('receipt' in body, false);
+    }
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('consumed signatures replay only matching payer-owned validation records', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  const validate = (signature, idempotencyKey) =>
+    fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(signature ? { 'Payment-Signature': signature } : {}),
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify({ musicxml }),
+    });
+  try {
+    const first = await validate('payer-a-first', 'consumed-validation-key');
+    assert.equal(first.status, 200);
+    const firstBody = await first.json();
+
+    const replay = await validate('consumed-a', 'consumed-validation-key');
+    assert.equal(replay.status, 200);
+    assert.deepEqual(await replay.json(), firstBody);
+
+    for (const [signature, key] of [
+      ['consumed-b', 'consumed-validation-key'],
+      [undefined, 'consumed-validation-key'],
+      ['consumed-a', 'unused-consumed-validation-key'],
+    ]) {
+      const response = await validate(signature, key);
+      assert.equal(response.status, 402);
+      const body = await response.json();
+      assert.equal('receipt' in body, false);
+    }
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
   } finally {
     await close();
   }

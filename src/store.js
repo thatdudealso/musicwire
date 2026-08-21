@@ -288,8 +288,7 @@ export class JobStore {
   migrateValidateResultIdentity() {
     const columns = this.db.prepare('PRAGMA table_info(validate_results)').all();
     if (columns.some((column) => column.name === 'payer_identity')) return;
-    this.db.exec(`
-      BEGIN;
+    this.runMigration(`
       ALTER TABLE validate_results RENAME TO legacy_validate_results;
       CREATE TABLE validate_results (
         id TEXT PRIMARY KEY,
@@ -304,18 +303,16 @@ export class JobStore {
       );
       INSERT INTO validate_results
         (id,idempotency_key,payer_identity,request_context,http_status,body_json,payment_json,created_at)
-      SELECT id,idempotency_key,NULL,NULL,http_status,body_json,payment_json,created_at
+      SELECT id,idempotency_key,'legacy','legacy:' || id,http_status,body_json,payment_json,created_at
       FROM legacy_validate_results;
       DROP TABLE legacy_validate_results;
-      COMMIT;
     `);
   }
 
   migrateRenderIdempotencyIdentity() {
     const columns = this.db.prepare('PRAGMA table_info(idempotency_keys)').all();
     if (columns.some((column) => column.name === 'payer_identity')) return;
-    this.db.exec(`
-      BEGIN;
+    this.runMigration(`
       ALTER TABLE idempotency_keys RENAME TO legacy_idempotency_keys;
       CREATE TABLE idempotency_keys (
         key TEXT NOT NULL,
@@ -330,8 +327,18 @@ export class JobStore {
       SELECT key,'legacy','legacy:' || job_id,job_id,created_at
       FROM legacy_idempotency_keys;
       DROP TABLE legacy_idempotency_keys;
-      COMMIT;
     `);
+  }
+
+  runMigration(sql) {
+    try {
+      this.db.exec(`BEGIN IMMEDIATE;${sql}COMMIT;`);
+    } catch (error) {
+      try {
+        this.db.exec('ROLLBACK;');
+      } catch {}
+      throw error;
+    }
   }
 }
 

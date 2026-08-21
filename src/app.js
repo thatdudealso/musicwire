@@ -132,10 +132,15 @@ export function createApp(overrides = {}) {
       priceUsd: config.validatePriceUsd,
       outputSchema: paymentOutputSchema('validate'),
     });
-    if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
-    const replayIdentity = validateReplayIdentity(authorization.payment, input.musicxml, idempotencyKey);
+    const replayIdentity = authorizationReplayIdentity(
+      authorization,
+      input.musicxml,
+      idempotencyKey,
+      validateReplayIdentity,
+    );
     const replay = replayIdentity && store.getValidateResultByIdentity(replayIdentity);
     if (replay) return sendValidateResult(response, payments, replay);
+    if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
     const execute = async () => {
       if (
         !claimPaymentAuthorization(
@@ -298,19 +303,18 @@ export function createApp(overrides = {}) {
         priceUsd,
         outputSchema: paymentOutputSchema('render'),
       });
-      if (!authorization.authorized) {
-        return sendPaymentChallenge(response, authorization.challenge);
-      }
-      pendingPayment = authorization.payment;
-      const replayIdentity = renderReplayIdentity(
-        pendingPayment,
+      const replayIdentity = authorizationReplayIdentity(
+        authorization,
         input.musicxml,
         formats,
         constraints,
         idempotencyKey,
+        renderReplayIdentity,
       );
       const existing = replayIdentity && store.getByRenderIdentity(replayIdentity);
       if (existing) return response.status(202).json(renderResponse(existing, config));
+      if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
+      pendingPayment = authorization.payment;
       if (!queue.reserve())
         return response.status(503).json({
           error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' },
@@ -887,6 +891,12 @@ function renderReplayIdentity(payment, musicxml, formats, constraints, idempoten
     { musicxml, formats: [...formats].sort(), constraints },
     'render',
   );
+}
+
+function authorizationReplayIdentity(authorization, ...args) {
+  const identity = args.pop();
+  const payment = authorization.payment ?? authorization.replayPayment;
+  return payment ? identity(payment, ...args) : null;
 }
 
 function paymentReplayIdentity(payment, idempotencyKey, request, endpoint) {

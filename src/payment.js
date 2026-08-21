@@ -14,6 +14,7 @@ const PAYMENT_WALLET_PROVIDER = 'cdp_server_wallet';
 const AUTHORIZATION_STATE_SELECTOR = '0xe94a0102';
 const AUTHORIZATION_USED_TOPIC =
   '0x98de503528ee59b575ef0c0a2576a82497bfc029a5685b209e9ec333479b10a5';
+const CONSUMED_AUTHORIZATION_REASON = 'invalid_exact_evm_nonce_already_used';
 
 export class PaymentConfigurationError extends Error {}
 export class PaymentVerificationError extends Error {}
@@ -245,9 +246,14 @@ export class CdpX402Gateway {
         'The Base facilitator could not verify this payment. No payment was settled.',
       );
     }
-    if (!verification.isValid)
+    if (!verification.isValid) {
+      const replayPayment =
+        verification.invalidReason === CONSUMED_AUTHORIZATION_REASON
+          ? { payer: verification.payer ?? null, payment_payload: paymentPayload }
+          : null;
       return {
         authorized: false,
+        ...(replayPayment ? { replayPayment } : {}),
         challenge: challenge(
           paymentRequired,
           priceUsd,
@@ -257,6 +263,7 @@ export class CdpX402Gateway {
             'Payment verification failed.',
         ),
       };
+    }
     return {
       authorized: true,
       payment: pendingPayment({

@@ -417,8 +417,9 @@ npx -y musicwire-mcp</code></pre>
                 <h3><code>GET /v1/artifacts/{jobId}/{name}</code></h3>
                 <p><strong>Free</strong> - Download a signed artifact URL.</p>
                 <p>
-                  Artifact URLs are signed, expire with the job retention window (30+ days), and
-                  return the named binary artifact.
+                  The signed API URL authorizes access, then responds with a 302 redirect to a
+                  short-lived, artifact-scoped presigned URL in the private S3 bucket. Clients
+                  must follow redirects to download the named binary artifact.
                 </p>
               </div>
             </div>

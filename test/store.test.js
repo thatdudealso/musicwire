@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { JobStore } from '../src/store.js';
 
@@ -136,6 +137,63 @@ test('payment proof outlives the idempotency window and is never swept', () => {
 
     // Only the replay-protection key ages out, freeing the key for a new render.
     assert.equal(store.getByRenderIdentity(renderIdentity('expired-render-key')), null);
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('legacy idempotency and validation records migrate atomically', () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-store-migration-'));
+  try {
+    const database = new DatabaseSync(path.join(dataDirectory, 'musicwire.sqlite'));
+    database.exec(`
+      CREATE TABLE idempotency_keys (
+        key TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE validate_results (
+        id TEXT PRIMARY KEY,
+        idempotency_key TEXT,
+        http_status INTEGER NOT NULL,
+        body_json TEXT NOT NULL,
+        payment_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    const createdAt = new Date().toISOString();
+    database
+      .prepare('INSERT INTO idempotency_keys (key,job_id,created_at) VALUES (?,?,?)')
+      .run('legacy-render-key', 'legacy-job', createdAt);
+    database
+      .prepare(
+        `INSERT INTO validate_results
+         (id,idempotency_key,http_status,body_json,payment_json,created_at) VALUES (?,?,?,?,?,?)`,
+      )
+      .run(
+        'legacy-validation',
+        'legacy-validation-key',
+        200,
+        JSON.stringify({ valid: true }),
+        JSON.stringify({ status: 'settled', tx_hash: '0xlegacy' }),
+        createdAt,
+      );
+    database.close();
+
+    const store = new JobStore(dataDirectory);
+    const render = store.db
+      .prepare('SELECT payer_identity,request_context,job_id FROM idempotency_keys WHERE key = ?')
+      .get('legacy-render-key');
+  assert.deepEqual({ ...render }, {
+      payer_identity: 'legacy',
+      request_context: 'legacy:legacy-job',
+      job_id: 'legacy-job',
+    });
+    const validation = store.getValidateResultById('legacy-validation');
+    assert.equal(validation.body.valid, true);
+    assert.equal(validation.payment.tx_hash, '0xlegacy');
+    assert.equal(validation.payerIdentity, 'legacy');
+    assert.equal(validation.requestContext, 'legacy:legacy-validation');
   } finally {
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
