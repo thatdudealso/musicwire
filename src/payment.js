@@ -14,6 +14,7 @@ const PAYMENT_WALLET_PROVIDER = 'cdp_server_wallet';
 const AUTHORIZATION_STATE_SELECTOR = '0xe94a0102';
 const AUTHORIZATION_USED_TOPIC =
   '0x98de503528ee59b575ef0c0a2576a82497bfc029a5685b209e9ec333479b10a5';
+const CONSUMED_AUTHORIZATION_REASON = 'invalid_exact_evm_nonce_already_used';
 
 export class PaymentConfigurationError extends Error {}
 export class PaymentVerificationError extends Error {}
@@ -164,7 +165,7 @@ export class CdpReceiverWallet {
     if (saved) {
       if (saved.network !== this.config.x402Network)
         throw new PaymentConfigurationError(
-          'Stored receiving wallet is not configured for Base Sepolia.',
+          `Stored receiving wallet is configured for ${saved.network}, but this deployment requires ${this.config.x402Network}.`,
         );
       return saved.address;
     }
@@ -183,7 +184,7 @@ export class CdpReceiverWallet {
       address: account.address,
       network: this.config.x402Network,
     });
-    console.info(`Musicwire Base Sepolia receiving address: ${account.address}`);
+    console.info(`Musicwire ${this.config.x402Network} receiving address: ${account.address}`);
     return account.address;
   }
 }
@@ -242,12 +243,17 @@ export class CdpX402Gateway {
       verification = await server.verifyPayment(paymentPayload, matchedRequirements);
     } catch {
       throw new PaymentVerificationError(
-        'The Base Sepolia facilitator could not verify this payment. No payment was settled.',
+        'The Base facilitator could not verify this payment. No payment was settled.',
       );
     }
-    if (!verification.isValid)
+    if (!verification.isValid) {
+      const replayPayment =
+        verification.invalidReason === CONSUMED_AUTHORIZATION_REASON
+          ? { payer: verification.payer ?? null, payment_payload: paymentPayload }
+          : null;
       return {
         authorized: false,
+        ...(replayPayment ? { replayPayment } : {}),
         challenge: challenge(
           paymentRequired,
           priceUsd,
@@ -257,6 +263,7 @@ export class CdpX402Gateway {
             'Payment verification failed.',
         ),
       };
+    }
     return {
       authorized: true,
       payment: pendingPayment({
@@ -311,7 +318,9 @@ export class CdpX402Gateway {
       !isEvmAddress(asset)
     )
       return { outcome: 'unknown' };
-    const rpc = new JsonRpcClient(this.config.x402RpcUrl);
+    const rpc = new JsonRpcClient(this.config.x402RpcUrl, {
+      timeoutMs: rpcTimeoutMs(this.config),
+    });
     const state = await rpc.request('eth_call', [
       {
         to: asset,
@@ -376,9 +385,45 @@ export class CdpX402Gateway {
   }
 }
 
-class JsonRpcClient {
-  constructor(url) {
+export async function verifyRpcNetwork(config, { rpc } = {}) {
+  const expected = evmChainId(config.x402Network);
+  if (expected === null)
+    throw new PaymentConfigurationError(
+      `X402_NETWORK ${config.x402Network} is not an eip155 network identifier.`,
+    );
+  const client = rpc ?? new JsonRpcClient(config.x402RpcUrl, { timeoutMs: rpcTimeoutMs(config) });
+  let served;
+  try {
+    served = Number(await client.request('eth_chainId', []));
+  } catch (error) {
+    throw new PaymentConfigurationError(
+      `X402_RPC_URL ${config.x402RpcUrl} could not be reached to confirm it serves ${config.x402Network}: ${error.message}`,
+      { cause: error },
+    );
+  }
+  if (!Number.isSafeInteger(served) || served !== expected)
+    throw new PaymentConfigurationError(
+      `X402_RPC_URL ${config.x402RpcUrl} serves chain ${served}, but X402_NETWORK ${config.x402Network} requires chain ${expected}.`,
+    );
+  return served;
+}
+
+function rpcTimeoutMs(config) {
+  const seconds = Number(config.x402RpcTimeoutSeconds);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 10_000;
+}
+
+function evmChainId(network) {
+  const [namespace, reference] = String(network).split(':');
+  if (namespace !== 'eip155') return null;
+  const chainId = Number(reference);
+  return Number.isSafeInteger(chainId) && chainId > 0 ? chainId : null;
+}
+
+export class JsonRpcClient {
+  constructor(url, { timeoutMs = 10_000 } = {}) {
     this.url = url;
+    this.timeoutMs = timeoutMs;
     this.id = 0;
   }
 
@@ -387,6 +432,7 @@ class JsonRpcClient {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: (this.id += 1), method, params }),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok) throw new Error(`RPC ${method} failed with HTTP ${response.status}.`);
     const body = await response.json();
@@ -462,7 +508,8 @@ export class StubPaymentGateway {
   }
 
   async authorize({ request, endpoint, priceUsd, outputSchema }) {
-    if (!request.get('payment-signature'))
+    const paymentSignature = request.get('payment-signature');
+    if (!paymentSignature)
       return {
         authorized: false,
         challenge: challenge(
@@ -482,7 +529,7 @@ export class StubPaymentGateway {
         asset: requirements.asset,
         network: requirements.network,
         pay_to: requirements.payTo,
-        payer: 'test-payer',
+        payer: `stub:${createHash('sha256').update(paymentSignature).digest('hex')}`,
         payment_payload: { stub: true },
         payment_requirements: requirements,
       },
@@ -554,12 +601,23 @@ function pendingPayment({
     asset: requirements.asset,
     network: requirements.network,
     pay_to: requirements.payTo,
-    payer: verification.payer ?? null,
+    payer: paymentPayerIdentity({
+      payer: verification.payer,
+      payment_payload: paymentPayload,
+    }),
     verified_at: new Date().toISOString(),
     authorization_fingerprint: authorizationFingerprint,
     payment_payload: paymentPayload,
     payment_requirements: requirements,
   };
+}
+
+export function paymentPayerIdentity(payment) {
+  const authorizationFrom = payment?.payment_payload?.payload?.authorization?.from;
+  if (isEvmAddress(authorizationFrom)) return authorizationFrom.toLowerCase();
+  if (typeof payment?.payer === 'string' && payment.payer.trim())
+    return payment.payer.toLowerCase();
+  return null;
 }
 
 function failedPayment(payment, reason) {

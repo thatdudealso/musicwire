@@ -31,11 +31,11 @@
           <h1>Musicwire Documentation</h1>
           <p class="text-secondary">
             Deterministic MusicXML validation, MuseScore rendering, and automated QC API. Pay per
-            call in USDC via x402 on Base Sepolia.
+            call in USDC via x402 on Base.
           </p>
 
           <div class="mt-4">
-            <span class="badge">Phase 2: Live on Base Sepolia</span>
+            <span id="network-badge" class="badge">Live on Base</span>
             <span id="network-info" class="manifest-loading-placeholder badge">Loading...</span>
           </div>
         </div>
@@ -116,8 +116,8 @@ claude</code></pre>
                     <td><code>MUSICWIRE_X402_PRIVATE_KEY</code></td>
                     <td>For paid calls</td>
                     <td>
-                      Base Sepolia buyer private key (throws away). Also accepts
-                      <code>X402_PRIVATE_KEY</code>.
+                      Throwaway buyer private key, funded on the network this deployment advertises.
+                      Also accepts <code>X402_PRIVATE_KEY</code>.
                     </td>
                   </tr>
                   <tr>
@@ -128,8 +128,10 @@ claude</code></pre>
                 </tbody>
               </table>
               <p class="text-muted">
-                <strong>Important:</strong> Use test USDC on Base Sepolia only. Never send mainnet
-                funds. Treat your private key as a secret.
+                <strong>Important:</strong> <code>musicwire-mcp</code> selects its payment network
+                from the service manifest, so it always pays on the network the target deployment
+                advertises. Fund the buyer key for that network and treat the private key as a
+                secret.
               </p>
             </div>
 
@@ -175,12 +177,20 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/validate \
                 Or use <code>x402curl</code> (note: x402curl 0.2.0 signed retry does not currently
                 complete with the CDP facilitator - use MCP client or raw HTTP flow):
               </p>
-              <pre><code>X402_PRIVATE_KEY="$TESTNET_PRIVATE_KEY" x402curl \
-  --x402-rpc-url https://sepolia.base.org \
+              <pre><code>X402_PRIVATE_KEY="$MAINNET_PRIVATE_KEY" x402curl \
+  --x402-rpc-url https://mainnet.base.org \
   -X POST \
   -H 'content-type: application/json' \
   --data-binary @request.json \
   https://musicwire.5432wire.com/v1/validate</code></pre>
+              <p class="text-muted">
+                This snippet targets the hosted deployment, which settles on
+                <span data-live="network-label">Base mainnet</span>
+                (<code data-live="network-id">eip155:8453</code>) with real USDC, so the buyer key
+                and the <code>--x402-rpc-url</code> must both be for that network. Against a local
+                Base Sepolia deployment, use a throwaway testnet key with
+                <code>--x402-rpc-url https://sepolia.base.org</code> and your local URL instead.
+              </p>
             </div>
 
             <div class="card">
@@ -199,11 +209,18 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/validate \
     "tx_hash": "0x...",
     "amount_usd": "0.10",
     "amount_atomic": "100000",
-    "network": "eip155:84532",
-    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-    "pay_to": "0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f"
+    "network": "<span data-live="network-id">eip155:8453</span>",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "pay_to": "<span data-live="payment-receiver">0x...</span>"
   }
 }</code></pre>
+              <p class="text-muted">
+                The literal values above are Base mainnet: <code>eip155:8453</code> and the Base
+                mainnet USDC contract. The <code>network</code> and <code>pay_to</code> fields are
+                replaced with this deployment's live values when it can be reached; a Base Sepolia
+                deployment returns <code>eip155:84532</code> and the Sepolia USDC contract instead.
+                Read <code>GET /.well-known/x402</code> for the authoritative receiver.
+              </p>
             </div>
 
             <h3>Local Development (Stub Mode)</h3>
@@ -274,7 +291,10 @@ npx -y musicwire-mcp</code></pre>
                 </p>
                 <h4>Headers:</h4>
                 <ul>
-                  <li><code>Idempotency-Key</code> - Optional: replay protection for 24 hours</li>
+                  <li>
+                    <code>Idempotency-Key</code> - Optional: indefinite replay only for the same
+                    verified payer and MusicXML request context
+                  </li>
                   <li>
                     <code>Payment-Signature</code> - x402 payment authorization (auto-added by MCP
                     client)
@@ -316,8 +336,8 @@ npx -y musicwire-mcp</code></pre>
                 <h4>Headers:</h4>
                 <ul>
                   <li>
-                    <code>Idempotency-Key</code> - Strongly recommended: replay protection for 24
-                    hours
+                    <code>Idempotency-Key</code> - Strongly recommended: 24-hour replay only for the
+                    same verified payer and render request context
                   </li>
                   <li><code>Payment-Signature</code> - x402 payment authorization</li>
                 </ul>
@@ -397,8 +417,9 @@ npx -y musicwire-mcp</code></pre>
                 <h3><code>GET /v1/artifacts/{jobId}/{name}</code></h3>
                 <p><strong>Free</strong> - Download a signed artifact URL.</p>
                 <p>
-                  Artifact URLs are signed, expire with the job retention window (30+ days), and
-                  return the named binary artifact.
+                  The signed API URL authorizes access, then responds with a 302 redirect to a
+                  short-lived, artifact-scoped presigned URL in the private S3 bucket. Clients must
+                  follow redirects to download the named binary artifact.
                 </p>
               </div>
             </div>
@@ -429,24 +450,35 @@ npx -y musicwire-mcp</code></pre>
             <h2>Payment Explainer</h2>
 
             <div class="card">
-              <h3>Testnet vs Mainnet</h3>
+              <h3>Mainnet and testnet</h3>
               <p>
-                <strong>Musicwire Phase 2 uses Base Sepolia testnet only.</strong>
+                <strong>The network in force is the one this deployment advertises.</strong> Read it
+                from <code>GET /manifest</code> and from the <code>402</code> quote itself; every
+                payment requirement is issued for that network only.
               </p>
               <ul>
-                <li><strong>Network:</strong> Base Sepolia (<code>eip155:84532</code>)</li>
                 <li>
-                  <strong>Asset:</strong> Test USDC
-                  (<code>0x036CbD53842c5426634e7929541eC2318f3dCF7e</code>)
+                  <strong>Network:</strong> <span data-live="network-label">Base</span> (<code
+                    data-live="network-id"
+                    >eip155:8453</code
+                  >)
                 </li>
+                <li><strong>Asset:</strong> USDC</li>
                 <li>
-                  <strong>Receiver:</strong> <code>0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f</code>
+                  <strong>Receiver:</strong>
+                  <code data-live="payment-receiver">see GET /.well-known/x402</code>
                 </li>
                 <li><strong>Payment Mode:</strong> x402 Exact via CDP Facilitator</li>
               </ul>
-              <p><strong>Do not send mainnet funds.</strong> The API will not accept them.</p>
               <p>
-                Get test USDC from the
+                The hosted deployment at <code>musicwire.5432wire.com</code> is pinned to
+                <strong>Base mainnet</strong> (<code>eip155:8453</code>) and charges real USDC.
+                Local and stub deployments default to <strong>Base Sepolia</strong>
+                (<code>eip155:84532</code>) and charge test USDC. Never send mainnet funds to a test
+                deployment.
+              </p>
+              <p>
+                Get test USDC for Base Sepolia runs from the
                 <a href="https://faucet.circle.com/" target="_blank">Circle Base Sepolia faucet</a>
                 or the
                 <a href="https://base-sepolia-faucet.quicknode.com/" target="_blank"
@@ -530,12 +562,16 @@ npx -y musicwire-mcp</code></pre>
                 double-charging.
               </p>
               <ul>
-                <li>Replays the original outcome for 24 hours</li>
                 <li>
-                  Works across <code>POST /v1/validate</code> and <code>POST /v1/render</code>
+                  <code>POST /v1/render</code> replays for 24 hours only when the same verified
+                  payer submits the same render request context with the same key.
+                </li>
+                <li>
+                  <code>POST /v1/validate</code> replays indefinitely only when the same verified
+                  payer submits the same MusicXML request context with the same key.
                 </li>
                 <li>Replay includes the original payment status and receipt</li>
-                <li>No payment authorization comparison needed - the key is the source of truth</li>
+                <li>A key presented by a different payer never resolves another payer's result.</li>
               </ul>
               <p>
                 <strong>Best practice:</strong> Always use an idempotency key for paid requests.
@@ -577,11 +613,14 @@ npx -y musicwire-mcp</code></pre>
             </div>
             <div class="card">
               <h3>Artifact Retention</h3>
-              <p>Completed artifacts are retained for a minimum of 30 days.</p>
+              <p>
+                Completed artifacts are retained for 30 days and then removed. Download what you
+                need before then.
+              </p>
               <p>Artifact URLs are signed and expire with the job retention window.</p>
               <p>
-                Deployments should provision adequate storage and implement cleanup policies for
-                long-term operation.
+                Job records, payment status, and receipts are retained after an artifact expires, so
+                payment proof always outlives the artifact it paid for.
               </p>
             </div>
           </div>

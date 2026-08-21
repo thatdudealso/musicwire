@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Musicwire - MusicXML validation, rendering, and QC API. Agents pay per call in USDC via x402 on Base Sepolia."
+      content="Musicwire - MusicXML validation, rendering, and QC API. Agents pay per call in USDC via x402 on Base."
     />
     <meta name="theme-color" content="#000000" />
     <title>Musicwire - MusicXML Render API</title>
@@ -31,14 +31,14 @@
           <h1>Musicwire</h1>
           <p class="text-secondary">
             A deterministic MusicXML validation, MuseScore rendering, and automated QC API.
-            <strong>Agents pay per call</strong> in USDC via x402 on Base Sepolia.
+            <strong>Agents pay per call</strong> in USDC via x402 on Base.
           </p>
           <div class="hero-actions">
             <a href="/docs" class="btn">Get Started</a>
             <a href="#pricing" class="btn">View Pricing</a>
           </div>
           <div class="mt-4">
-            <span class="badge">Phase 2: Live on Base Sepolia</span>
+            <span id="network-badge" class="badge">Live on Base</span>
             <span id="network-info" class="manifest-loading-placeholder badge">Loading...</span>
           </div>
         </div>
@@ -93,8 +93,8 @@
           <p>
             Payment uses
             <a href="https://eips.ethereum.org/EIPS/eip-3009" target="_blank">EIP-3009 x402</a> with
-            Exact USDC on Base Sepolia. Charges are only captured <strong>after</strong> quality
-            control passes - you only pay for valid, successful renders.
+            Exact USDC on Base. Charges are only captured <strong>after</strong> quality control
+            passes - you only pay for valid, successful renders.
           </p>
         </div>
       </section>
@@ -125,8 +125,9 @@
   }
 }</code></pre>
             <p>
-              Set <code>MUSICWIRE_X402_PRIVATE_KEY</code> in your shell environment with a funded
-              Base Sepolia wallet.
+              Set <code>MUSICWIRE_X402_PRIVATE_KEY</code> in your shell environment with a wallet
+              funded on the network the target deployment advertises: Base mainnet USDC for
+              <code>musicwire.5432wire.com</code>, Base Sepolia test USDC for a local deployment.
             </p>
           </div>
 
@@ -213,8 +214,9 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
             <strong>Failed QC = No charge.</strong> You only pay for successful, validated renders.
           </p>
           <p>
-            Idempotency keys replay the original outcome for 24 hours, ensuring you're never charged
-            twice for the same request.
+            Idempotency keys replay the original outcome to the same verified payer, ensuring you're
+            never charged twice for the same request. See the
+            <a href="/docs">idempotency documentation</a> for the exact replay windows.
           </p>
         </div>
       </section>

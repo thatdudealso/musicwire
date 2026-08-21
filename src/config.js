@@ -11,6 +11,25 @@ const decimal = (name, fallback) => {
 };
 
 const developmentArtifactSigningSecret = 'development-only-change-before-deploy';
+export const baseSepoliaX402Network = 'eip155:84532';
+export const baseMainnetX402Network = 'eip155:8453';
+
+const x402NetworkLabels = {
+  [baseMainnetX402Network]: 'Base mainnet',
+  [baseSepoliaX402Network]: 'Base Sepolia',
+};
+
+export function x402NetworkLabel(network) {
+  return x402NetworkLabels[network] ?? network;
+}
+
+const x402Network = process.env.X402_NETWORK ?? baseSepoliaX402Network;
+
+const defaultX402RpcUrls = {
+  [baseMainnetX402Network]: 'https://mainnet.base.org',
+  [baseSepoliaX402Network]: 'https://sepolia.base.org',
+};
+
 const artifactSigningSecret =
   process.env.ARTIFACT_SIGNING_SECRET ?? developmentArtifactSigningSecret;
 
@@ -33,6 +52,10 @@ export const config = {
   soundfontPath: process.env.MS_BASIC_SOUNDFONT ?? '',
   soundfontLicensePath: process.env.MS_BASIC_LICENSE ?? '',
   artifactSigningSecret,
+  artifactStorage: process.env.MUSICWIRE_ARTIFACT_STORAGE ?? 'local',
+  artifactBucket: process.env.MUSICWIRE_ARTIFACT_BUCKET ?? 'musicwire-artifacts-841162711749',
+  artifactRegion: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? '',
+  artifactDownloadUrlTtlSeconds: integer('MUSICWIRE_ARTIFACT_URL_TTL_SECONDS', 900),
   maxUploadBytes: integer('MAX_UPLOAD_BYTES', 1_000_000),
   maxDecompressedBytes: integer('MAX_DECOMPRESSED_BYTES', 1_000_000),
   maxRenderSeconds: integer('MAX_RENDER_SECONDS', 60),
@@ -50,10 +73,14 @@ export const config = {
   renderSoloPriceUsd: process.env.RENDER_SOLO_PRICE_USD ?? '0.25',
   renderMultiPriceUsd: process.env.RENDER_MULTI_PRICE_USD ?? '0.50',
   paymentMode: process.env.MUSICWIRE_PAYMENT_MODE ?? 'stub',
-  x402Network: 'eip155:84532',
+  x402Network,
   x402PaymentTimeoutSeconds: integer('X402_PAYMENT_TIMEOUT_SECONDS', 300),
   x402SettlementRetrySeconds: decimal('X402_SETTLEMENT_RETRY_SECONDS', 5),
-  x402RpcUrl: process.env.X402_RPC_URL ?? 'https://sepolia.base.org',
+  x402RpcUrl:
+    process.env.X402_RPC_URL ??
+    defaultX402RpcUrls[x402Network] ??
+    defaultX402RpcUrls[baseSepoliaX402Network],
+  x402RpcTimeoutSeconds: decimal('X402_RPC_TIMEOUT_SECONDS', 10),
   x402ReceiverWalletName:
     process.env.MUSICWIRE_X402_RECEIVER_WALLET_NAME ?? 'musicwire-x402-receiver',
   publicBaseUrl: process.env.MUSICWIRE_PUBLIC_BASE_URL ?? '',
@@ -64,14 +91,48 @@ export const config = {
 if (!['stub', 'x402'].includes(config.paymentMode))
   throw new Error('MUSICWIRE_PAYMENT_MODE must be either "stub" or "x402".');
 
+if (!['local', 's3'].includes(config.artifactStorage))
+  throw new Error('MUSICWIRE_ARTIFACT_STORAGE must be either "local" or "s3".');
+
 if (process.env.NODE_ENV === 'production' && config.paymentMode !== 'x402')
   throw new Error('MUSICWIRE_PAYMENT_MODE=x402 is required in production.');
 
 if (process.env.NODE_ENV === 'production' && !process.env.CDP_WALLET_SECRET?.trim())
   throw new Error('CDP_WALLET_SECRET is required for production x402 payments.');
 
+if (process.env.NODE_ENV === 'production' && !process.env.CDP_API_KEY_ID?.trim())
+  throw new Error('CDP_API_KEY_ID is required for production x402 payments.');
+
+if (process.env.NODE_ENV === 'production' && !process.env.CDP_API_KEY_SECRET?.trim())
+  throw new Error('CDP_API_KEY_SECRET is required for production x402 payments.');
+
+if (process.env.NODE_ENV === 'production' && config.x402Network !== baseMainnetX402Network)
+  throw new Error(`X402_NETWORK=${baseMainnetX402Network} is required in production.`);
+
 if (process.env.NODE_ENV === 'production' && !isHttpsUrl(config.x402RpcUrl))
   throw new Error('X402_RPC_URL must be an HTTPS URL in production.');
+
+if (process.env.NODE_ENV === 'production' && config.artifactStorage !== 's3')
+  throw new Error('MUSICWIRE_ARTIFACT_STORAGE=s3 is required in production.');
+
+if (process.env.NODE_ENV === 'production' && !config.artifactBucket.trim())
+  throw new Error('MUSICWIRE_ARTIFACT_BUCKET is required for production artifact storage.');
+
+if (
+  process.env.NODE_ENV === 'production' &&
+  config.artifactStorage === 's3' &&
+  !config.artifactRegion.trim()
+)
+  throw new Error('AWS_REGION is required to reach S3 artifact storage in production.');
+
+if (
+  !Number.isSafeInteger(config.artifactDownloadUrlTtlSeconds) ||
+  config.artifactDownloadUrlTtlSeconds <= 0 ||
+  config.artifactDownloadUrlTtlSeconds > 3_600
+)
+  throw new Error(
+    'MUSICWIRE_ARTIFACT_URL_TTL_SECONDS must be a positive number of seconds no greater than 3600.',
+  );
 
 export const supportedFormats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'];
 

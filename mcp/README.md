@@ -7,7 +7,7 @@
 - `musicwire_render` - pay to queue a MusicXML render.
 - `musicwire_get_job` - inspect a render or poll it to completion.
 
-Paid calls use x402 Exact USDC on Base Sepolia (`eip155:84532`). The server retries a `402 Payment Required` response with a signed payment automatically. It never logs or persists the private key.
+Paid calls use x402 Exact USDC on Base. The server reads `GET /manifest` from the configured API and pays on the network that deployment advertises: Base mainnet (`eip155:8453`) or Base Sepolia (`eip155:84532`). It retries a `402 Payment Required` response with a signed payment automatically, and never logs or persists the private key.
 
 ## Install
 
@@ -21,17 +21,17 @@ The package requires Node.js 22.5 or newer.
 
 ## Configuration
 
-| Variable                     | Required            | Description                                                                                      |
-| ---------------------------- | ------------------- | ------------------------------------------------------------------------------------------------ |
-| `MUSICWIRE_API_URL`          | No                  | Musicwire base URL. Defaults to `http://127.0.0.1:8787`.                                         |
-| `MUSICWIRE_X402_PRIVATE_KEY` | For paid x402 calls | Throwaway Base Sepolia buyer private key. `X402_PRIVATE_KEY` is also accepted for compatibility. |
-| `MUSICWIRE_MCP_PAYMENT_MODE` | No                  | `x402` (default), or the test-only `stub` mode for a loopback API.                               |
+| Variable                     | Required            | Description                                                                                                                                 |
+| ---------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MUSICWIRE_API_URL`          | No                  | Musicwire base URL. Defaults to `http://127.0.0.1:8787`.                                                                                    |
+| `MUSICWIRE_X402_PRIVATE_KEY` | For paid x402 calls | Throwaway buyer private key, funded on the network the target deployment advertises. `X402_PRIVATE_KEY` is also accepted for compatibility. |
+| `MUSICWIRE_MCP_PAYMENT_MODE` | No                  | `x402` (default), or the test-only `stub` mode for a loopback API.                                                                          |
 
 The server starts and serves the free tools without a key. The key is read only when a paid call actually receives `402 Payment Required`; if it is missing at that point, the tool call fails with an error telling you to set it.
 
 `stub` mode retries challenges with a non-secret test authorization and is rejected unless `MUSICWIRE_API_URL` points at `localhost`, `127.0.0.1`, or `::1`. It is for Musicwire's explicit local stub profile only. Never use it for a remote API.
 
-Keep the buyer wallet funded only with Base Sepolia test USDC. Musicwire has no mainnet configuration in this package. Treat the private key as a secret: inject it through your client environment, do not put it in a repository or client configuration file, and rotate it if exposed.
+Fund the buyer wallet on the network the target deployment advertises: real USDC on Base mainnet for the hosted deployment, test USDC on Base Sepolia for a local one. This package never picks the network itself, so it cannot pay on a network the server did not quote, and it refuses any advertised network other than those two. Treat the private key as a secret: inject it through your client environment, do not put it in a repository or client configuration file, and rotate it if exposed.
 
 ## Claude Code
 
@@ -51,7 +51,7 @@ Add this to the project's `.mcp.json`, substituting the deployed API URL. Keep t
 }
 ```
 
-Before starting Claude Code, export a funded testnet buyer key:
+Before starting Claude Code, export a buyer key funded on the network that deployment advertises:
 
 ```sh
 export MUSICWIRE_X402_PRIVATE_KEY='0x...'
@@ -94,6 +94,6 @@ The repository's `test/mcp-e2e.test.js` uses a real stdio MCP session against th
 
 ## Payment behavior
 
-For `musicwire_validate` and `musicwire_render`, the package sends the original request first. If Musicwire returns `402`, the x402 client reads the payment requirements, signs an Exact EVM authorization with the configured Base Sepolia buyer wallet, and repeats the identical request with `Payment-Signature`. Musicwire verifies the authorization before work and captures only after quality control passes. Job polling and the compose guide are free.
+For `musicwire_validate` and `musicwire_render`, the package sends the original request first. If Musicwire returns `402`, it reads the advertised payment network from `GET /manifest`, then the x402 client reads the payment requirements, signs an Exact EVM authorization with the configured buyer wallet on that network, and repeats the identical request with `Payment-Signature`. Musicwire verifies the authorization before work and captures only after quality control passes. Job polling and the compose guide are free.
 
 `idempotency_key` is available on the two paid tools. Reuse it when retrying a request to ensure Musicwire replays the original outcome instead of creating another payment authorization.

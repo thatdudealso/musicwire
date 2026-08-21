@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { XMLValidator } from 'fast-xml-parser';
 import { createApp } from '../src/app.js';
+import { checkAudioDuration, probeAudio, verifyNonSilent } from '../src/qc.js';
+import { scoreFacts } from '../src/validate.js';
 
 const mscoreBin =
   process.env.MSCORE_BIN ??
@@ -16,7 +19,7 @@ const shouldRun =
   process.env.MUSICWIRE_E2E === '1' && mscoreBin && hasCommand('ffprobe') && hasCommand('ffmpeg');
 
 test(
-  'real MuseScore pipeline returns content-addressed artifacts and NOTICE',
+  'real MuseScore production render path quality-checks every advertised artifact',
   {
     skip: shouldRun
       ? false
@@ -38,10 +41,20 @@ test(
         new URL('./fixtures/two-bar-piano.musicxml', import.meta.url),
         'utf8',
       );
+      const facts = scoreFacts(musicxml);
       const submitted = await fetch(`${base}/v1/render`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ musicxml, formats: ['pdf', 'svg', 'mp3'] }),
+        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
+        body: JSON.stringify({
+          musicxml,
+          formats: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'],
+          constraints_check: {
+            tempo: facts.tempo,
+            key_fifths: facts.key.fifths,
+            mode: facts.key.mode,
+            duration_seconds: facts.scoreDurationSeconds,
+          },
+        }),
       });
       assert.equal(submitted.status, 202);
       const { job_id: jobId } = await submitted.json();
@@ -53,15 +66,77 @@ test(
       }
       assert.equal(job.status, 'completed', JSON.stringify(job.error));
       assert.equal(job.qc.status, 'passed');
+      assert.equal(job.payment.status, 'settled');
+      assert.equal(job.receipt.status, job.payment.status);
+      assert.equal(job.facts.partCount, 1);
+      assert.equal(job.facts.tempo, 90);
+      assert.deepEqual(job.facts.key, { fifths: 0, mode: 'major' });
       for (const artifact of job.artifacts) assert.match(artifact.sha256, /^[a-f0-9]{64}$/);
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'NOTICE.txt'));
+      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mscz'));
+      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.pdf'));
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'score-1.svg'));
+      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score-1.png'));
+      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mid'));
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mp3'));
+      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.wav'));
+      const download = async (name) => {
+        const artifact = job.artifacts.find((item) => item.name === name);
+        assert.ok(artifact, `Missing ${name}`);
+        const response = await fetch(`${base}${artifact.url}`);
+        assert.equal(response.status, 200);
+        return Buffer.from(await response.arrayBuffer());
+      };
+      const source = await download('source.musicxml');
+      assert.equal(XMLValidator.validate(source.toString('utf8')), true);
+      assert.equal((await download('score.mscz')).subarray(0, 2).toString(), 'PK');
+      assert.equal((await download('score.pdf')).subarray(0, 5).toString(), '%PDF-');
+      const svg = (await download('score-1.svg')).toString('utf8');
+      assert.equal(XMLValidator.validate(svg), true);
+      assert.match(svg, /<svg\b/i);
+      assert.deepEqual(
+        [...(await download('score-1.png')).subarray(0, 8)],
+        [137, 80, 78, 71, 13, 10, 26, 10],
+      );
+      assert.equal((await download('score.mid')).subarray(0, 4).toString(), 'MThd');
+      for (const name of ['score.mp3', 'score.wav']) {
+        const destination = path.join(dataDirectory, name);
+        fs.writeFileSync(destination, await download(name));
+        const audio = await probeAudio('ffprobe', destination);
+        assert.equal(audio.ok, true, JSON.stringify(audio));
+        assert.ok(audio.channels >= 1);
+        assert.ok(audio.sampleRate >= 8_000);
+        assert.equal(checkAudioDuration(facts.scoreDurationSeconds, audio.duration, 2).ok, true);
+        const nonSilent = await verifyNonSilent('ffmpeg', destination);
+        assert.equal(nonSilent.ok, true, JSON.stringify(nonSilent));
+      }
       const notice = await fetch(
         `${base}${job.artifacts.find((artifact) => artifact.name === 'NOTICE.txt').url}`,
       );
       assert.equal(notice.status, 200);
       assert.match(await notice.text(), /FluidR3/);
+
+      const rejected = await fetch(`${base}/v1/render`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
+        body: JSON.stringify({
+          musicxml,
+          formats: ['pdf'],
+          constraints_check: { tempo: facts.tempo + 1 },
+        }),
+      });
+      assert.equal(rejected.status, 202);
+      const { job_id: rejectedJobId } = await rejected.json();
+      let rejectedJob;
+      for (let attempt = 0; attempt < 45; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        rejectedJob = await (await fetch(`${base}/v1/jobs/${rejectedJobId}`)).json();
+        if (rejectedJob.status !== 'queued' && rejectedJob.status !== 'running') break;
+      }
+      assert.equal(rejectedJob.status, 'failed_not_charged', JSON.stringify(rejectedJob));
+      assert.equal(rejectedJob.error.code, 'constraints_mismatch');
+      assert.equal(rejectedJob.payment.status, 'failed_not_charged');
+      assert.equal(rejectedJob.receipt.tx_hash, null);
     } finally {
       await new Promise((resolve) => server.close(resolve));
       fs.rmSync(dataDirectory, { recursive: true, force: true });

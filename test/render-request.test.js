@@ -244,6 +244,76 @@ test('production startup requires CDP credentials for x402 payments', () => {
   assert.match(result.stderr.toString(), /CDP_WALLET_SECRET/);
 });
 
+test('production startup requires CDP API credentials for x402 payments', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        X402_NETWORK: 'eip155:8453',
+        X402_RPC_URL: 'https://mainnet.base.org',
+        CDP_API_KEY_ID: '',
+        CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+        CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /CDP_API_KEY_ID/);
+});
+
+test('production startup requires Base mainnet x402 configuration', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        X402_NETWORK: 'eip155:84532',
+        X402_RPC_URL: 'https://mainnet.base.org',
+        CDP_API_KEY_ID: 'test-cdp-api-id',
+        CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+        CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /X402_NETWORK=eip155:8453/);
+});
+
+test('production startup requires S3 artifact storage', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', "import './src/config.js'"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+        MUSICWIRE_PAYMENT_MODE: 'x402',
+        X402_NETWORK: 'eip155:8453',
+        X402_RPC_URL: 'https://mainnet.base.org',
+        CDP_API_KEY_ID: 'test-cdp-api-id',
+        CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+        CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+        MUSICWIRE_ARTIFACT_STORAGE: 'local',
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /MUSICWIRE_ARTIFACT_STORAGE=s3/);
+});
+
 test('production startup refuses stub payments', () => {
   const result = spawnSync(
     process.execPath,
@@ -260,6 +330,59 @@ test('production startup refuses stub payments', () => {
   );
   assert.notEqual(result.status, 0);
   assert.match(result.stderr.toString(), /MUSICWIRE_PAYMENT_MODE=x402/);
+});
+
+const withEnv = (overrides) => {
+  const env = { ...process.env, ...overrides };
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[name];
+  }
+  return env;
+};
+
+const productionEnv = (overrides = {}) =>
+  withEnv({
+    NODE_ENV: 'production',
+    ARTIFACT_SIGNING_SECRET: 'production-test-secret',
+    MUSICWIRE_PAYMENT_MODE: 'x402',
+    X402_NETWORK: 'eip155:8453',
+    CDP_API_KEY_ID: 'test-cdp-api-id',
+    CDP_API_KEY_SECRET: 'test-cdp-api-secret',
+    CDP_WALLET_SECRET: 'test-cdp-wallet-secret',
+    MUSICWIRE_ARTIFACT_STORAGE: 's3',
+    AWS_REGION: 'us-east-1',
+    AWS_DEFAULT_REGION: undefined,
+    X402_RPC_URL: undefined,
+    ...overrides,
+  });
+
+const loadConfig = (env, expression = "import './src/config.js'") =>
+  spawnSync(process.execPath, ['--input-type=module', '--eval', expression], {
+    cwd: process.cwd(),
+    env,
+  });
+
+const printRpcUrl =
+  "import { config } from './src/config.js'; process.stdout.write(config.x402RpcUrl)";
+
+test('production startup requires a region for S3 artifact storage', () => {
+  const result = loadConfig(productionEnv({ AWS_REGION: undefined }));
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /AWS_REGION is required/);
+});
+
+test('the settlement RPC endpoint defaults to the configured network', () => {
+  const mainnet = loadConfig(productionEnv(), printRpcUrl);
+  const sepolia = loadConfig(
+    withEnv({ NODE_ENV: 'test', X402_NETWORK: 'eip155:84532', X402_RPC_URL: undefined }),
+    printRpcUrl,
+  );
+
+  assert.equal(mainnet.status, 0, mainnet.stderr.toString());
+  assert.equal(mainnet.stdout.toString(), 'https://mainnet.base.org');
+  assert.equal(sepolia.status, 0, sepolia.stderr.toString());
+  assert.equal(sepolia.stdout.toString(), 'https://sepolia.base.org');
 });
 
 test('render rejects requests once the pending backlog is full', async () => {

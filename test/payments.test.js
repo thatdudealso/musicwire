@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -9,7 +10,13 @@ import {
   encodePaymentSignatureHeader,
 } from '@x402/core/http';
 import { createApp } from '../src/app.js';
-import { CdpX402Gateway, PaymentService, PaymentSettlementError } from '../src/payment.js';
+import {
+  CdpX402Gateway,
+  PaymentConfigurationError,
+  PaymentService,
+  PaymentSettlementError,
+  verifyRpcNetwork,
+} from '../src/payment.js';
 import { JobStore } from '../src/store.js';
 
 const musicxml = fs.readFileSync(
@@ -57,7 +64,6 @@ test('CDP gateway decodes the standard payment-signature header before verificat
     findMatchingRequirements: (available) => available[0],
     verifyPayment: async () => ({
       isValid: true,
-      payer: '0x2222222222222222222222222222222222222222',
     }),
   });
 
@@ -78,6 +84,7 @@ test('CDP gateway decodes the standard payment-signature header before verificat
   assert.equal(result.authorized, true);
   assert.deepEqual(result.payment.payment_payload, payload);
   assert.equal(result.payment.status, 'verified_pending_qc');
+  assert.equal(result.payment.payer, '0x2222222222222222222222222222222222222222');
 
   const reencodedPayload = {
     payload: {
@@ -108,6 +115,36 @@ test('CDP gateway decodes the standard payment-signature header before verificat
     reencoded.payment.authorization_fingerprint,
     result.payment.authorization_fingerprint,
   );
+
+  gateway.serverPromise = Promise.resolve({
+    buildPaymentRequirements: async () => [requirements],
+    createPaymentRequiredResponse: async (_requirements, resource) => ({
+      x402Version: 2,
+      resource,
+      accepts: [requirements],
+    }),
+    findMatchingRequirements: (available) => available[0],
+    verifyPayment: async () => ({
+      isValid: false,
+      invalidReason: 'invalid_exact_evm_nonce_already_used',
+      payer: '0x2222222222222222222222222222222222222222',
+    }),
+  });
+  const consumed = await gateway.authorize({
+    request: {
+      protocol: 'https',
+      originalUrl: '/v1/render',
+      get: (name) =>
+        name.toLowerCase() === 'payment-signature'
+          ? encodePaymentSignatureHeader(payload)
+          : 'musicwire.test',
+    },
+    endpoint: 'render',
+    priceUsd: '0.25',
+    outputSchema: {},
+  });
+  assert.equal(consumed.authorized, false);
+  assert.equal(consumed.replayPayment.payer, '0x2222222222222222222222222222222222222222');
 
   const malformed = await gateway.authorize({
     request: {
@@ -165,21 +202,46 @@ class RecordingGateway {
         },
       };
     this.events.push('verify');
+    const payment = {
+      provider: 'recording_gateway',
+      status: 'verified_pending_qc',
+      amount_usd: priceUsd,
+      amount_atomic: requirements.amount,
+      asset: requirements.asset,
+      network: requirements.network,
+      pay_to: requirements.payTo,
+      payer:
+        request.get('payment-signature') === 'payer-b' ||
+        request.get('payment-signature') === 'consumed-b'
+          ? '0x3333333333333333333333333333333333333333'
+          : '0x2222222222222222222222222222222222222222',
+      authorization_fingerprint: request.get('payment-signature'),
+      payment_payload: { test: true },
+      payment_requirements: requirements,
+    };
+    if (request.get('payment-signature').startsWith('consumed-'))
+      return {
+        authorized: false,
+        replayPayment: payment,
+        challenge: {
+          headers: {
+            'payment-required': encodePaymentRequiredHeader(paymentRequired),
+            'cache-control': 'no-store',
+          },
+          body: {
+            ...paymentRequired,
+            quote: {
+              currency: 'USDC',
+              price_usd: priceUsd,
+              settlement: 'after_qc_pass',
+              output_schema: outputSchema,
+            },
+          },
+        },
+      };
     return {
       authorized: true,
-      payment: {
-        provider: 'recording_gateway',
-        status: 'verified_pending_qc',
-        amount_usd: priceUsd,
-        amount_atomic: requirements.amount,
-        asset: requirements.asset,
-        network: requirements.network,
-        pay_to: requirements.payTo,
-        payer: '0x2222222222222222222222222222222222222222',
-        authorization_fingerprint: request.get('payment-signature'),
-        payment_payload: { test: true },
-        payment_requirements: requirements,
-      },
+      payment,
     };
   }
 
@@ -298,12 +360,138 @@ test('successful QC settles once, persists a receipt, and idempotent retries do 
     );
     assert.equal(job.receipt.amount_usd, '0.25');
     assert.equal(job.receipt.network, 'eip155:84532');
-    assert.deepEqual(events, ['verify', 'render', 'settle']);
+    assert.deepEqual(events, ['verify', 'render', 'settle', 'verify']);
 
     const receiptArtifact = job.artifacts.find((artifact) => artifact.name === 'receipt.json');
     const receipt = await (await fetch(`${base}${receiptArtifact.url}`)).json();
     assert.equal(receipt.payment.tx_hash, job.receipt.tx_hash);
     assert.equal(receipt.payment.network, job.receipt.network);
+  } finally {
+    await close();
+  }
+});
+
+test('render idempotency isolates payer and request context after payment authorization', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const first = await renderRequest(base, 'payer-a-first', 'shared-render-key', ['pdf', 'svg']);
+    assert.equal(first.status, 202);
+    const firstBody = await first.json();
+    await waitForJob(base, firstBody.job_id);
+
+    const reordered = await renderRequest(base, 'payer-a-reordered', 'shared-render-key', [
+      'svg',
+      'pdf',
+    ]);
+    assert.equal(reordered.status, 202);
+    assert.equal((await reordered.json()).job_id, firstBody.job_id);
+
+    const unpaid = await renderRequest(base, undefined, 'shared-render-key');
+    const unpaidBody = await unpaid.json();
+    assert.equal(unpaid.status, 402);
+    assert.equal(unpaidBody.resource.url, 'https://musicwire.test/v1/render');
+    assert.equal('job_id' in unpaidBody, false);
+    assert.equal('receipt' in unpaidBody, false);
+
+    const otherPayer = await renderRequest(base, 'payer-b', 'shared-render-key');
+    assert.equal(otherPayer.status, 202);
+    const otherPayerBody = await otherPayer.json();
+    assert.notEqual(otherPayerBody.job_id, firstBody.job_id);
+    await waitForJob(base, otherPayerBody.job_id);
+
+    const differentContext = await renderRequest(base, 'payer-a-replay', 'shared-render-key');
+    assert.equal(differentContext.status, 202);
+    const differentContextBody = await differentContext.json();
+    assert.notEqual(differentContextBody.job_id, firstBody.job_id);
+    await waitForJob(base, differentContextBody.job_id);
+    assert.equal(events.filter((event) => event === 'settle').length, 3);
+  } finally {
+    await close();
+  }
+});
+
+test('consumed signatures replay only matching payer-owned render records', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    renderer: {
+      render: async () => ({
+        ok: true,
+        artifacts: [],
+        receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+      }),
+    },
+  });
+  try {
+    const first = await renderRequest(base, 'payer-a-first', 'consumed-render-key');
+    assert.equal(first.status, 202);
+    const firstBody = await first.json();
+    await waitForJob(base, firstBody.job_id);
+
+    const replay = await renderRequest(base, 'consumed-a', 'consumed-render-key');
+    assert.equal(replay.status, 202);
+    assert.equal((await replay.json()).job_id, firstBody.job_id);
+
+    for (const [signature, key] of [
+      ['consumed-b', 'consumed-render-key'],
+      [undefined, 'consumed-render-key'],
+      ['consumed-a', 'unused-consumed-render-key'],
+    ]) {
+      const response = await renderRequest(base, signature, key);
+      assert.equal(response.status, 402);
+      const body = await response.json();
+      assert.equal('job_id' in body, false);
+      assert.equal('receipt' in body, false);
+    }
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('consumed signatures replay only matching payer-owned validation records', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  const validate = (signature, idempotencyKey) =>
+    fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(signature ? { 'Payment-Signature': signature } : {}),
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify({ musicxml }),
+    });
+  try {
+    const first = await validate('payer-a-first', 'consumed-validation-key');
+    assert.equal(first.status, 200);
+    const firstBody = await first.json();
+
+    const replay = await validate('consumed-a', 'consumed-validation-key');
+    assert.equal(replay.status, 200);
+    assert.deepEqual(await replay.json(), firstBody);
+
+    for (const [signature, key] of [
+      ['consumed-b', 'consumed-validation-key'],
+      [undefined, 'consumed-validation-key'],
+      ['consumed-a', 'unused-consumed-validation-key'],
+    ]) {
+      const response = await validate(signature, key);
+      assert.equal(response.status, 402);
+      const body = await response.json();
+      assert.equal('receipt' in body, false);
+    }
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
   } finally {
     await close();
   }
@@ -632,7 +820,49 @@ test('validate replays the same paid outcome for an idempotency key without a se
     assert.equal(replay.status, 200);
     assert.deepEqual(await replay.json(), firstBody);
     assert.ok(replay.headers.get('payment-response'));
-    assert.deepEqual(events, ['verify', 'settle']);
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('validate scopes idempotency results to the payer and MusicXML request context', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  const validate = (signature, document) =>
+    fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Payment-Signature': signature,
+        'Idempotency-Key': 'shared-validation-key',
+      },
+      body: JSON.stringify({ musicxml: document }),
+    });
+  try {
+    const first = await validate('payer-a-first', musicxml);
+    const firstBody = await first.json();
+    assert.equal(first.status, 200);
+    assert.equal(firstBody.receipt.payer, '0x2222222222222222222222222222222222222222');
+
+    const otherPayer = await validate('payer-b', musicxml);
+    const otherPayerBody = await otherPayer.json();
+    assert.equal(otherPayer.status, 200);
+    assert.equal(otherPayerBody.receipt.payer, '0x3333333333333333333333333333333333333333');
+    assert.notDeepEqual(otherPayerBody, firstBody);
+
+    const samePayerReplay = await validate('payer-a-replay', musicxml);
+    assert.deepEqual(await samePayerReplay.json(), firstBody);
+
+    const otherContext = await validate(
+      'payer-a-other-context',
+      musicxml.replace(
+        '<work-title>Musicwire Test Waltz</work-title>',
+        '<work-title>Different Score</work-title>',
+      ),
+    );
+    assert.equal(otherContext.status, 200);
+    assert.equal(events.filter((event) => event === 'settle').length, 3);
   } finally {
     await close();
   }
@@ -673,7 +903,7 @@ test('validate maps a definitive settlement refusal to 502 payment_settlement_fa
     });
     assert.equal(replay.status, 502);
     assert.equal((await replay.json()).error.code, 'payment_settlement_failed');
-    assert.equal(events.filter((event) => event === 'verify').length, 1);
+    assert.equal(events.filter((event) => event === 'verify').length, 2);
   } finally {
     await close();
   }
@@ -786,6 +1016,89 @@ test('restart recovery retains durable settlement intents for reconciliation', (
   }
 });
 
+test('a replacement task retains completed jobs and payment records on its durable database volume', () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-durable-volume-'));
+  const now = new Date();
+  try {
+    const original = new JobStore(dataDirectory);
+    original.create(
+      {
+        id: 'completed-durable-job',
+        inputXml: musicxml,
+        formats: ['pdf'],
+        constraints: {},
+        facts: {},
+        priceUsd: '0.25',
+        payment: { provider: 'cdp', status: 'verified_pending_qc' },
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 86_400_000).toISOString(),
+      },
+      {
+        idempotencyKey: 'durable-job-key',
+        payerIdentity: 'durable-payer',
+        requestContext: 'durable-render-context',
+      },
+    );
+    original.update('completed-durable-job', {
+      state: 'completed',
+      artifacts_json: JSON.stringify([{ name: 'score.pdf', storageKey: 'artifacts/durable' }]),
+      payment_json: JSON.stringify({ provider: 'cdp', status: 'settled', tx_hash: '0xdurable' }),
+    });
+    original.savePaymentWallet({
+      provider: 'cdp',
+      accountName: 'musicwire-x402-receiver',
+      address: '0x1111111111111111111111111111111111111111',
+      network: 'eip155:8453',
+    });
+    original.claimPaymentAuthorization({
+      fingerprint: 'durable-payment-authorization',
+      endpoint: 'render',
+      idempotencyKey: 'durable-job-key',
+      createdAt: now.toISOString(),
+    });
+    original.saveValidateResult({
+      id: 'durable-validation',
+      idempotencyKey: 'durable-validation-key',
+      payerIdentity: 'durable-payer',
+      requestContext: 'durable-context',
+      httpStatus: 200,
+      body: { valid: true },
+      payment: { provider: 'cdp', status: 'settled', tx_hash: '0xdurable-validation' },
+      createdAt: now.toISOString(),
+    });
+
+    const replacement = new JobStore(dataDirectory);
+    assert.deepEqual(replacement.get('completed-durable-job').artifacts, [
+      { name: 'score.pdf', storageKey: 'artifacts/durable' },
+    ]);
+    assert.deepEqual(replacement.get('completed-durable-job').payment, {
+      provider: 'cdp',
+      status: 'settled',
+      tx_hash: '0xdurable',
+    });
+    assert.equal(replacement.getPaymentWallet('cdp').account_name, 'musicwire-x402-receiver');
+    assert.equal(
+      replacement.claimPaymentAuthorization({
+        fingerprint: 'durable-payment-authorization',
+        endpoint: 'render',
+        idempotencyKey: 'another-key',
+        createdAt: now.toISOString(),
+      }).claimed,
+      false,
+    );
+    assert.equal(
+      replacement.getValidateResultByIdentity({
+        idempotencyKey: 'durable-validation-key',
+        payerIdentity: 'durable-payer',
+        requestContext: 'durable-context',
+      }).payment.tx_hash,
+      '0xdurable-validation',
+    );
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 async function startServer({ events, renderer = undefined, gateway = undefined, ...overrides }) {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-payments-'));
   const server = createApp({
@@ -809,7 +1122,7 @@ async function startServer({ events, renderer = undefined, gateway = undefined, 
   };
 }
 
-function renderRequest(base, signature, idempotencyKey) {
+function renderRequest(base, signature, idempotencyKey, formats = ['pdf']) {
   return fetch(`${base}/v1/render`, {
     method: 'POST',
     headers: {
@@ -817,7 +1130,7 @@ function renderRequest(base, signature, idempotencyKey) {
       ...(signature ? { 'Payment-Signature': signature } : {}),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
-    body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+    body: JSON.stringify({ musicxml, formats }),
   });
 }
 
@@ -834,3 +1147,82 @@ function usdToAtomic(priceUsd) {
   const [whole, fractional = ''] = priceUsd.split('.');
   return `${whole}${fractional.padEnd(6, '0')}`.replace(/^0+(?=\d)/, '');
 }
+
+test('startup chain verification accepts an RPC endpoint on the configured network', async () => {
+  const requests = [];
+  const rpc = {
+    request: async (method, params) => {
+      requests.push([method, params]);
+      return '0x2105';
+    },
+  };
+
+  const served = await verifyRpcNetwork(
+    { x402Network: 'eip155:8453', x402RpcUrl: 'https://rpc.example/base' },
+    { rpc },
+  );
+
+  assert.equal(served, 8453);
+  assert.deepEqual(requests, [['eth_chainId', []]]);
+});
+
+test('startup chain verification refuses an RPC endpoint serving another chain', async () => {
+  const rpc = { request: async () => '0x14a34' };
+
+  await assert.rejects(
+    verifyRpcNetwork(
+      {
+        x402Network: 'eip155:8453',
+        x402RpcUrl: 'https://api.provider.example/rpc/v1/base-sepolia',
+      },
+      { rpc },
+    ),
+    (error) => {
+      assert.ok(error instanceof PaymentConfigurationError);
+      assert.match(error.message, /serves chain 84532, but X402_NETWORK eip155:8453/);
+      return true;
+    },
+  );
+});
+
+test('startup chain verification fails closed when the RPC endpoint is unreachable', async () => {
+  const rpc = {
+    request: async () => {
+      throw new Error('RPC eth_chainId failed with HTTP 503.');
+    },
+  };
+
+  await assert.rejects(
+    verifyRpcNetwork({ x402Network: 'eip155:8453', x402RpcUrl: 'https://down.example' }, { rpc }),
+    (error) => {
+      assert.ok(error instanceof PaymentConfigurationError);
+      assert.match(error.message, /could not be reached to confirm it serves eip155:8453/);
+      return true;
+    },
+  );
+});
+
+test('startup chain verification gives up on a half-open RPC endpoint', async () => {
+  const stalled = http.createServer(() => {});
+  stalled.listen(0, '127.0.0.1');
+  await new Promise((resolve) => stalled.once('listening', resolve));
+  const startedAt = Date.now();
+  try {
+    await assert.rejects(
+      verifyRpcNetwork({
+        x402Network: 'eip155:8453',
+        x402RpcUrl: `http://127.0.0.1:${stalled.address().port}`,
+        x402RpcTimeoutSeconds: 0.25,
+      }),
+      (error) => {
+        assert.ok(error instanceof PaymentConfigurationError);
+        assert.match(error.message, /could not be reached to confirm it serves eip155:8453/);
+        return true;
+      },
+    );
+    assert.ok(Date.now() - startedAt < 5_000, 'the boot check must not wait on undici defaults');
+  } finally {
+    stalled.closeAllConnections();
+    await new Promise((resolve) => stalled.close(resolve));
+  }
+});

@@ -1,24 +1,107 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { failureCodes } from './qc.js';
 
 export function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
+export function artifactContentType(name) {
+  if (name.endsWith('.musicxml')) return 'application/vnd.recordare.musicxml+xml';
+  if (name.endsWith('.json')) return 'application/json';
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.svg')) return 'image/svg+xml';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.mp3')) return 'audio/mpeg';
+  if (name.endsWith('.wav')) return 'audio/wav';
+  return 'application/octet-stream';
+}
+
+export class ArtifactStorageError extends Error {
+  constructor(message, { code, cause } = {}) {
+    super(message, { cause });
+    this.name = 'ArtifactStorageError';
+    this.code = code;
+    this.expired = code === failureCodes.artifactExpired;
+  }
+}
+
+function storageUnavailable(cause) {
+  return new ArtifactStorageError(
+    'Durable artifact storage is temporarily unavailable. Retry shortly.',
+    { code: failureCodes.artifactStorage, cause },
+  );
+}
+
+function artifactExpired(storageKey, cause) {
+  return new ArtifactStorageError(
+    `Artifact ${storageKey} is no longer stored. Rendered artifacts are retained for a limited window.`,
+    { code: failureCodes.artifactExpired, cause },
+  );
+}
+
+function isMissingObject(error) {
+  return (
+    error?.name === 'NoSuchKey' ||
+    error?.name === 'NotFound' ||
+    error?.Code === 'NoSuchKey' ||
+    error?.code === 'ENOENT' ||
+    error?.$metadata?.httpStatusCode === 404
+  );
+}
+
 export class ArtifactStore {
-  constructor(dataDirectory, signingSecret, retentionDays) {
+  constructor(
+    dataDirectory,
+    signingSecret,
+    retentionDays,
+    {
+      bucket = '',
+      region = '',
+      s3Client = null,
+      presigner = getSignedUrl,
+      downloadUrlTtlSeconds = 900,
+    } = {},
+  ) {
     this.directory = path.join(dataDirectory, 'artifacts');
     this.signingSecret = signingSecret;
     this.retentionDays = retentionDays;
-    fs.mkdirSync(this.directory, { recursive: true });
+    this.bucket = bucket;
+    this.s3 = bucket ? (s3Client ?? new S3Client(region ? { region } : {})) : null;
+    this.presigner = presigner;
+    this.downloadUrlTtlSeconds = downloadUrlTtlSeconds;
+    if (!this.s3) fs.mkdirSync(this.directory, { recursive: true });
   }
 
-  put(name, bytes) {
+  async put(name, bytes) {
     const hash = sha256(bytes);
-    const destination = path.join(this.directory, hash);
-    if (!fs.existsSync(destination)) fs.writeFileSync(destination, bytes, { flag: 'wx' });
-    return { name, sha256: hash, bytes: bytes.length, storageKey: hash };
+    try {
+      if (this.s3) {
+        const storageKey = `artifacts/${hash}`;
+        await this.s3.send(
+          new PutObjectCommand({
+            Bucket: this.bucket,
+            Key: storageKey,
+            Body: bytes,
+            ServerSideEncryption: 'AES256',
+          }),
+        );
+        return { name, sha256: hash, bytes: bytes.length, storageKey };
+      }
+      const destination = path.join(this.directory, hash);
+      if (!fs.existsSync(destination)) writeContentAddressedFile(destination, bytes);
+      return { name, sha256: hash, bytes: bytes.length, storageKey: hash };
+    } catch (error) {
+      throw storageUnavailable(error);
+    }
   }
 
   token(jobId, artifact, expires) {
@@ -36,7 +119,53 @@ export class ArtifactStore {
     return actual.length === expectedBytes.length && crypto.timingSafeEqual(expectedBytes, actual);
   }
 
-  read(artifact) {
-    return fs.readFileSync(path.join(this.directory, artifact.storageKey));
+  async downloadUrl(artifact) {
+    if (!this.s3) return null;
+    try {
+      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: artifact.storageKey }));
+      return await this.presigner(
+        this.s3,
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: artifact.storageKey,
+          ResponseContentType: artifactContentType(artifact.name),
+          ResponseContentDisposition: `attachment; filename="${downloadName(artifact.name)}"`,
+        }),
+        { expiresIn: this.downloadUrlTtlSeconds },
+      );
+    } catch (error) {
+      if (error instanceof ArtifactStorageError) throw error;
+      if (isMissingObject(error)) throw artifactExpired(artifact.storageKey, error);
+      throw storageUnavailable(error);
+    }
+  }
+
+  async read(artifact) {
+    try {
+      if (this.s3) {
+        const response = await this.s3.send(
+          new GetObjectCommand({ Bucket: this.bucket, Key: artifact.storageKey }),
+        );
+        if (!response.Body) throw artifactExpired(artifact.storageKey);
+        return Buffer.from(await response.Body.transformToByteArray());
+      }
+      return fs.readFileSync(path.join(this.directory, artifact.storageKey));
+    } catch (error) {
+      if (error instanceof ArtifactStorageError) throw error;
+      if (isMissingObject(error)) throw artifactExpired(artifact.storageKey, error);
+      throw storageUnavailable(error);
+    }
+  }
+}
+
+function downloadName(name) {
+  return path.basename(name).replace(/["\\\r\n]/g, '_');
+}
+
+function writeContentAddressedFile(destination, bytes) {
+  try {
+    fs.writeFileSync(destination, bytes, { flag: 'wx' });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
   }
 }

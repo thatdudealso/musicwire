@@ -10,7 +10,7 @@ Get a static MusicXML authoring prompt and quality bar at no cost:
 curl 'http://localhost:8787/v1/compose-guide?style=waltz&key=F%20major&tempo=84'
 ```
 
-Request a validation quote before rendering. The response is `402 Payment Required` until an x402 buyer supplies a valid Base Sepolia payment authorization:
+Request a validation quote before rendering. The response is `402 Payment Required` until an x402 buyer supplies a payment authorization valid for the network this deployment advertises (Base Sepolia by default, Base mainnet in production):
 
 ```sh
 curl -X POST http://localhost:8787/v1/validate \
@@ -35,7 +35,7 @@ curl http://localhost:8787/v1/jobs/JOB_ID
 
 ## How agents pay
 
-Musicwire Phase 2 accepts **test USDC on Base Sepolia only** (`eip155:84532`). Do not send mainnet funds. The receiving CDP Server Wallet is `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f`.
+Local and stub x402 runs default to **test USDC on Base Sepolia** (`eip155:84532`). The production deployment is pinned to **Base mainnet** (`eip155:8453`) and creates or reuses its named CDP Server Wallet from the supplied credentials. Do not send funds to a local or test deployment.
 
 Run a payment-enabled server by sourcing local CDP credentials without printing them. The durable local database stores only the named wallet identity and receiving address, never the wallet secret.
 
@@ -83,7 +83,7 @@ X402_PRIVATE_KEY="$TESTNET_PRIVATE_KEY" x402curl --x402-rpc-url https://sepolia.
 
 Compatibility note: `x402curl 0.2.0` was installed and tested. It receives the v2 quote and signs the retry, but that v2 signed retry does not complete with the CDP facilitator, so no job or settlement is reached. The Coinbase `@x402/fetch` E2E is the required payment proof for this phase.
 
-An `Idempotency-Key` header on `POST /v1/validate` or `POST /v1/render` replays the original paid outcome for 24 hours and cannot create a second charge. Musicwire verifies an authorization before work begins, then calls the facilitator settlement endpoint only after server-side QC passes. A QC failure returns `failed_not_charged` and a receipt with `tx_hash: null`. Before every settle attempt Musicwire durably records the payment as `settlement_pending` alongside the QC-passed artifacts, so a crash mid-settlement resumes as reconciliation on restart instead of a false `failed_not_charged`. If the facilitator settlement outcome is unknown after QC passes, the result is delivered with `payment.status: "settlement_pending"` and `tx_hash: null`, and Musicwire retries the settlement check in the background until it is confirmed or definitively failed; the EIP-3009 authorization nonce makes a reconciliation retry unable to charge twice. When a reconciliation retry is refused by the facilitator, Musicwire checks ground truth on Base Sepolia (`X402_RPC_URL`, default `https://sepolia.base.org`): a consumed authorization resolves to `settled` with the located transaction hash, an authorization provably unused past its expiry resolves to `failed_not_charged`, and anything else stays `settlement_pending`. A definitive facilitator refusal on `POST /v1/validate` returns `502 payment_settlement_failed` with no charge. An unpaid or invalid `POST /v1/render` returns a coarse 422 without line-level diagnostics; those are the paid `POST /v1/validate` product.
+An `Idempotency-Key` header replays the original paid outcome and cannot create a second charge. A render key replays for 24 hours only when the same verified payer submits the same render request context; a validation key replays indefinitely only when the same verified payer submits the same MusicXML request context. Replay hashing sorts object keys and the unordered render `formats` selection, since format order cannot alter requested work; MusicXML and any order-sensitive input remain unchanged. A key from another payer never resolves a retained result. Musicwire verifies an authorization before work begins, then calls the facilitator settlement endpoint only after server-side QC passes. A QC failure returns `failed_not_charged` and a receipt with `tx_hash: null`. Before every settle attempt Musicwire durably records the payment as `settlement_pending` alongside the QC-passed artifacts, so a crash mid-settlement resumes as reconciliation on restart instead of a false `failed_not_charged`. If the facilitator settlement outcome is unknown after QC passes, the result is delivered with `payment.status: "settlement_pending"` and `tx_hash: null`, and Musicwire retries the settlement check in the background until it is confirmed or definitively failed; the EIP-3009 authorization nonce makes a reconciliation retry unable to charge twice. When a reconciliation retry is refused by the facilitator, Musicwire checks ground truth on the configured network (`X402_RPC_URL`, default `https://sepolia.base.org`, and `https://mainnet.base.org` in production): a consumed authorization resolves to `settled` with the located transaction hash, an authorization provably unused past its expiry resolves to `failed_not_charged`, and anything else stays `settlement_pending`. A definitive facilitator refusal on `POST /v1/validate` returns `502 payment_settlement_failed` with no charge. An unpaid or invalid `POST /v1/render` returns a coarse 422 without line-level diagnostics; those are the paid `POST /v1/validate` product.
 
 ## Request and response schemas
 
@@ -112,7 +112,7 @@ MusicXML supplied in a JSON request body must be a UTF-8 string. Render requests
 { "error": { "code": "invalid_formats", "message": "..." } }
 ```
 
-Artifact URLs are signed, expire with the job retention window, and return the named binary artifact. Failed render jobs use `status: "failed_not_charged"` and include a typed `error` plus `payment.status: "failed_not_charged"`. Job and validation responses expose only payment status and receipt data, never the signed payment authorization.
+Artifact URLs are signed and expire with the job retention window. A local-storage deployment streams the named binary artifact inline; an S3-backed deployment answers `302` to a short-lived presigned URL, so clients must follow redirects. Failed render jobs use `status: "failed_not_charged"` and include a typed `error` plus `payment.status: "failed_not_charged"`. Job and validation responses expose only payment status and receipt data, never the signed payment authorization.
 
 ## API contract
 
@@ -128,7 +128,7 @@ Artifact URLs are signed, expire with the job retention window, and return the n
 
 The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mscz`, `pdf`, `svg`, `png`, `midi`, `mp3`, and `wav`.
 
-Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. Payment statuses are `verified_pending_qc`, `settled`, `settlement_pending`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. Payment requirements use x402 Exact USDC through the CDP facilitator on Base Sepolia. `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
+Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. Payment statuses are `verified_pending_qc`, `settled`, `settlement_pending`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. Payment requirements use x402 Exact USDC through the CDP facilitator on the configured network: Base mainnet in production, Base Sepolia for local and stub runs. `GET /manifest` publishes that network and its human-readable label, and `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
 
 QC passes only when MusicXML validates, MuseScore exits successfully, every requested artifact exists, requested audio has a valid container, non-silent RMS, and score-duration agreement within 10%, with a bounded two-second natural release-tail allowance, and optional key, tempo, and duration constraints match. Failures return a typed catalogued error and are not charged.
 
@@ -156,16 +156,24 @@ MUSICWIRE_E2E=1 MSCORE_BIN='/Applications/MuseScore 4.app/Contents/MacOS/mscore'
 MUSICWIRE_X402_E2E=1 MSCORE_BIN='/Applications/MuseScore 4.app/Contents/MacOS/mscore' npm run test:x402-e2e
 ```
 
-The end-to-end test skips cleanly where MuseScore is absent. It renders a real score locally when enabled.
+The native quality suite skips with an explicit reason where MuseScore, ffmpeg, or ffprobe is absent. When enabled it exercises the real HTTP render queue, MuseScore, every advertised format and page-set, audio QC primitives, constraints, and a failed-not-charged outcome. It does not use a renderer stub.
+
+### Native render quality evidence procedure
+
+This procedure is local render evidence and is independent of the AWS deployment below. Run the native suite with `MUSICWIRE_E2E=1` on the release commit and retain the TAP output in the PR. The suite verifies the complete artifact set, content signatures, XML/SVG structure, audio container/stream/channel/sample-rate/duration/RMS properties, score facts and payment state. It also submits a deliberate constraint mismatch and records a visible `failed_not_charged` job with `receipt.tx_hash: null`.
+
+The S3 redirect route is separately exercised with an artifact larger than 10 MB by `node --test test/artifacts.test.js`; its TAP output proves the signed redirect returns exact stored bytes outside the API payload limit. Do not treat a skipped native test as evidence - install the documented tools and rerun it before approval. For any environment where this cannot run, attach the command output and the reason to the PR before go-live.
 
 ## Container deployment
 
-The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image sets `NODE_ENV=production`; the startup guards in `src/config.js` are authoritative and refuse a production boot without `MUSICWIRE_PAYMENT_MODE=x402` and `CDP_WALLET_SECRET`.
+The image pins the official MuseScore Studio 4.7.2 AppImage, runs it under Xvfb, and includes ffmpeg/ffprobe. It provides deployment parity. The image sets `NODE_ENV=production`; the startup guards in `src/config.js` are authoritative and refuse a production boot without `MUSICWIRE_PAYMENT_MODE=x402`, all three CDP credentials, an explicit non-development artifact signing secret, and `X402_NETWORK=eip155:8453`.
 
 `compose.yaml` defines two services:
 
 - `musicwire` (the default for `docker compose up`) is a clearly labeled non-production local test service. It overrides `NODE_ENV=test` and pins `MUSICWIRE_PAYMENT_MODE=stub`, so it needs no CDP credentials and can never reach the facilitator or settle on-chain.
-- `musicwire-production` (compose profile `production`) keeps the image's `NODE_ENV=production`, sets `MUSICWIRE_PAYMENT_MODE=x402`, and passes `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`, and `MUSICWIRE_PUBLIC_BASE_URL` through from the host environment (or an uncommitted `env_file` you add locally). The startup guards refuse a production boot without `CDP_WALLET_SECRET`, so a true production run starts only when the operator supplies real credentials. No secret is committed to the repository and production never defaults to stub.
+- `musicwire-production` (compose profile `production`) keeps the image's `NODE_ENV=production`, pins Base mainnet, and passes `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`, and `MUSICWIRE_PUBLIC_BASE_URL` through from the host environment (or an uncommitted `env_file` you add locally). No secret is committed to the repository and production never defaults to stub.
+
+Because that profile runs with `NODE_ENV=production`, it inherits the production requirement for S3 artifact storage and therefore needs AWS credentials you supply yourself - the compose file deliberately forwards none. Add them voluntarily through your own uncommitted `env_file`, or by mounting your `~/.aws` read-only into the container. No static AWS key is forwarded by default or committed anywhere in this repository, and the real deployment never uses one: on ECS the task role supplies credentials through the container credential endpoint. If you only want a local render loop, use the default `musicwire` stub service, which needs no AWS access at all.
 
 ```sh
 docker build -t musicwire .
@@ -184,6 +192,58 @@ docker compose up musicwire-production
 
 The full published-port container rendering smoke test remains a deploy-phase follow-up because Docker Desktop reset loopback connections during the initial probe; the native MuseScore E2E remains the pipeline proof for this phase.
 
+### AWS production deployment
+
+`scripts/deploy-production.sh` deploys the production service on the shared on-demand ECS Fargate cluster through the existing API Gateway VPC Link and internal NLB. It creates no new load balancer or fixed-cost infrastructure. AMD64 images are built natively on an `ubuntu-24.04` GitHub Actions runner and published to the public `ghcr.io/thatdudealso/musicwire` registry, avoiding both unreliable local ARM-to-AMD64 emulation and any AWS credential or OIDC role in CI. Dispatch the workflow with the immutable release commit SHA:
+
+```sh
+RELEASE_SHA="$(git rev-parse HEAD)"
+gh-axi workflow run build-production-image.yml --repo thatdudealso/musicwire \
+  --ref main --field image_tag="$RELEASE_SHA"
+```
+
+`--ref` must be a branch or tag: the workflow-dispatch API rejects a raw commit SHA, and it only selects which version of the workflow file runs. The built tree comes from `image_tag`, which must be the full 40-character release commit SHA. The workflow checks out exactly that commit and fails if the checked-out tree is not that SHA, so the published tag always names the source it was built from. The workflow authenticates with the built-in `GITHUB_TOKEN` alone and needs no AWS access. Set the published package to public visibility once so ECS can pull it without registry credentials.
+
+GHCR does not enforce tag immutability the way an ECR repository with `IMMUTABLE` tags does, so a re-dispatch of the same SHA overwrites the tag. Immutability here is a convention backed by the workflow's SHA check: never re-dispatch a tag that has been deployed; cut a new commit instead.
+
+#### Recorded deviation from the original intent
+
+The Phase 4 intent asked for an immutable AMD64 **ECR** image published through a GitHub Actions workflow using least-privilege **GitHub OIDC**. This repository instead publishes to public GHCR with no AWS credentials in CI. That deviation was decided by FIRSTMATE under the captain's standing authorization; it was not chosen personally by the captain. The rationale: this is a public repository, the AWS account has no existing GitHub OIDC provider, and federating a public repository into the account is avoidable exposure for a build that needs no AWS access. No AWS credential is required in CI because every runtime secret is injected as an ECS task-definition secret from Secrets Manager. If ECS cannot pull from GHCR, the operator-machine ECR build-and-push fallback below uses local operator credentials and still creates no OIDC provider or role.
+
+The deploy script requires the configured AWS credentials used by `aws-axi`, a readable `MUSICWIRE_SECRETS_ENV_FILE` (default: `$HOME/.config/ai-keys.env`) containing these values, and the pushed image URI:
+
+- `CDP_API_KEY_ID`
+- `CDP_API_KEY_SECRET`
+- `CDP_WALLET_SECRET`
+
+It copies those credentials and an opaque `ARTIFACT_SIGNING_SECRET` into AWS Secrets Manager at deployment time. They are supplied to ECS as task-definition secrets, never plaintext environment values. For a first deployment the signing secret is generated locally without printing it; later deployments retain the existing signing secret so active artifact URLs remain valid. Run the deploy script from a clean release commit:
+
+```sh
+MUSICWIRE_IMAGE_URI="ghcr.io/thatdudealso/musicwire:$(git rev-parse HEAD)" \
+  ./scripts/deploy-production.sh
+```
+
+If ECS cannot pull from GHCR, the fallback is an operator-machine AMD64 build pushed to `841162711749.dkr.ecr.us-east-1.amazonaws.com/musicwire`. The deploy script accepts that URI too, and the task execution role already carries the ECR pull permissions.
+
+The infrastructure definition is [infra/musicwire-production.yaml](infra/musicwire-production.yaml). It creates an API Gateway HTTP API custom domain and Route53 alias at `musicwire.5432wire.com`, a dedicated listener and target group on the existing internal NLB, an encrypted S3 artifact bucket, and an encrypted EFS access point for `/var/lib/musicwire/data`. `MUSICWIRE_ARTIFACT_STORAGE=s3` is required in production and `MUSICWIRE_ARTIFACT_BUCKET` defaults to `musicwire-artifacts-841162711749`; the bucket retains content-addressed downloadable artifacts for 30 days. `GET /v1/artifacts/:jobId/:name` validates the existing signed token first and only then answers `302` with a short-lived presigned S3 URL (`MUSICWIRE_ARTIFACT_URL_TTL_SECONDS`, default 900, capped at one hour). The bucket stays private with public access fully blocked - the presigned URL is the only way bytes leave it. Redirecting rather than proxying also keeps downloads clear of the API Gateway 10 MB payload quota, which a multi-minute WAV render would otherwise exceed. ECS Fargate injects no region of its own, so the task definition sets `AWS_REGION` and the production startup guards refuse to boot S3 artifact storage without one. The task role carries `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on `artifacts/*` plus `s3:ListBucket` scoped to that prefix; without `ListBucket`, S3 answers `403 AccessDenied` instead of `404 NoSuchKey` for a key the lifecycle rule removed, which would report permanently expired artifacts as a retryable 503. ECS supplies these credentials through the task-role container credential endpoint - no static AWS key is ever set, forwarded, or committed.
+
+`X402_RPC_URL` defaults to the RPC endpoint of the configured network, and `src/server.js` calls `eth_chainId` on it before binding a port, refusing to start production unless the chain it serves matches `X402_NETWORK`. That check is authoritative and fail-closed: a wrong-chain, unreachable, or non-responsive endpoint stops the boot rather than silently stranding settlements in `settlement_pending`. Every JSON-RPC request carries a bounded timeout (`X402_RPC_TIMEOUT_SECONDS`, default 10) so a half-open endpoint fails the boot inside the container health-check start period instead of hanging it.
+
+#### Data retention
+
+The 30-day lifecycle rule applies only to rendered artifact objects in S3. Nothing prunes payment-bearing state: `jobs`, `payment_wallets`, `payment_authorizations`, and `validate_results` rows are retained indefinitely on EFS, so a payment, settlement, or receipt record always outlives the artifact it paid for and artifact expiry can never destroy payment proof. A settled `POST /v1/validate` writes its only durable charge record into `validate_results`, so that table in particular is never swept. `expireIdempotencyKeys()` deletes from `idempotency_keys` alone. Any future data-retention or privacy policy that would delete these records is a captain decision, not a maintenance change.
+
+SQLite is opened with `journal_mode = TRUNCATE` and `synchronous = FULL`, because write-ahead logging is unsupported on an NFS-backed EFS mount and a non-synchronous commit is not durable across a killed task. The database on EFS durably preserves the `jobs`, `idempotency_keys`, `payment_wallets`, `payment_authorizations`, and `validate_results` tables, including payment and settlement JSON. On restart, `JobStore.recoverInterruptedJobs()` marks a queued or running render `failed_not_charged` with `render_interrupted`, while completed jobs and their S3 artifacts remain available. This design is intentionally limited to one task: the ECS deployment maximum is also one task, so do not scale Musicwire above one task without replacing SQLite-over-EFS with a multi-writer-safe design.
+
+To verify replacement recovery after a completed paid render, retain its `job_id`, run a forced ECS deployment, wait for the task to become healthy, then fetch the job and one signed artifact URL again. The job, payment receipt, and artifact must remain available; an in-flight job must instead become the visible `failed_not_charged` recovery outcome.
+
+```sh
+npx -y aws-axi ecs update-service --cluster 5432wire-cluster --service musicwire \
+  --force-new-deployment --region us-east-1
+curl -sS "https://musicwire.5432wire.com/v1/jobs/$JOB_ID"
+curl -sS -L "$SIGNED_ARTIFACT_URL" -o /dev/null
+```
+
 ## Rights, attribution, and acceptable use
 
 Each completed render includes `NOTICE.txt` containing the installed MS Basic license and FluidR3, Michael Cowgill, and S. Christian Collins attribution. `receipt.json` includes the renderer version, sound profile, soundfont SHA-256 where configured, `rendered_by: "Musicwire"`, and this repository URL.
@@ -192,4 +252,4 @@ Customers own their compositions. Audio can be used commercially when the NOTICE
 
 ## Operational tradeoffs
 
-Idempotency keys replay the original job without comparing request bodies for 24 hours. Artifact retention is a 30-day minimum without an automated purge job, so deployments must provision storage and add cleanup policy before long-term operation.
+Render idempotency keys replay for 24 hours only for the same verified payer and request context; validation keys retain the same payer and MusicXML context indefinitely. Production S3 artifact objects expire on a 30-day lifecycle rule, but a local-storage deployment has a 30-day retention minimum with no automated purge job, so it must provision storage and add a cleanup policy before long-term operation.

@@ -1,0 +1,422 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Musicwire production API on on-demand ECS Fargate behind the shared 5432wire API Gateway VPC Link and NLB.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: >-
+      Immutable image URI for the Musicwire release, normally the public
+      ghcr.io/thatdudealso/musicwire image built by GitHub Actions. An operator-pushed ECR image
+      is the fallback for the case where ECS cannot pull from GHCR.
+  RuntimeSecretArn:
+    Type: String
+    Description: Secrets Manager ARN containing the CDP credentials and artifact signing secret.
+  ClusterName:
+    Type: String
+    Default: 5432wire-cluster
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-048753329152aac59
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-096b04016ff71745d,subnet-050083e181d5e079a
+  SharedNlbArn:
+    Type: String
+    Default: arn:aws:elasticloadbalancing:us-east-1:841162711749:loadbalancer/net/5432wire-nlb/691ca728275ca214
+  SharedVpcLinkId:
+    Type: String
+    Default: nn5wem
+  HostedZoneId:
+    Type: String
+    Default: Z04820823MQE3EMJX7VND
+
+Resources:
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-runtime-secret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref RuntimeSecretArn
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-and-write-rendered-artifacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub '${ArtifactBucket.Arn}/artifacts/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: artifacts/*
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/musicwire
+      RetentionInDays: 30
+
+  ServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Musicwire traffic only from the shared VPC path.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8787
+          ToPort: 8787
+          CidrIp: !Ref VpcCidr
+          Description: Shared API Gateway VPC Link and internal NLB.
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow the Musicwire task to mount its durable SQLite volume.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ServiceSecurityGroup
+          Description: NFS from the single Musicwire ECS task.
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+
+  DurableDataFileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: musicwire-durable-data
+
+  DurableDataAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref DurableDataFileSystem
+      PosixUser:
+        Uid: '1000'
+        Gid: '1000'
+      RootDirectory:
+        CreationInfo:
+          OwnerUid: '1000'
+          OwnerGid: '1000'
+          Permissions: '0750'
+        Path: /musicwire
+
+  DurableDataMountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref DurableDataFileSystem
+      SubnetId: !Select [0, !Ref PublicSubnets]
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+  DurableDataMountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref DurableDataFileSystem
+      SubnetId: !Select [1, !Ref PublicSubnets]
+      SecurityGroups:
+        - !Ref EfsSecurityGroup
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'musicwire-artifacts-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-artifacts-after-retention-window
+            Prefix: artifacts/
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: musicwire-tg
+      VpcId: !Ref VpcId
+      Protocol: TCP
+      Port: 8787
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 10
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref SharedNlbArn
+      Port: 8787
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: musicwire
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: musicwire
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8787
+              Protocol: tcp
+          MountPoints:
+            - ContainerPath: /var/lib/musicwire/data
+              SourceVolume: musicwire-durable-data
+              ReadOnly: false
+          Environment:
+            - Name: MUSICWIRE_PAYMENT_MODE
+              Value: x402
+            - Name: MUSICWIRE_PUBLIC_BASE_URL
+              Value: https://musicwire.5432wire.com
+            - Name: X402_NETWORK
+              Value: eip155:8453
+            - Name: X402_RPC_URL
+              Value: https://mainnet.base.org
+            - Name: ARTIFACT_RETENTION_DAYS
+              Value: '30'
+            - Name: MUSICWIRE_ARTIFACT_STORAGE
+              Value: s3
+            - Name: MUSICWIRE_ARTIFACT_BUCKET
+              Value: !Ref ArtifactBucket
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: MAX_RENDER_SECONDS
+              Value: '60'
+            - Name: MAX_RENDER_CPU_SECONDS
+              Value: '50'
+            - Name: MAX_RENDER_RSS_KB
+              Value: '1024000'
+          Secrets:
+            - Name: CDP_API_KEY_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:CDP_API_KEY_ID::'
+            - Name: CDP_API_KEY_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:CDP_API_KEY_SECRET::'
+            - Name: CDP_WALLET_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:CDP_WALLET_SECRET::'
+            - Name: ARTIFACT_SIGNING_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:ARTIFACT_SIGNING_SECRET::'
+          LinuxParameters:
+            InitProcessEnabled: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8787/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 90
+      Volumes:
+        - Name: musicwire-durable-data
+          EFSVolumeConfiguration:
+            FileSystemId: !Ref DurableDataFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref DurableDataAccessPoint
+              IAM: DISABLED
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - Listener
+      - DurableDataMountTargetA
+      - DurableDataMountTargetB
+    Properties:
+      ServiceName: musicwire
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      HealthCheckGracePeriodSeconds: 90
+      CapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Base: 1
+          Weight: 1
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      LoadBalancers:
+        - ContainerName: musicwire
+          ContainerPort: 8787
+          TargetGroupArn: !Ref TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ServiceSecurityGroup
+          Subnets: !Ref PublicSubnets
+
+  Api:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: musicwire-api
+      Description: HTTP API for Musicwire.
+      ProtocolType: HTTP
+      DisableExecuteApiEndpoint: false
+      Tags:
+        Project: musicwire
+        Environment: production
+
+  Integration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref Api
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      ConnectionType: VPC_LINK
+      ConnectionId: !Ref SharedVpcLinkId
+      IntegrationUri: !Ref Listener
+      PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 30000
+
+  RootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref Api
+      RouteKey: ANY /
+      AuthorizationType: NONE
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref Integration
+
+  ProxyRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref Api
+      RouteKey: ANY /{proxy+}
+      AuthorizationType: NONE
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref Integration
+
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref Api
+      StageName: $default
+      AutoDeploy: true
+
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: musicwire.5432wire.com
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: musicwire.5432wire.com
+          HostedZoneId: !Ref HostedZoneId
+
+  DomainName:
+    Type: AWS::ApiGatewayV2::DomainName
+    Properties:
+      DomainName: musicwire.5432wire.com
+      DomainNameConfigurations:
+        - CertificateArn: !Ref Certificate
+          EndpointType: REGIONAL
+          SecurityPolicy: TLS_1_2
+
+  ApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties:
+      ApiId: !Ref Api
+      DomainName: !Ref DomainName
+      Stage: !Ref Stage
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: musicwire.5432wire.com.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt DomainName.RegionalDomainName
+        HostedZoneId: !GetAtt DomainName.RegionalHostedZoneId
+        EvaluateTargetHealth: false
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${DomainName}
+  ApiId:
+    Value: !Ref Api
+  ServiceName:
+    Value: !GetAtt Service.Name
+  TargetGroupArn:
+    Value: !Ref TargetGroup

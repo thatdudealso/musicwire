@@ -3,16 +3,17 @@ import express from 'express';
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config as defaultConfig, supportedFormats } from './config.js';
+import { config as defaultConfig, supportedFormats, x402NetworkLabel } from './config.js';
 import { composeGuide } from './compose-guide.js';
 import { validateMusicXml, scoreFacts } from './validate.js';
 import { JobStore } from './store.js';
-import { ArtifactStore } from './artifacts.js';
+import { ArtifactStore, ArtifactStorageError, artifactContentType, sha256 } from './artifacts.js';
 import {
   createPaymentService,
   PaymentConfigurationError,
   PaymentSettlementError,
   PaymentVerificationError,
+  paymentPayerIdentity,
 } from './payment.js';
 import { Renderer } from './renderer.js';
 import { failureCodes } from './qc.js';
@@ -24,6 +25,13 @@ export function createApp(overrides = {}) {
     config.dataDirectory,
     config.artifactSigningSecret,
     config.artifactRetentionDays,
+    {
+      bucket: config.artifactStorage === 's3' ? config.artifactBucket : '',
+      region: config.artifactRegion,
+      s3Client: overrides.s3Client,
+      ...(overrides.presigner ? { presigner: overrides.presigner } : {}),
+      downloadUrlTtlSeconds: config.artifactDownloadUrlTtlSeconds,
+    },
   );
   const payments = overrides.payments ?? createPaymentService(config, store);
   const renderer = overrides.renderer ?? new Renderer(config, artifactStore);
@@ -118,16 +126,22 @@ export function createApp(overrides = {}) {
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
     const idempotencyKey = request.get('Idempotency-Key');
-    const replay = store.getValidateResultByKey(idempotencyKey);
+    const authorization = await payments.authorize({
+      request,
+      endpoint: 'validate',
+      priceUsd: config.validatePriceUsd,
+      outputSchema: paymentOutputSchema('validate'),
+    });
+    const replayIdentity = authorizationReplayIdentity(
+      authorization,
+      input.musicxml,
+      idempotencyKey,
+      validateReplayIdentity,
+    );
+    const replay = replayIdentity && store.getValidateResultByIdentity(replayIdentity);
     if (replay) return sendValidateResult(response, payments, replay);
+    if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
     const execute = async () => {
-      const authorization = await payments.authorize({
-        request,
-        endpoint: 'validate',
-        priceUsd: config.validatePriceUsd,
-        outputSchema: paymentOutputSchema('validate'),
-      });
-      if (!authorization.authorized) return { challenge: authorization.challenge };
       if (
         !claimPaymentAuthorization(
           store,
@@ -156,6 +170,7 @@ export function createApp(overrides = {}) {
         return store.saveValidateResult({
           id: crypto.randomUUID(),
           idempotencyKey,
+          ...replayIdentity,
           httpStatus: 422,
           body,
           payment,
@@ -166,6 +181,7 @@ export function createApp(overrides = {}) {
       const record = store.saveValidateResult({
         id: crypto.randomUUID(),
         idempotencyKey: idempotencyKey ?? null,
+        ...replayIdentity,
         httpStatus: 200,
         body: validationBody(validation, intent),
         payment: intent,
@@ -194,16 +210,16 @@ export function createApp(overrides = {}) {
         payment: settlement.payment,
       });
     };
-    let pending = idempotencyKey ? inflightValidations.get(idempotencyKey) : null;
+    const inflightKey = replayIdentity && JSON.stringify(replayIdentity);
+    let pending = inflightKey ? inflightValidations.get(inflightKey) : null;
     if (!pending) {
       pending = execute();
-      if (idempotencyKey) {
-        inflightValidations.set(idempotencyKey, pending);
-        pending.finally(() => inflightValidations.delete(idempotencyKey)).catch(() => {});
+      if (inflightKey) {
+        inflightValidations.set(inflightKey, pending);
+        pending.finally(() => inflightValidations.delete(inflightKey)).catch(() => {});
       }
     }
     const outcome = await pending;
-    if (outcome.challenge) return sendPaymentChallenge(response, outcome.challenge);
     return sendValidateResult(response, payments, outcome);
   });
 
@@ -278,13 +294,7 @@ export function createApp(overrides = {}) {
         ? config.renderMultiPriceUsd
         : config.renderSoloPriceUsd;
     const idempotencyKey = request.get('Idempotency-Key');
-    const existing = store.getByIdempotencyKey(idempotencyKey);
-    if (existing) return response.status(202).json(renderResponse(existing, config));
-    if (!queue.reserve())
-      return response.status(503).json({
-        error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' },
-      });
-    let reservationReleased = false;
+    let reservationReleased = true;
     let pendingPayment = null;
     try {
       const authorization = await payments.authorize({
@@ -293,12 +303,23 @@ export function createApp(overrides = {}) {
         priceUsd,
         outputSchema: paymentOutputSchema('render'),
       });
-      if (!authorization.authorized) {
-        queue.release();
-        reservationReleased = true;
-        return sendPaymentChallenge(response, authorization.challenge);
-      }
+      const replayIdentity = authorizationReplayIdentity(
+        authorization,
+        input.musicxml,
+        formats,
+        constraints,
+        idempotencyKey,
+        renderReplayIdentity,
+      );
+      const existing = replayIdentity && store.getByRenderIdentity(replayIdentity);
+      if (existing) return response.status(202).json(renderResponse(existing, config));
+      if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
       pendingPayment = authorization.payment;
+      if (!queue.reserve())
+        return response.status(503).json({
+          error: { code: 'render_queue_full', message: 'Render queue is full. Retry later.' },
+        });
+      reservationReleased = false;
       if (!claimPaymentAuthorization(store, payments, pendingPayment, 'render', idempotencyKey)) {
         queue.release();
         reservationReleased = true;
@@ -322,7 +343,7 @@ export function createApp(overrides = {}) {
         ).toISOString(),
       };
       job.payment.job_id = job.id;
-      const record = store.create(job, idempotencyKey);
+      const record = store.create(job, replayIdentity);
       if (record.id === job.id) queue.enqueue(record.id);
       else {
         await payments.cancelNotCharged(pendingPayment, 'idempotent_request_replayed');
@@ -347,17 +368,24 @@ export function createApp(overrides = {}) {
     response.json(publicJob(job, artifactStore, payments));
   });
 
-  app.get('/v1/artifacts/:jobId/:name', (request, response) => {
-    const job = store.get(request.params.jobId);
-    const artifact = job?.artifacts.find((item) => item.name === request.params.name);
-    if (
-      !artifact ||
-      !artifactStore.isValidToken(job.id, artifact, request.query.expires, request.query.token)
-    )
-      return response.status(403).json({
-        error: { code: 'artifact_access_denied', message: 'Artifact URL is expired or invalid.' },
-      });
-    response.type(contentType(artifact.name)).send(artifactStore.read(artifact));
+  app.get('/v1/artifacts/:jobId/:name', async (request, response, next) => {
+    try {
+      const job = store.get(request.params.jobId);
+      const artifact = job?.artifacts.find((item) => item.name === request.params.name);
+      if (
+        !artifact ||
+        !artifactStore.isValidToken(job.id, artifact, request.query.expires, request.query.token)
+      )
+        return response.status(403).json({
+          error: { code: 'artifact_access_denied', message: 'Artifact URL is expired or invalid.' },
+        });
+      const downloadUrl = await artifactStore.downloadUrl(artifact);
+      if (downloadUrl) return response.redirect(302, downloadUrl);
+      const bytes = await artifactStore.read(artifact);
+      response.type(artifactContentType(artifact.name)).send(bytes);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use((error, _request, response, _next) => {
@@ -387,6 +415,10 @@ export function createApp(overrides = {}) {
           message: 'Compressed request bodies are not accepted.',
         },
       });
+    if (error instanceof ArtifactStorageError)
+      return response
+        .status(error.expired ? 404 : 503)
+        .json({ error: { code: error.code, message: error.message } });
     return response
       .status(400)
       .json({ error: { code: 'invalid_request', message: 'Request body could not be parsed.' } });
@@ -395,24 +427,51 @@ export function createApp(overrides = {}) {
 }
 
 async function processJob(id, services) {
+  try {
+    await renderAndSettleJob(id, services);
+  } catch (error) {
+    console.error(`Musicwire render job ${id} failed unexpectedly.`, error);
+    const job = services.store.get(id);
+    if (job?.state === 'running') await failJobNotCharged(services, job, unexpectedFailure(error));
+  }
+}
+
+function unexpectedFailure(error) {
+  if (error instanceof ArtifactStorageError)
+    return {
+      code: failureCodes.artifactStorage,
+      message: 'Durable artifact storage was unavailable, so no payment was captured.',
+    };
+  return {
+    code: failureCodes.unexpected,
+    message: 'The render job failed unexpectedly, so no payment was captured.',
+  };
+}
+
+async function failJobNotCharged(services, job, error) {
+  const payment = await services.payments.cancelNotCharged(job.payment, error.code);
+  services.store.update(job.id, {
+    state: 'failed_not_charged',
+    qc_json: JSON.stringify({ status: 'failed', ...error }),
+    error_json: JSON.stringify(error),
+    payment_json: JSON.stringify(payment),
+  });
+}
+
+async function renderAndSettleJob(id, services) {
   const job = services.store.update(id, { state: 'running' });
   let result;
   try {
     result = await services.renderer.render(job);
-  } catch {
+  } catch (error) {
+    if (error instanceof ArtifactStorageError) throw error;
     result = {
       ok: false,
       error: { code: failureCodes.renderer, message: 'Unexpected isolated renderer failure.' },
     };
   }
   if (!result.ok) {
-    const payment = await services.payments.cancelNotCharged(job.payment, result.error.code);
-    services.store.update(id, {
-      state: 'failed_not_charged',
-      qc_json: JSON.stringify({ status: 'failed', ...result.error }),
-      error_json: JSON.stringify(result.error),
-      payment_json: JSON.stringify(payment),
-    });
+    await failJobNotCharged(services, job, result.error);
     return;
   }
   const intent = services.payments.settlementIntent(job.payment);
@@ -422,7 +481,7 @@ async function processJob(id, services) {
   };
   const artifacts = [
     ...result.artifacts,
-    services.artifactStore.put(
+    await services.artifactStore.put(
       'receipt.json',
       Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
     ),
@@ -450,7 +509,7 @@ async function processJob(id, services) {
   services.store.update(id, {
     payment_json: JSON.stringify(settlement.payment),
     artifacts_json: JSON.stringify(
-      refreshReceiptArtifact(
+      await refreshReceiptArtifactOrKeep(
         services.artifactStore,
         services.payments,
         artifacts,
@@ -460,13 +519,27 @@ async function processJob(id, services) {
   });
 }
 
-function refreshReceiptArtifact(artifactStore, payments, artifacts, payment) {
-  return artifacts.map((artifact) => {
-    if (artifact.name !== 'receipt.json') return artifact;
-    const receipt = JSON.parse(artifactStore.read(artifact).toString('utf8'));
-    receipt.payment = payments.receipt(payment);
-    return artifactStore.put('receipt.json', Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`));
-  });
+async function refreshReceiptArtifactOrKeep(artifactStore, payments, artifacts, payment) {
+  try {
+    return await refreshReceiptArtifact(artifactStore, payments, artifacts, payment);
+  } catch (error) {
+    console.error('Musicwire could not rewrite receipt.json after settlement.', error);
+    return artifacts;
+  }
+}
+
+async function refreshReceiptArtifact(artifactStore, payments, artifacts, payment) {
+  return Promise.all(
+    artifacts.map(async (artifact) => {
+      if (artifact.name !== 'receipt.json') return artifact;
+      const receipt = JSON.parse((await artifactStore.read(artifact)).toString('utf8'));
+      receipt.payment = payments.receipt(payment);
+      return artifactStore.put(
+        'receipt.json',
+        Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
+      );
+    }),
+  );
 }
 
 function createSettlementReconciler({ store, payments, artifactStore, config }) {
@@ -479,7 +552,12 @@ function createSettlementReconciler({ store, payments, artifactStore, config }) 
     store.update(id, {
       payment_json: JSON.stringify(settlement.payment),
       artifacts_json: JSON.stringify(
-        refreshReceiptArtifact(artifactStore, payments, job.artifacts, settlement.payment),
+        await refreshReceiptArtifactOrKeep(
+          artifactStore,
+          payments,
+          job.artifacts,
+          settlement.payment,
+        ),
       ),
     });
     return true;
@@ -650,6 +728,8 @@ function createRenderQueue(maxConcurrentRenders, maxPendingRenders, run) {
       setImmediate(async () => {
         try {
           await run(id);
+        } catch (error) {
+          console.error(`Musicwire render queue could not complete job ${id}.`, error);
         } finally {
           active -= 1;
           drain();
@@ -718,17 +798,6 @@ async function commandReady(binary, args, executable = binary) {
   });
 }
 
-function contentType(name) {
-  if (name.endsWith('.musicxml')) return 'application/vnd.recordare.musicxml+xml';
-  if (name.endsWith('.json')) return 'application/json';
-  if (name.endsWith('.pdf')) return 'application/pdf';
-  if (name.endsWith('.svg')) return 'image/svg+xml';
-  if (name.endsWith('.png')) return 'image/png';
-  if (name.endsWith('.mp3')) return 'audio/mpeg';
-  if (name.endsWith('.wav')) return 'audio/wav';
-  return 'application/octet-stream';
-}
-
 function manifest(config) {
   return {
     name: 'Musicwire',
@@ -738,6 +807,7 @@ function manifest(config) {
       x402_version: 2,
       mode: config.paymentMode,
       network: config.x402Network,
+      network_label: x402NetworkLabel(config.x402Network),
       asset: 'USDC',
       scheme: 'exact',
       facilitator: 'CDP',
@@ -788,7 +858,10 @@ function manifest(config) {
     failure_codes: failureCodes,
     retention: {
       minimum_days: config.artifactRetentionDays,
-      storage: 'content-addressed sha256 local storage',
+      storage:
+        config.artifactStorage === 's3'
+          ? 'content-addressed sha256 S3 storage'
+          : 'content-addressed sha256 local storage',
       access: 'signed token URLs',
     },
     license_terms: {
@@ -805,6 +878,50 @@ function manifest(config) {
       'Rate limits and isolated resource-capped render workspaces apply.',
     ],
   };
+}
+
+function validateReplayIdentity(payment, musicxml, idempotencyKey) {
+  return paymentReplayIdentity(payment, idempotencyKey, { musicxml }, 'validate');
+}
+
+function renderReplayIdentity(payment, musicxml, formats, constraints, idempotencyKey) {
+  return paymentReplayIdentity(
+    payment,
+    idempotencyKey,
+    { musicxml, formats: [...formats].sort(), constraints },
+    'render',
+  );
+}
+
+function authorizationReplayIdentity(authorization, ...args) {
+  const identity = args.pop();
+  const payment = authorization.payment ?? authorization.replayPayment;
+  return payment ? identity(payment, ...args) : null;
+}
+
+function paymentReplayIdentity(payment, idempotencyKey, request, endpoint) {
+  if (!idempotencyKey) return null;
+  const payerIdentity = paymentPayerIdentity(payment);
+  if (!payerIdentity)
+    throw new PaymentVerificationError(
+      'The verified payment did not provide a payer identity for idempotent replay.',
+    );
+  return {
+    idempotencyKey,
+    payerIdentity,
+    requestContext: sha256(`${endpoint}:${JSON.stringify(canonicalRequest(request))}`),
+  };
+}
+
+function canonicalRequest(value) {
+  if (Array.isArray(value)) return value.map(canonicalRequest);
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalRequest(value[key])]),
+    );
+  return value;
 }
 
 function paymentOutputSchema(endpoint) {

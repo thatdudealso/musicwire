@@ -76,14 +76,14 @@ export class Renderer {
           { mismatches },
         );
       const receipt = await this.#receipt(job);
-      const artifacts = [
+      const artifacts = await Promise.all([
         this.artifactStore.put('source.musicxml', Buffer.from(job.inputXml)),
         ...rendered.map((item) => this.artifactStore.put(item.name, fs.readFileSync(item.path))),
         this.artifactStore.put(
           'NOTICE.txt',
           Buffer.from(noticeText(this.config.soundfontLicensePath)),
         ),
-      ];
+      ]);
       return { ok: true, artifacts, receipt };
     } finally {
       fs.rmSync(workspace, { recursive: true, force: true, maxRetries: 2 });

@@ -8,7 +8,8 @@ export class JobStore {
     this.db = new DatabaseSync(path.join(dataDirectory, 'musicwire.sqlite'));
     this.idempotencyWindowMs = Math.max(1, idempotencyWindowHours) * 3_600_000;
     this.db.exec(`
-      PRAGMA journal_mode = WAL;
+      PRAGMA journal_mode = TRUNCATE;
+      PRAGMA synchronous = FULL;
       CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
         state TEXT NOT NULL,
@@ -26,9 +27,12 @@ export class JobStore {
         expires_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS idempotency_keys (
-        key TEXT PRIMARY KEY,
+        key TEXT NOT NULL,
+        payer_identity TEXT NOT NULL,
+        request_context TEXT NOT NULL,
         job_id TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (key, payer_identity, request_context)
       );
       CREATE TABLE IF NOT EXISTS payment_wallets (
         provider TEXT PRIMARY KEY,
@@ -40,11 +44,14 @@ export class JobStore {
       );
       CREATE TABLE IF NOT EXISTS validate_results (
         id TEXT PRIMARY KEY,
-        idempotency_key TEXT UNIQUE,
+        idempotency_key TEXT,
+        payer_identity TEXT,
+        request_context TEXT,
         http_status INTEGER NOT NULL,
         body_json TEXT NOT NULL,
         payment_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        UNIQUE(idempotency_key, payer_identity, request_context)
       );
       CREATE TABLE IF NOT EXISTS payment_authorizations (
         fingerprint TEXT PRIMARY KEY,
@@ -53,11 +60,13 @@ export class JobStore {
         created_at TEXT NOT NULL
       );
     `);
+    this.migrateRenderIdempotencyIdentity();
+    this.migrateValidateResultIdentity();
     this.expireIdempotencyKeys();
   }
 
-  create(job, idempotencyKey) {
-    const existing = this.getByIdempotencyKey(idempotencyKey);
+  create(job, replayIdentity = null) {
+    const existing = replayIdentity && this.getByRenderIdentity(replayIdentity);
     if (existing) return existing;
     this.db
       .prepare(
@@ -77,19 +86,31 @@ export class JobStore {
         job.createdAt,
         job.expiresAt,
       );
-    if (idempotencyKey)
+    if (replayIdentity)
       this.db
-        .prepare('INSERT INTO idempotency_keys (key, job_id, created_at) VALUES (?,?,?)')
-        .run(idempotencyKey, job.id, job.createdAt);
+        .prepare(
+          `INSERT INTO idempotency_keys
+           (key,payer_identity,request_context,job_id,created_at) VALUES (?,?,?,?,?)`,
+        )
+        .run(
+          replayIdentity.idempotencyKey,
+          replayIdentity.payerIdentity,
+          replayIdentity.requestContext,
+          job.id,
+          job.createdAt,
+        );
     return this.get(job.id);
   }
 
-  getByIdempotencyKey(idempotencyKey) {
-    if (!idempotencyKey) return null;
+  getByRenderIdentity({ idempotencyKey, payerIdentity, requestContext }) {
+    if (!idempotencyKey || !payerIdentity || !requestContext) return null;
     this.expireIdempotencyKeys();
     const existing = this.db
-      .prepare('SELECT job_id FROM idempotency_keys WHERE key = ?')
-      .get(idempotencyKey);
+      .prepare(
+        `SELECT job_id FROM idempotency_keys
+         WHERE key = ? AND payer_identity = ? AND request_context = ?`,
+      )
+      .get(idempotencyKey, payerIdentity, requestContext);
     return existing ? this.get(existing.job_id) : null;
   }
 
@@ -113,15 +134,27 @@ export class JobStore {
     };
   }
 
-  saveValidateResult({ id, idempotencyKey, httpStatus, body, payment, createdAt }) {
+  saveValidateResult({
+    id,
+    idempotencyKey,
+    payerIdentity = null,
+    requestContext = null,
+    httpStatus,
+    body,
+    payment,
+    createdAt,
+  }) {
     this.db
       .prepare(
-        `INSERT INTO validate_results (id,idempotency_key,http_status,body_json,payment_json,created_at)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO validate_results
+         (id,idempotency_key,payer_identity,request_context,http_status,body_json,payment_json,created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
       )
       .run(
         id,
         idempotencyKey ?? null,
+        payerIdentity,
+        requestContext,
         httpStatus,
         JSON.stringify(body),
         JSON.stringify(payment),
@@ -135,12 +168,14 @@ export class JobStore {
     return row ? decodeValidateResult(row) : null;
   }
 
-  getValidateResultByKey(idempotencyKey) {
-    if (!idempotencyKey) return null;
-    this.expireIdempotencyKeys();
+  getValidateResultByIdentity({ idempotencyKey, payerIdentity, requestContext }) {
+    if (!idempotencyKey || !payerIdentity || !requestContext) return null;
     const row = this.db
-      .prepare('SELECT * FROM validate_results WHERE idempotency_key = ?')
-      .get(idempotencyKey);
+      .prepare(
+        `SELECT * FROM validate_results
+         WHERE idempotency_key = ? AND payer_identity = ? AND request_context = ?`,
+      )
+      .get(idempotencyKey, payerIdentity, requestContext);
     return row ? decodeValidateResult(row) : null;
   }
 
@@ -248,13 +283,65 @@ export class JobStore {
   expireIdempotencyKeys() {
     const cutoff = new Date(Date.now() - this.idempotencyWindowMs).toISOString();
     this.db.prepare('DELETE FROM idempotency_keys WHERE created_at < ?').run(cutoff);
-    this.db.prepare('DELETE FROM payment_authorizations WHERE created_at < ?').run(cutoff);
-    this.db
-      .prepare(
-        `DELETE FROM validate_results
-         WHERE created_at < ? AND payment_json NOT LIKE '%"status":"settlement_pending"%'`,
-      )
-      .run(cutoff);
+  }
+
+  migrateValidateResultIdentity() {
+    const columns = this.db.prepare('PRAGMA table_info(validate_results)').all();
+    if (columns.some((column) => column.name === 'payer_identity')) return;
+    this.runMigration(`
+      ALTER TABLE validate_results RENAME TO legacy_validate_results;
+      CREATE TABLE validate_results (
+        id TEXT PRIMARY KEY,
+        idempotency_key TEXT,
+        payer_identity TEXT,
+        request_context TEXT,
+        http_status INTEGER NOT NULL,
+        body_json TEXT NOT NULL,
+        payment_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(idempotency_key, payer_identity, request_context)
+      );
+      INSERT INTO validate_results
+        (id,idempotency_key,payer_identity,request_context,http_status,body_json,payment_json,created_at)
+      SELECT id,idempotency_key,'legacy','legacy:' || id,http_status,body_json,payment_json,created_at
+      FROM legacy_validate_results;
+      DROP TABLE legacy_validate_results;
+    `);
+  }
+
+  migrateRenderIdempotencyIdentity() {
+    const columns = this.db.prepare('PRAGMA table_info(idempotency_keys)').all();
+    if (columns.some((column) => column.name === 'payer_identity')) return;
+    this.runMigration(`
+      ALTER TABLE idempotency_keys RENAME TO legacy_idempotency_keys;
+      CREATE TABLE idempotency_keys (
+        key TEXT NOT NULL,
+        payer_identity TEXT NOT NULL,
+        request_context TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (key, payer_identity, request_context)
+      );
+      INSERT INTO idempotency_keys
+        (key,payer_identity,request_context,job_id,created_at)
+      SELECT key,'legacy','legacy:' || job_id,job_id,created_at
+      FROM legacy_idempotency_keys;
+      DROP TABLE legacy_idempotency_keys;
+    `);
+  }
+
+  runMigration(sql) {
+    try {
+      this.db.exec(`BEGIN IMMEDIATE;${sql}COMMIT;`);
+    } catch (error) {
+      try {
+        this.db.exec('ROLLBACK;');
+      } catch {
+        // The transaction never opened, so there is nothing to roll back.
+        // Always rethrow the original migration failure below.
+      }
+      throw error;
+    }
   }
 }
 
@@ -262,6 +349,8 @@ function decodeValidateResult(row) {
   return {
     id: row.id,
     idempotencyKey: row.idempotency_key,
+    payerIdentity: row.payer_identity,
+    requestContext: row.request_context,
     httpStatus: row.http_status,
     body: JSON.parse(row.body_json),
     payment: JSON.parse(row.payment_json),
