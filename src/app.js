@@ -125,21 +125,22 @@ export function createApp(overrides = {}) {
   app.get('/v1/compose-guide', (request, response) => response.json(composeGuide(request.query)));
 
   app.post('/v1/provenance/verify', (request, response) => {
-    const hash = request.body?.sha256;
-    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/i.test(hash.trim()))
+    const hash =
+      typeof request.body?.sha256 === 'string' ? request.body.sha256.trim().toLowerCase() : null;
+    if (hash === null || !/^[a-f0-9]{64}$/.test(hash))
       return response.status(400).json({
         error: {
           code: 'invalid_sha256',
           message: 'sha256 must be a 64-character hexadecimal hash.',
         },
       });
-    const receipt = store.getRenderReceiptByArtifactHash(hash.toLowerCase());
+    const receipt = store.getRenderReceiptByArtifactHash(hash);
     if (!receipt) return response.json({ rendered_by_musicwire: false });
     return response.json({
       rendered_by_musicwire: true,
       receipt_id: receipt.receipt_id,
       rendered_at: receipt.rendered_at,
-      artifact: receipt.artifacts.find((artifact) => artifact.sha256 === hash.toLowerCase()),
+      artifact: receipt.artifacts.find((artifact) => artifact.sha256 === hash),
       receipt,
     });
   });
@@ -467,7 +468,7 @@ export function createApp(overrides = {}) {
         .status(404)
         .json({ error: { code: 'job_not_found', message: 'No job exists with this id.' } });
     setSettlementHeader(response, payments, job.payment);
-    response.json(publicJob(job, artifactStore, payments));
+    response.json(publicJob(job, artifactStore, payments, config));
   });
 
   app.get('/v1/artifacts/:jobId/:name', async (request, response, next) => {
@@ -829,7 +830,7 @@ function publicReview(review) {
   };
 }
 
-function publicJob(job, artifactStore, payments) {
+function publicJob(job, artifactStore, payments, config) {
   const expires = new Date(job.expires_at).getTime();
   return {
     job_id: job.id,
@@ -842,7 +843,7 @@ function publicJob(job, artifactStore, payments) {
     receipt: payments.receipt(job.payment),
     provenance: {
       receipt_id: job.renderReceiptId,
-      verification_url: verificationUrl(),
+      verification_url: verificationUrl(config.publicBaseUrl),
     },
     expires_at: job.expires_at,
     artifacts: job.artifacts.map((artifact) => ({
