@@ -8,6 +8,7 @@ import {
 } from '@x402/core/http';
 import { x402ResourceServer } from '@x402/core/server';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { bazaarResourceServerExtension, declareDiscoveryExtension } from '@x402/extensions/bazaar';
 
 const BASE_SEPOLIA_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYMENT_WALLET_PROVIDER = 'cdp_server_wallet';
@@ -15,6 +16,69 @@ const AUTHORIZATION_STATE_SELECTOR = '0xe94a0102';
 const AUTHORIZATION_USED_TOPIC =
   '0x98de503528ee59b575ef0c0a2576a82497bfc029a5685b209e9ec333479b10a5';
 const CONSUMED_AUTHORIZATION_REASON = 'invalid_exact_evm_nonce_already_used';
+
+const bazaarExtensions = {
+  validate: declareDiscoveryExtension({
+    method: 'POST',
+    bodyType: 'json',
+    input: {
+      musicxml: '<?xml version="1.0"?><score-partwise version="4.0">...</score-partwise>',
+    },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        musicxml: { type: 'string', description: 'Complete UTF-8 MusicXML document.' },
+      },
+      required: ['musicxml'],
+    },
+    output: {
+      example: {
+        valid: true,
+        errors: [],
+        price_usd: '0.10',
+        payment: { status: 'settled' },
+        receipt: { tx_hash: '0x...' },
+      },
+    },
+  }),
+  render: declareDiscoveryExtension({
+    method: 'POST',
+    bodyType: 'json',
+    input: {
+      musicxml: '<?xml version="1.0"?><score-partwise version="4.0">...</score-partwise>',
+      formats: ['pdf'],
+    },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        musicxml: { type: 'string', description: 'Complete UTF-8 MusicXML document.' },
+        formats: {
+          type: 'array',
+          description: 'One or more artifact formats to render.',
+          items: { enum: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'] },
+          minItems: 1,
+          uniqueItems: true,
+        },
+        constraints_check: {
+          type: 'object',
+          description: 'Optional tempo, duration, key, and mode constraints for QC.',
+        },
+      },
+      required: ['musicxml', 'formats'],
+    },
+    output: {
+      example: {
+        job_id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'queued',
+        price_usd: '0.25',
+        payment: { status: 'verified_pending_qc' },
+        poll_url: '/v1/jobs/550e8400-e29b-41d4-a716-446655440000',
+      },
+    },
+  }),
+};
 
 export class PaymentConfigurationError extends Error {}
 export class PaymentVerificationError extends Error {}
@@ -359,22 +423,26 @@ export class CdpX402Gateway {
       network: this.config.x402Network,
       maxTimeoutSeconds: this.config.x402PaymentTimeoutSeconds,
     });
-    const paymentRequired = await server.createPaymentRequiredResponse(requirements, {
-      url: requestUrl(request, this.config.publicBaseUrl),
-      description: endpointDescription(endpoint),
-      mimeType: 'application/json',
-      serviceName: 'Musicwire',
-      tags: ['musicxml', 'rendering', 'qc'],
-    });
+    const paymentRequired = await server.createPaymentRequiredResponse(
+      requirements,
+      {
+        url: requestUrl(request, this.config.publicBaseUrl),
+        description: endpointDescription(endpoint),
+        mimeType: 'application/json',
+        serviceName: 'Musicwire',
+        tags: ['musicxml', 'rendering', 'qc'],
+      },
+      undefined,
+      bazaarExtensions[endpoint],
+    );
     return { paymentRequired, requirements };
   }
 
   async #server() {
     this.serverPromise ??= (async () => {
-      const server = new x402ResourceServer(createCdpFacilitatorClient()).register(
-        this.config.x402Network,
-        new ExactEvmScheme(),
-      );
+      const server = new x402ResourceServer(createCdpFacilitatorClient())
+        .register(this.config.x402Network, new ExactEvmScheme())
+        .registerExtension(bazaarResourceServerExtension);
       await server.initialize();
       return server;
     })().catch((error) => {

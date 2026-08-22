@@ -914,6 +914,7 @@ function manifest(config, store) {
   return {
     name: 'Musicwire',
     version: 'v1',
+    discoverable: true,
     payment: {
       protocol: 'x402',
       x402_version: 2,
@@ -923,6 +924,12 @@ function manifest(config, store) {
       asset: 'USDC',
       scheme: 'exact',
       facilitator: 'CDP',
+      discovery: {
+        bazaar: {
+          discoverable: true,
+          routes: ['POST /v1/validate', 'POST /v1/render'],
+        },
+      },
       payment_required_header: 'PAYMENT-REQUIRED',
       payment_response_header: 'PAYMENT-RESPONSE',
       capture_policy: 'only_after_qc_pass',

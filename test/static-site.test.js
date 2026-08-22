@@ -54,6 +54,9 @@ test('static pages bypass the API rate limiter while API routes stay limited', a
       assert.equal((await fetch(`${base}/`)).status, 200);
       assert.equal((await fetch(`${base}/docs`)).status, 200);
       assert.equal((await fetch(`${base}/styles.css`)).status, 200);
+      const logo = await fetch(`${base}/musicwire-mark.svg`);
+      assert.equal(logo.status, 200);
+      assert.match(logo.headers.get('content-type'), /^image\/svg\+xml/);
     }
     const first = await fetch(`${base}/manifest`);
     assert.equal(first.status, 200);
