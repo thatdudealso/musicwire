@@ -103,10 +103,35 @@ if [[ "$image_uri" != "$PUBLIC_IMAGE:"* && "$image_uri" != "$fallback_registry/$
 fi
 
 runtime_secret_arn="$(axi_query secretsmanager describe-secret --secret-id "$RUNTIME_SECRET" --query 'ARN')"
-axi cloudformation deploy \
-  --stack-name "$STACK" \
-  --template-file "$TEMPLATE" \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides ImageUri="$image_uri" RuntimeSecretArn="$runtime_secret_arn"
+
+stack_parameters=(
+  "ParameterKey=ImageUri,ParameterValue=$image_uri"
+  "ParameterKey=RuntimeSecretArn,ParameterValue=$runtime_secret_arn"
+)
+stack_arguments=(
+  --stack-name "$STACK"
+  --template-body "file://$TEMPLATE"
+  --capabilities CAPABILITY_NAMED_IAM
+  --parameters "${stack_parameters[@]}"
+)
+
+if axi cloudformation describe-stacks --stack-name "$STACK" >/dev/null 2>&1; then
+  set +e
+  update_output="$(axi cloudformation update-stack "${stack_arguments[@]}" 2>&1)"
+  update_status=$?
+  set -e
+
+  if [[ $update_status -eq 0 ]]; then
+    axi wait cloudformation stack-update-complete --stack-name "$STACK"
+  elif [[ "$update_output" == *'No updates are to be performed'* ]]; then
+    echo 'No CloudFormation updates are required.'
+  else
+    printf '%s\n' "$update_output" >&2
+    exit "$update_status"
+  fi
+else
+  axi cloudformation create-stack "${stack_arguments[@]}"
+  axi wait cloudformation stack-create-complete --stack-name "$STACK"
+fi
 
 echo 'Deployment submitted. Check https://musicwire.5432wire.com/health after ECS reaches steady state.'
