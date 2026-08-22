@@ -19,6 +19,7 @@ export class JobStore {
         facts_json TEXT NOT NULL,
         price_usd TEXT NOT NULL,
         payment_json TEXT NOT NULL,
+        render_receipt_id TEXT NOT NULL,
         qc_json TEXT,
         artifacts_json TEXT,
         error_json TEXT,
@@ -68,9 +69,23 @@ export class JobStore {
         comment TEXT,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS render_receipts (
+        id TEXT PRIMARY KEY,
+        rendered_at TEXT NOT NULL,
+        receipt_json TEXT NOT NULL,
+        signature TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS render_receipt_artifacts (
+        sha256 TEXT NOT NULL,
+        receipt_id TEXT NOT NULL,
+        artifact_name TEXT NOT NULL,
+        PRIMARY KEY (sha256, receipt_id, artifact_name),
+        FOREIGN KEY (receipt_id) REFERENCES render_receipts(id)
+      );
     `);
     this.migrateRenderIdempotencyIdentity();
     this.migrateValidateResultIdentity();
+    this.migrateRenderReceiptId();
     this.expireIdempotencyKeys();
   }
 
@@ -79,8 +94,8 @@ export class JobStore {
     if (existing) return existing;
     this.db
       .prepare(
-        `INSERT INTO jobs (id,state,input_xml,formats_json,constraints_json,facts_json,price_usd,payment_json,created_at,updated_at,expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO jobs (id,state,input_xml,formats_json,constraints_json,facts_json,price_usd,payment_json,render_receipt_id,created_at,updated_at,expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         job.id,
@@ -91,6 +106,7 @@ export class JobStore {
         JSON.stringify(job.facts),
         job.priceUsd,
         JSON.stringify(job.payment),
+        job.renderReceiptId ?? job.id,
         job.createdAt,
         job.createdAt,
         job.expiresAt,
@@ -272,6 +288,38 @@ export class JobStore {
     return row ? decode(row) : null;
   }
 
+  saveRenderReceipt(receipt) {
+    this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      this.db
+        .prepare(
+          'INSERT INTO render_receipts (id,rendered_at,receipt_json,signature) VALUES (?,?,?,?)',
+        )
+        .run(receipt.receipt_id, receipt.rendered_at, JSON.stringify(receipt), receipt.signature);
+      const insert = this.db.prepare(
+        'INSERT INTO render_receipt_artifacts (sha256,receipt_id,artifact_name) VALUES (?,?,?)',
+      );
+      for (const artifact of receipt.artifacts)
+        insert.run(artifact.sha256, receipt.receipt_id, artifact.name);
+      this.db.exec('COMMIT;');
+    } catch (error) {
+      this.db.exec('ROLLBACK;');
+      throw error;
+    }
+    return receipt;
+  }
+
+  getRenderReceiptByArtifactHash(hash) {
+    const row = this.db
+      .prepare(
+        `SELECT render_receipts.receipt_json FROM render_receipt_artifacts
+         JOIN render_receipts ON render_receipts.id = render_receipt_artifacts.receipt_id
+         WHERE render_receipt_artifacts.sha256 = ?`,
+      )
+      .get(hash);
+    return row ? JSON.parse(row.receipt_json) : null;
+  }
+
   createReview({ id, jobId, txHash, network, rating, comment, createdAt }) {
     const result = this.db
       .prepare(
@@ -363,6 +411,13 @@ export class JobStore {
     `);
   }
 
+  migrateRenderReceiptId() {
+    const columns = this.db.prepare('PRAGMA table_info(jobs)').all();
+    if (columns.some((column) => column.name === 'render_receipt_id')) return;
+    this.db.exec('ALTER TABLE jobs ADD COLUMN render_receipt_id TEXT');
+    this.db.exec('UPDATE jobs SET render_receipt_id = id WHERE render_receipt_id IS NULL');
+  }
+
   migrateRenderIdempotencyIdentity() {
     const columns = this.db.prepare('PRAGMA table_info(idempotency_keys)').all();
     if (columns.some((column) => column.name === 'payer_identity')) return;
@@ -420,6 +475,7 @@ function decode(row) {
     constraints: JSON.parse(row.constraints_json),
     facts: JSON.parse(row.facts_json),
     payment: JSON.parse(row.payment_json),
+    renderReceiptId: row.render_receipt_id,
     qc: row.qc_json ? JSON.parse(row.qc_json) : null,
     artifacts: row.artifacts_json ? JSON.parse(row.artifacts_json) : [],
     error: row.error_json ? JSON.parse(row.error_json) : null,

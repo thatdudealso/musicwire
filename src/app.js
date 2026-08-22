@@ -17,6 +17,7 @@ import {
   paymentSignaturePresented,
 } from './payment.js';
 import { Renderer } from './renderer.js';
+import { signedRenderReceipt, verificationUrl } from './provenance.js';
 import { failureCodes } from './qc.js';
 
 export function createApp(overrides = {}) {
@@ -41,7 +42,7 @@ export function createApp(overrides = {}) {
   const inflightValidations = new Map();
   const reconciler = createSettlementReconciler({ store, payments, artifactStore, config });
   const queue = createRenderQueue(config.maxConcurrentRenders, config.maxPendingRenders, (id) =>
-    processJob(id, { store, renderer, artifactStore, payments, reconciler }),
+    processJob(id, { store, renderer, artifactStore, payments, reconciler, config }),
   );
   const readinessProbe =
     overrides.readinessProbe ??
@@ -122,6 +123,26 @@ export function createApp(overrides = {}) {
     }
   });
   app.get('/v1/compose-guide', (request, response) => response.json(composeGuide(request.query)));
+
+  app.post('/v1/provenance/verify', (request, response) => {
+    const hash = request.body?.sha256;
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/i.test(hash.trim()))
+      return response.status(400).json({
+        error: {
+          code: 'invalid_sha256',
+          message: 'sha256 must be a 64-character hexadecimal hash.',
+        },
+      });
+    const receipt = store.getRenderReceiptByArtifactHash(hash.toLowerCase());
+    if (!receipt) return response.json({ rendered_by_musicwire: false });
+    return response.json({
+      rendered_by_musicwire: true,
+      receipt_id: receipt.receipt_id,
+      rendered_at: receipt.rendered_at,
+      artifact: receipt.artifacts.find((artifact) => artifact.sha256 === hash.toLowerCase()),
+      receipt,
+    });
+  });
 
   app.post('/reviews', (request, response) => {
     const input = reviewInput(request.body);
@@ -417,6 +438,7 @@ export function createApp(overrides = {}) {
           jobId: 'pending',
           authorization: pendingPayment,
         }),
+        renderReceiptId: crypto.randomUUID(),
         createdAt: now.toISOString(),
         expiresAt: new Date(
           now.getTime() + config.artifactRetentionDays * 86_400_000,
@@ -572,8 +594,17 @@ async function renderAndSettleJob(id, services) {
     return;
   }
   const intent = services.payments.settlementIntent(job.payment);
+  const renderedAt = new Date().toISOString();
+  const provenance = signedRenderReceipt({
+    id: job.renderReceiptId,
+    renderedAt,
+    artifacts: result.artifacts.filter((artifact) => artifact.name !== 'NOTICE.txt'),
+    signingSecret: services.config.artifactSigningSecret,
+    publicBaseUrl: services.config.publicBaseUrl,
+  });
   const receipt = {
     ...result.receipt,
+    provenance,
     payment: services.payments.receipt(intent),
   };
   const artifacts = [
@@ -583,6 +614,7 @@ async function renderAndSettleJob(id, services) {
       Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
     ),
   ];
+  services.store.saveRenderReceipt(provenance);
   services.store.update(id, {
     state: 'completed',
     qc_json: JSON.stringify({
@@ -808,6 +840,10 @@ function publicJob(job, artifactStore, payments) {
     error: job.error,
     payment: payments.publicPayment(job.payment),
     receipt: payments.receipt(job.payment),
+    provenance: {
+      receipt_id: job.renderReceiptId,
+      verification_url: verificationUrl(),
+    },
     expires_at: job.expires_at,
     artifacts: job.artifacts.map((artifact) => ({
       name: artifact.name,
@@ -863,6 +899,10 @@ function renderResponse(record, config) {
     price_usd: record.price_usd,
     payment: { status: record.payment.status, capture_policy: 'capture_only_after_qc_pass' },
     poll_url: `/v1/jobs/${record.id}`,
+    provenance: {
+      receipt_id: record.renderReceiptId,
+      verification_url: verificationUrl(config.publicBaseUrl),
+    },
   };
 }
 
@@ -1024,6 +1064,11 @@ function manifest(config, store) {
         },
       },
       jobs: { method: 'GET', path: '/v1/jobs/{id}', price_usd: '0.00' },
+      provenance_verify: {
+        method: 'POST',
+        path: '/v1/provenance/verify',
+        price_usd: '0.00',
+      },
       reviews: { methods: ['GET', 'POST'], path: '/reviews', price_usd: '0.00' },
     },
     review_stats: {

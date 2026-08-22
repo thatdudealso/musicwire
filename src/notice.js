@@ -71,10 +71,13 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 `;
 
-export function noticeText(soundfontLicensePath = '') {
+export function noticeText(soundfontLicensePath = '', provenance = null) {
   const license =
     soundfontLicensePath && fs.existsSync(soundfontLicensePath)
       ? fs.readFileSync(soundfontLicensePath, 'utf8')
       : embeddedSoundfontLicense;
-  return `${attribution}\n${license.trimEnd()}\n`;
+  const receipt = provenance
+    ? `\nRender receipt: ${provenance.receiptId}\nVerify file SHA-256 at: ${provenance.verificationUrl}\n`
+    : '';
+  return `${attribution}${receipt}\n${license.trimEnd()}\n`;
 }

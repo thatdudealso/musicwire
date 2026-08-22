@@ -42,8 +42,9 @@ export async function probeAudio(ffprobeBin, filename) {
   const args = [
     '-v',
     'error',
+    '-show_format',
     '-show_entries',
-    'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate',
+    'stream=codec_type,codec_name,channels,sample_rate',
     '-of',
     'json',
     filename,
@@ -82,6 +83,7 @@ export async function probeAudio(ffprobeBin, filename) {
       container: output.format?.format_name,
       channels,
       sampleRate,
+      tags: output.format?.tags ?? {},
     };
   } catch (error) {
     return {
