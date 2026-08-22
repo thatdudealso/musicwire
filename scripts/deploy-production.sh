@@ -25,6 +25,16 @@ axi() {
   npx -y aws-axi "$@" --region "$REGION"
 }
 
+axi_query() {
+  local response
+  response="$(axi "$@")"
+  if [[ "$response" =~ ^[[:alnum:]-]+:\  ]]; then
+    printf '%s' "${response#*: }"
+  else
+    printf '%s' "$response"
+  fi
+}
+
 if [[ ! -r "$SECRETS_ENV_FILE" ]]; then
   echo "Missing readable credentials file: $SECRETS_ENV_FILE" >&2
   exit 1
@@ -45,7 +55,7 @@ done
 secret_exists=false
 if axi secretsmanager describe-secret --secret-id "$RUNTIME_SECRET" >/dev/null 2>&1; then
   secret_exists=true
-  existing_secret="$(axi secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET" --reveal --query SecretString)"
+  existing_secret="$(axi_query secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET" --reveal --query SecretString)"
   ARTIFACT_SIGNING_SECRET="$(
     printf '%s' "$existing_secret" | node -e '
       let input = "";
@@ -92,7 +102,7 @@ if [[ "$image_uri" != "$PUBLIC_IMAGE:"* && "$image_uri" != "$fallback_registry/$
   exit 1
 fi
 
-runtime_secret_arn="$(axi secretsmanager describe-secret --secret-id "$RUNTIME_SECRET" --query 'ARN')"
+runtime_secret_arn="$(axi_query secretsmanager describe-secret --secret-id "$RUNTIME_SECRET" --query 'ARN')"
 axi cloudformation deploy \
   --stack-name "$STACK" \
   --template-file "$TEMPLATE" \
