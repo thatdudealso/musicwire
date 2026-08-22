@@ -59,6 +59,15 @@ export class JobStore {
         idempotency_key TEXT,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS reviews (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        tx_hash TEXT NOT NULL UNIQUE,
+        network TEXT NOT NULL,
+        rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        comment TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
     this.migrateRenderIdempotencyIdentity();
     this.migrateValidateResultIdentity();
@@ -251,6 +260,51 @@ export class JobStore {
     return row ? decode(row) : null;
   }
 
+  getSettledRenderByTransaction(txHash) {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM jobs
+         WHERE state = 'completed'
+           AND json_extract(payment_json, '$.status') = 'settled'
+           AND lower(json_extract(payment_json, '$.tx_hash')) = ?`,
+      )
+      .get(txHash);
+    return row ? decode(row) : null;
+  }
+
+  createReview({ id, jobId, txHash, network, rating, comment, createdAt }) {
+    const result = this.db
+      .prepare(
+        `INSERT INTO reviews (id,job_id,tx_hash,network,rating,comment,created_at)
+         VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(tx_hash) DO NOTHING`,
+      )
+      .run(id, jobId, txHash, network, rating, comment, createdAt);
+    return result.changes === 1 ? this.getReviewByTransaction(txHash) : null;
+  }
+
+  getReviewByTransaction(txHash) {
+    const row = this.db.prepare('SELECT * FROM reviews WHERE tx_hash = ?').get(txHash);
+    return row ? decodeReview(row) : null;
+  }
+
+  listReviews({ limit, offset }) {
+    return this.db
+      .prepare('SELECT * FROM reviews ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?')
+      .all(limit, offset)
+      .map(decodeReview);
+  }
+
+  reviewStats() {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS count, AVG(rating) AS average_rating FROM reviews')
+      .get();
+    return {
+      count: Number(row.count),
+      averageRating: row.average_rating === null ? null : Number(row.average_rating),
+    };
+  }
+
   recoverInterruptedJobs() {
     const rows = this.db.prepare("SELECT * FROM jobs WHERE state IN ('queued', 'running')").all();
     const update = this.db.prepare(
@@ -369,5 +423,17 @@ function decode(row) {
     qc: row.qc_json ? JSON.parse(row.qc_json) : null,
     artifacts: row.artifacts_json ? JSON.parse(row.artifacts_json) : [],
     error: row.error_json ? JSON.parse(row.error_json) : null,
+  };
+}
+
+function decodeReview(row) {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    txHash: row.tx_hash,
+    network: row.network,
+    rating: row.rating,
+    comment: row.comment,
+    createdAt: row.created_at,
   };
 }
