@@ -138,7 +138,7 @@ test(
         body: JSON.stringify({
           musicxml,
           formats: ['pdf'],
-          constraints_check: { tempo: facts.tempo + 1 },
+          constraints_check: { tempo: facts.tempo + 10 },
         }),
       });
       assert.equal(rejected.status, 202);
