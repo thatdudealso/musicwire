@@ -1,11 +1,11 @@
-FROM node:22-trixie-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 ARG TARGETARCH
 ARG MSCORE_RELEASE="4.7.2.260525085"
 ENV MS_BASIC_LICENSE="/opt/musescore/share/mscore4portable-4.7/sound/MS Basic_License.md"
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg fontconfig libasound2 libegl1 libgl1 libgpg-error0 libnss3 libxcb-cursor0 libxkbcommon0 libxkbcommon-x11-0 libxrender1 procps xauth xvfb zip unzip \
+  && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg fontconfig libasound2 libegl1 libgl1 libnss3 libxkbcommon0 libxkbcommon-x11-0 libxrender1 procps xauth xvfb zip unzip \
   && rm -rf /var/lib/apt/lists/* \
   && case "$TARGETARCH" in amd64) mscore_arch=x86_64 ;; arm64) mscore_arch=aarch64 ;; *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; esac \
   && curl --fail --location --retry 3 "https://github.com/musescore/MuseScore/releases/download/v4.7.2/MuseScore-Studio-${MSCORE_RELEASE}-${mscore_arch}.AppImage" --output /tmp/mscore.AppImage \

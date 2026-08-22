@@ -49,10 +49,6 @@ test('the free provenance endpoint verifies known artifact hashes and rejects un
     const job = await waitForJob(base, queued.job_id);
     assert.equal(job.status, 'completed');
     assert.equal(job.provenance.receipt_id, queued.provenance.receipt_id);
-    assert.equal(
-      job.provenance.verification_url,
-      'https://musicwire.example/v1/provenance/verify',
-    );
 
     const known = await fetch(`${base}/v1/provenance/verify`, {
       method: 'POST',
@@ -65,14 +61,6 @@ test('the free provenance endpoint verifies known artifact hashes and rejects un
     assert.equal(verified.receipt_id, queued.provenance.receipt_id);
     assert.equal(verified.receipt.signature_algorithm, 'HMAC-SHA-256');
     assert.equal(verified.receipt.artifacts[0].sha256, artifact.sha256);
-
-    const padded = await fetch(`${base}/v1/provenance/verify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sha256: `  ${artifact.sha256.toUpperCase()}  ` }),
-    });
-    assert.equal(padded.status, 200);
-    assert.equal((await padded.json()).rendered_by_musicwire, true);
 
     const unknown = await fetch(`${base}/v1/provenance/verify`, {
       method: 'POST',

@@ -28,46 +28,18 @@ export function embedMusicXmlAttribution(bytes, receiptId, verificationUrl) {
   const xml = bytes.toString('utf8');
   const software = `Musicwire (${musicwireUrl})`;
   const description = `Musicwire render receipt ${receiptId}; verify ${verificationUrl}`;
-  const entries = `<software>${escapeXml(software)}</software><encoding-description>${escapeXml(description)}</encoding-description>`;
-  const root = xml.match(/<score-(?:partwise|timewise)\b[^>]*>/i);
-  if (!root)
+  const encoding = `<encoding><software>${escapeXml(software)}</software><encoding-description>${escapeXml(description)}</encoding-description></encoding>`;
+  const identification = `<identification>${encoding}</identification>`;
+  if (!/<score-(?:partwise|timewise)\b/.test(xml))
     throw new Error('MusicXML attribution requires a score-partwise or score-timewise document.');
-  const identification = xml.match(/<identification\b[^>]*>[\s\S]*?<\/identification>/i);
-  if (identification)
+  if (/<identification\b[^>]*>[\s\S]*?<\/identification>/i.test(xml))
     return Buffer.from(
-      xml.slice(0, identification.index) +
-        identificationWithEntries(identification[0], entries) +
-        xml.slice(identification.index + identification[0].length),
+      xml.replace(
+        /<identification\b[^>]*>([\s\S]*?)<\/identification>/i,
+        (_match, contents) => `<identification>${contents}${encoding}</identification>`,
+      ),
     );
-  let insertAt = root.index + root[0].length;
-  for (const header of [/<\/work>/i, /<\/movement-number>/i, /<\/movement-title>/i]) {
-    const match = xml.match(header);
-    if (match) insertAt = Math.max(insertAt, match.index + match[0].length);
-  }
-  return Buffer.from(
-    xml.slice(0, insertAt) +
-      `<identification><encoding>${entries}</encoding></identification>` +
-      xml.slice(insertAt),
-  );
-}
-
-function identificationWithEntries(identification, entries) {
-  if (/<encoding\b[^>]*>[\s\S]*?<\/encoding>/i.test(identification))
-    return identification.replace(/<\/encoding>/i, `${entries}</encoding>`);
-  const selfClosing = identification.match(/<encoding\b[^>]*\/>/i);
-  if (selfClosing)
-    return (
-      identification.slice(0, selfClosing.index) +
-      `<encoding>${entries}</encoding>` +
-      identification.slice(selfClosing.index + selfClosing[0].length)
-    );
-  const successor = identification.match(/<(?:source|relation|miscellaneous)\b/i);
-  const insertAt = successor ? successor.index : identification.lastIndexOf('</');
-  return (
-    identification.slice(0, insertAt) +
-    `<encoding>${entries}</encoding>` +
-    identification.slice(insertAt)
-  );
+  return Buffer.from(xml.replace(/(<score-(?:partwise|timewise)\b[^>]*>)/i, `$1${identification}`));
 }
 
 function embedPdfMetadata(bytes, attribution) {
@@ -156,8 +128,6 @@ function embedMsczMetadata(file, attribution) {
     const scorePath = path.join(directory, 'score.mscx');
     if (!fs.existsSync(scorePath)) throw new Error('Musicwire could not find score.mscx in MSCZ.');
     const score = fs.readFileSync(scorePath, 'utf8');
-    if (!/<Score\b[^>]*>/.test(score))
-      throw new Error('Musicwire could not find a Score element in MSCZ for attribution.');
     fs.writeFileSync(
       scorePath,
       score.replace(

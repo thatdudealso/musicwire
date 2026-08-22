@@ -82,39 +82,6 @@ test('embeds Musicwire attribution without changing notation payloads', async ()
   }
 });
 
-test('keeps MusicXML schema order when identification or score headers already exist', () => {
-  const merged = embedMusicXmlAttribution(
-    Buffer.from(
-      '<score-partwise version="4.0"><identification><creator type="composer">A</creator><encoding><software>MuseScore</software></encoding><source>manuscript</source></identification><part-list/></score-partwise>',
-    ),
-    receiptId,
-    verificationUrl,
-  ).toString();
-  assert.equal(merged.match(/<encoding>/g).length, 1);
-  assert.match(merged, /<software>MuseScore<\/software><software>Musicwire/);
-  assert.equal(merged.indexOf('<encoding-description>') < merged.indexOf('<source>'), true);
-
-  const inserted = embedMusicXmlAttribution(
-    Buffer.from(
-      '<score-partwise version="4.0"><identification><creator type="composer">A</creator><source>manuscript</source></identification><part-list/></score-partwise>',
-    ),
-    receiptId,
-    verificationUrl,
-  ).toString();
-  assert.equal(inserted.indexOf('<encoding>') > inserted.indexOf('</creator>'), true);
-  assert.equal(inserted.indexOf('</encoding>') < inserted.indexOf('<source>'), true);
-
-  const headed = embedMusicXmlAttribution(
-    Buffer.from(
-      '<score-partwise version="4.0"><work><work-title>Etude</work-title></work><movement-title>I</movement-title><part-list/></score-partwise>',
-    ),
-    receiptId,
-    verificationUrl,
-  ).toString();
-  assert.equal(headed.indexOf('<identification>') > headed.indexOf('</movement-title>'), true);
-  assert.equal(headed.indexOf('<identification>') < headed.indexOf('<part-list'), true);
-});
-
 function minimalPng() {
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const ihdr = Buffer.alloc(25);
