@@ -5,7 +5,6 @@
   'use strict';
 
   const MANIFEST_URL = '/manifest';
-  const PAYMENT_DESCRIPTION_URL = '/.well-known/x402';
   const TIMEOUT_MS = 3000;
 
   // Known network labels, used only when the service does not advertise its own
@@ -33,13 +32,6 @@
     return payment.network_label || NETWORK_LABELS[payment.network] || payment.network;
   }
 
-  // Replace every documented placeholder with the value this deployment reports
-  function setLiveText(name, value) {
-    document.querySelectorAll(`[data-live="${name}"]`).forEach((el) => {
-      el.textContent = value;
-    });
-  }
-
   // Format price for display
   function formatPrice(priceUsd) {
     if (typeof priceUsd === 'string') {
@@ -60,19 +52,24 @@
     return `<span class="price"><label>${label}</label>${formatPrice(priceUsd)}</span>`;
   }
 
+  function setPrice(name, html) {
+    const byId = document.getElementById(`price-${name}`);
+    if (byId) byId.innerHTML = html;
+    document.querySelectorAll(`[data-price="${name}"]`).forEach((element) => {
+      element.innerHTML = html;
+    });
+  }
+
   // Update pricing elements based on manifest data
   function updatePricing(manifest) {
     const endpoints = manifest.endpoints || {};
 
     // Update validate price
-    const validatePriceEl = document.getElementById('price-validate');
-    if (validatePriceEl && endpoints.validate) {
-      validatePriceEl.innerHTML = formatPriceWithLabel(endpoints.validate.price_usd, 'Validation');
-    }
+    if (endpoints.validate)
+      setPrice('validate', formatPriceWithLabel(endpoints.validate.price_usd, 'Validation'));
 
     // Update render pricing
-    const renderPriceEl = document.getElementById('price-render');
-    if (renderPriceEl && endpoints.render) {
+    if (endpoints.render) {
       const render = endpoints.render;
       let html;
 
@@ -86,36 +83,22 @@
         html = formatPriceWithLabel(render.price_usd, 'Rendering');
       }
 
-      renderPriceEl.innerHTML = html;
-    }
-
-    // Update render detail for docs page
-    const renderDetailEl = document.getElementById('price-render-detail');
-    if (renderDetailEl && endpoints.render) {
-      const render = endpoints.render;
-      if (render.price_usd && typeof render.price_usd === 'object') {
-        renderDetailEl.innerHTML = `${formatPrice(render.price_usd.solo)} for solo (1 part), ${formatPrice(render.price_usd.multi_instrument)} for ensemble (${render.price_usd.part_boundary + 1}+ parts)`;
-      }
+      setPrice('render', html);
     }
 
     // Update compose guide price
-    const guidePriceEl = document.getElementById('price-compose-guide');
-    if (guidePriceEl && endpoints.compose_guide) {
-      guidePriceEl.innerHTML = formatPriceWithLabel(
-        endpoints.compose_guide.price_usd,
-        'Compose Guide',
+    if (endpoints.compose_guide)
+      setPrice(
+        'compose-guide',
+        formatPriceWithLabel(endpoints.compose_guide.price_usd, 'Compose Guide'),
       );
-    }
 
     // Update jobs price
-    const jobsPriceEl = document.getElementById('price-jobs');
-    if (jobsPriceEl && endpoints.jobs) {
-      jobsPriceEl.innerHTML = formatPriceWithLabel(endpoints.jobs.price_usd, 'Job Status');
-    }
+    if (endpoints.jobs)
+      setPrice('jobs', formatPriceWithLabel(endpoints.jobs.price_usd, 'Job Status'));
 
     // Update network labels from the network this deployment actually advertises
     if (manifest.payment && manifest.payment.network) {
-      const network = manifest.payment.network;
       const asset = manifest.payment.asset || 'USDC';
       const label = networkLabel(manifest.payment);
 
@@ -128,9 +111,6 @@
       if (badgeEl) {
         badgeEl.textContent = `Live on ${label}`;
       }
-
-      setLiveText('network-label', label);
-      setLiveText('network-id', network);
     }
 
     // Remove loading state
@@ -170,34 +150,6 @@
       });
   }
 
-  // Fill in the live receiving address where the page shows one. Best effort:
-  // the documented static fallback stays in place when it is unavailable.
-  function fetchPaymentDescription() {
-    if (document.querySelectorAll('[data-live="payment-receiver"]').length === 0) return;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    fetch(PAYMENT_DESCRIPTION_URL, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    })
-      .then((response) => {
-        clearTimeout(timeout);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((description) => {
-        const payTo = description && description.receiver && description.receiver.pay_to;
-        if (payTo) {
-          setLiveText('payment-receiver', payTo);
-        }
-      })
-      .catch(() => {});
-  }
-
   // Initialize when DOM is ready
   function init() {
     // Add loading state
@@ -205,7 +157,6 @@
 
     // Fetch manifest
     fetchManifest();
-    fetchPaymentDescription();
   }
 
   // Run on DOM ready

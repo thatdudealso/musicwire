@@ -1,7 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">Musicwire</title>
-  <desc id="desc">A connected music note mark for Musicwire.</desc>
-  <rect width="512" height="512" rx="96" fill="#111827"/>
-  <path d="M136 146c0-17 14-30 31-30h178c17 0 31 13 31 30s-14 31-31 31H167c-17 0-31-14-31-31Zm0 110c0-17 14-31 31-31h178c17 0 31 14 31 31s-14 30-31 30H167c-17 0-31-13-31-30Zm0 110c0-17 14-31 31-31h178c17 0 31 14 31 31s-14 30-31 30H167c-17 0-31-13-31-30Z" fill="#38bdf8"/>
-  <path d="M332 102v206.5a59 59 0 1 1-28-50.5V154l-126 27v175.5a59 59 0 1 1-28-50.5V157c0-12 8-23 20-26l132-29c15-3 30 8 30 23Zm-177 254a25 25 0 1 0 0 50 25 25 0 0 0 0-50Zm149-48a25 25 0 1 0 0 50 25 25 0 0 0 0-50Z" fill="#f8fafc"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 76 76" role="img" aria-labelledby="title desc">
+  <title id="title">musicwire Staff Signal mark</title>
+  <desc id="desc">A coral frame encloses a music staff with two connected notes, one mint and one paper white.</desc>
+  <rect width="76" height="76" fill="#0C0D0D"/>
+  <rect x="6" y="6" width="64" height="64" fill="none" stroke="#F44250" stroke-width="4"/>
+  <path d="M14 25h48M14 32h48M14 39h48M14 46h48" stroke="#72736F" stroke-width="2"/>
+  <path d="M22 48V20h25v19" stroke="#F4F1EB" stroke-width="5" fill="none"/>
+  <circle cx="22" cy="49" r="8" fill="#00CFA8"/><circle cx="47" cy="40" r="8" fill="#F4F1EB"/>
 </svg>
