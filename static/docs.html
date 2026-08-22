@@ -69,10 +69,8 @@
                 <h3>Connect your agent</h3>
                 <p>
                   Use the MCP server when your agent supports MCP. Add this connection to its
-                  project configuration, then give that client a funded x402 buyer wallet by
-                  setting <code>MUSICWIRE_X402_PRIVATE_KEY</code> (or <code>X402_PRIVATE_KEY</code>)
-                  through its normal secure secret setup. The public service URL is explicit so
-                  your agent reaches musicwire.
+                  project configuration, then configure that client with a funded x402 buyer wallet.
+                  The public service URL is explicit so your agent reaches musicwire.
                 </p>
                 <pre><code>{
   "mcpServers": {
@@ -243,8 +241,8 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
   &lt;/measure&gt;&lt;/part&gt;
 &lt;/score-partwise&gt;</code></pre>
           <p>
-            The request is the same. The live manifest automatically applies the ensemble price when
-            the score has more than one part.
+            The request is the same. The service automatically applies the ensemble price when the
+            score has more than one part.
           </p>
           <pre><code>node -e 'const fs=require("fs"); console.log(JSON.stringify({musicxml:fs.readFileSync(process.argv[1],"utf8"),formats:["mp3","midi","pdf"]}))' violin-cello.musicxml &gt; request.json
 
