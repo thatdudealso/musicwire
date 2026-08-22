@@ -5,647 +5,418 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Musicwire Documentation - MusicXML API for agents and developers"
+      content="Make, render, listen to, and verify music with musicwire. Agent-first instructions and complete MusicXML examples for solo and ensemble scores."
     />
-    <meta name="theme-color" content="#000000" />
-    <title>Musicwire Documentation</title>
+    <meta name="theme-color" content="#0C0D0D" />
+    <meta property="og:title" content="musicwire docs - Make music a human can hear" />
+    <meta
+      property="og:description"
+      content="A short end-to-end guide for agents and their humans: connect, render, listen, and verify."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://musicwire.5432wire.com/docs" />
+    <meta property="og:image" content="https://musicwire.5432wire.com/musicwire-social-card.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="musicwire docs - Make music a human can hear" />
+    <meta
+      name="twitter:description"
+      content="A short end-to-end guide for agents and their humans: connect, render, listen, and verify."
+    />
+    <meta name="twitter:image" content="https://musicwire.5432wire.com/musicwire-social-card.svg" />
+    <title>musicwire docs - Make music a human can hear</title>
+    <link rel="icon" type="image/svg+xml" href="/musicwire-favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="header">
       <div class="container">
-        <nav class="nav">
-          <div class="logo">Musicwire</div>
+        <nav class="nav" aria-label="Primary navigation">
+          <a class="brand" href="/" aria-label="musicwire home"
+            ><img src="/musicwire-mark.svg" alt="" /><span>musicwire</span></a
+          >
           <div class="nav-links">
-            <a href="/">Home</a>
-            <a href="/docs">Docs</a>
-            <a href="https://github.com/thatdudealso/musicwire" target="_blank">GitHub</a>
+            <a href="/">Home</a><a href="#quickstart">Quickstart</a
+            ><a href="#reference">Reference</a>
           </div>
         </nav>
       </div>
     </header>
-
     <main>
-      <section class="section">
-        <div class="container">
-          <h1>Musicwire Documentation</h1>
-          <p class="text-secondary">
-            Deterministic MusicXML validation, MuseScore rendering, and automated QC API. Pay per
-            call in USDC via x402 on Base.
+      <section class="doc-hero">
+        <div class="container narrow">
+          <p class="eyebrow">[ MUSIC THAT LEAVES THE CHAT ]</p>
+          <h1>Make music. Then let someone <em>hear it.</em></h1>
+          <p class="lede">
+            musicwire turns a complete MusicXML score into audio you can play, MIDI you can edit,
+            and a receipt that records the render. This page is for the agent doing the work and the
+            human listening to the result.
           </p>
-
-          <div class="mt-4">
-            <span id="network-badge" class="badge">Live on Base</span>
-            <span id="network-info" class="manifest-loading-placeholder badge">Loading...</span>
+          <div class="jump-links">
+            <a href="#quickstart">Start in five steps</a
+            ><a href="#single-instrument">Copy a solo example</a
+            ><a href="#ensemble">Copy an ensemble example</a>
           </div>
         </div>
       </section>
 
-      <section class="section">
-        <div class="container">
-          <div class="doc-section">
-            <h2>Quickstart</h2>
-
-            <h3>MCP Client Configuration</h3>
-            <p>
-              The easiest way to use Musicwire is through the <code>musicwire-mcp</code> package.
-            </p>
-
-            <div class="card">
-              <h4>Installation</h4>
-              <pre><code># Run directly
-npx -y musicwire-mcp
-
-# Or install globally
-npm install -g musicwire-mcp</code></pre>
-            </div>
-
-            <div class="card">
-              <h4>Claude Code Configuration</h4>
-              <p>Add to <code>.mcp.json</code> in your project:</p>
-              <pre><code>{
+      <section class="section section-tight" id="quickstart">
+        <div class="container narrow">
+          <p class="eyebrow">[ QUICKSTART ]</p>
+          <h2>Connect, request, pay, receive, listen.</h2>
+          <ol class="numbered-steps">
+            <li>
+              <div>
+                <h3>Connect your agent</h3>
+                <p>
+                  Use the MCP server when your agent supports MCP. Add this connection to its
+                  project configuration, then give that client a funded x402 buyer wallet through
+                  its normal secure setup. The public service URL is explicit so your agent reaches
+                  musicwire.
+                </p>
+                <pre><code>{
   "mcpServers": {
     "musicwire": {
       "command": "npx",
       "args": ["-y", "musicwire-mcp"],
-      "env": {
-        "MUSICWIRE_API_URL": "https://musicwire.5432wire.com"
-      }
+      "env": { "MUSICWIRE_API_URL": "https://musicwire.5432wire.com" }
     }
   }
 }</code></pre>
-              <p>Before starting Claude Code, export your buyer key:</p>
-              <pre><code>export MUSICWIRE_X402_PRIVATE_KEY='0x...'
-claude</code></pre>
-            </div>
+                <p>For plain HTTPS, read the live machine-readable manifest first:</p>
+                <pre><code>curl https://musicwire.5432wire.com/manifest</code></pre>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h3>Ask for a complete score</h3>
+                <p>
+                  Tell the agent what to write, or provide your own MusicXML. The free compose guide
+                  gives an agent a versioned authoring prompt and quality bar.
+                </p>
+                <pre><code>curl 'https://musicwire.5432wire.com/v1/compose-guide?style=waltz&amp;key=C%20major&amp;tempo=96'</code></pre>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h3>Request a render</h3>
+                <p>
+                  Ask for <code>mp3</code> so a human can listen and <code>midi</code> so they can
+                  continue editing. The worked examples below use those formats.
+                </p>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h3>Authorize the quoted payment</h3>
+                <p>
+                  A paid request first receives an exact x402 quote. An x402-aware MCP client
+                  handles that retry. With plain HTTPS, use an x402 buyer to sign and retry the
+                  identical request.
+                </p>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h3>Receive and listen</h3>
+                <p>
+                  Poll the returned job until it is completed. Open the MP3 link in a browser or
+                  audio player. Download the MIDI into a DAW or notation editor. Keep the receipt
+                  with the final work.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
 
-            <div class="card">
-              <h4>Cursor Configuration</h4>
-              <p>Add to <code>.cursor/mcp.json</code> (project) or global MCP config:</p>
-              <pre><code>{
-  "mcpServers": {
-    "musicwire": {
-      "command": "npx",
-      "args": ["-y", "musicwire-mcp"],
-      "env": {
-        "MUSICWIRE_API_URL": "https://musicwire.5432wire.com"
-      }
-    }
-  }
-}</code></pre>
-              <p>Start Cursor from an environment with <code>MUSICWIRE_X402_PRIVATE_KEY</code>.</p>
-            </div>
+      <section class="section example-section" id="examples">
+        <div class="container narrow">
+          <p class="eyebrow">[ WORKED EXAMPLES ]</p>
+          <h2>Two scores you can copy and render.</h2>
+          <p class="text-secondary">
+            Both examples submit a complete MusicXML document, receive a render job, then retrieve
+            playable audio. The only difference is the number of parts.
+          </p>
+        </div>
+      </section>
 
-            <div class="card">
-              <h4>Environment Variables</h4>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Variable</th>
-                    <th>Required</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>MUSICWIRE_API_URL</code></td>
-                    <td>No</td>
-                    <td>API base URL. Defaults to <code>http://127.0.0.1:8787</code>.</td>
-                  </tr>
-                  <tr>
-                    <td><code>MUSICWIRE_X402_PRIVATE_KEY</code></td>
-                    <td>For paid calls</td>
-                    <td>
-                      Throwaway buyer private key, funded on the network this deployment advertises.
-                      Also accepts <code>X402_PRIVATE_KEY</code>.
-                    </td>
-                  </tr>
-                  <tr>
-                    <td><code>MUSICWIRE_MCP_PAYMENT_MODE</code></td>
-                    <td>No</td>
-                    <td><code>x402</code> (default) or <code>stub</code> for local testing.</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p class="text-muted">
-                <strong>Important:</strong> <code>musicwire-mcp</code> selects its payment network
-                from the service manifest, so it always pays on the network the target deployment
-                advertises. Fund the buyer key for that network and treat the private key as a
-                secret.
-              </p>
-            </div>
-
-            <h3>Raw HTTP + x402 Flow</h3>
-            <p>For direct API access without MCP, use the x402 payment flow:</p>
-
-            <div class="card">
-              <h4>Step 1: Discovery (Get Quote)</h4>
-              <p>
-                Send your request. You'll receive a <code>402 Payment Required</code> with the exact
-                quote.
-              </p>
-              <pre><code>curl -X POST https://musicwire.5432wire.com/v1/validate \
-  -H 'content-type: application/json' \
-  -H 'Idempotency-Key: agent-validate-001' \
-  --data '{"musicxml":"&lt;?xml version=&quot;1.0&quot;?&gt;&lt;score-partwise version=&quot;4.0&quot;&gt;...&lt;/score-partwise&gt;"}'
-
-# Response: 402 Payment Required
-# Headers include: Payment-Required: x402-exact (encoded JSON with network, asset address, amount)</code></pre>
-              <p>The response body contains the full quote including:</p>
-              <ul>
-                <li><code>x402Version</code> - Protocol version</li>
-                <li><code>accepts</code> - Payment requirements (network, asset, amount)</li>
-                <li><code>quote</code> - Human-readable quote with currency and price</li>
-                <li><code>output_schema</code> - Expected response structure</li>
-              </ul>
-            </div>
-
-            <div class="card">
-              <h4>Step 2: Payment Authorization</h4>
-              <p>Use an x402 buyer to sign and retry the request with payment authorization.</p>
-              <pre><code># Using awal CLI
-npx awal x402 details https://musicwire.5432wire.com/v1/validate -X POST
-
-# Inspect the quote, then pay
-npx awal x402 pay https://musicwire.5432wire.com/v1/validate \
-  -X POST \
-  -d '{"musicxml":"..."}' \
-  -h '{"content-type":"application/json","Idempotency-Key":"agent-validate-001"}' \
-  --max-amount 100000 \
-  --json</code></pre>
-              <p>
-                Or use <code>x402curl</code> (note: x402curl 0.2.0 signed retry does not currently
-                complete with the CDP facilitator - use MCP client or raw HTTP flow):
-              </p>
-              <pre><code>X402_PRIVATE_KEY="$MAINNET_PRIVATE_KEY" x402curl \
-  --x402-rpc-url https://mainnet.base.org \
-  -X POST \
-  -H 'content-type: application/json' \
-  --data-binary @request.json \
-  https://musicwire.5432wire.com/v1/validate</code></pre>
-              <p class="text-muted">
-                This snippet targets the hosted deployment, which settles on
-                <span data-live="network-label">Base mainnet</span>
-                (<code data-live="network-id">eip155:8453</code>) with real USDC, so the buyer key
-                and the <code>--x402-rpc-url</code> must both be for that network. Against a local
-                Base Sepolia deployment, use a throwaway testnet key with
-                <code>--x402-rpc-url https://sepolia.base.org</code> and your local URL instead.
-              </p>
-            </div>
-
-            <div class="card">
-              <h4>Step 3: Use the Response</h4>
-              <p>
-                On success, you receive a 200 response with validation results and payment receipt.
-              </p>
-              <pre><code>{
-  "valid": true,
-  "errors": [],
-  "price_usd": "0.10",
-  "payment": {
-    "status": "settled"
-  },
-  "receipt": {
-    "tx_hash": "0x...",
-    "amount_usd": "0.10",
-    "amount_atomic": "100000",
-    "network": "<span data-live="network-id">eip155:8453</span>",
-    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "pay_to": "<span data-live="payment-receiver">0x...</span>"
-  }
-}</code></pre>
-              <p class="text-muted">
-                The literal values above are Base mainnet: <code>eip155:8453</code> and the Base
-                mainnet USDC contract. The <code>network</code> and <code>pay_to</code> fields are
-                replaced with this deployment's live values when it can be reached; a Base Sepolia
-                deployment returns <code>eip155:84532</code> and the Sepolia USDC contract instead.
-                Read <code>GET /.well-known/x402</code> for the authoritative receiver.
-              </p>
-            </div>
-
-            <h3>Local Development (Stub Mode)</h3>
-            <p>For zero-cost local development, use the stub payment profile:</p>
-            <div class="card">
-              <h4>Run Musicwire in Stub Mode</h4>
-              <pre><code># Using Docker Compose (recommended)
-ARTIFACT_SIGNING_SECRET='replace-with-a-long-random-secret' \
-  docker compose up</code></pre>
-              <pre><code># Or directly with Node
-ARTIFACT_SIGNING_SECRET='replace-with-a-long-random-secret' \
-  MUSICWIRE_PAYMENT_MODE=stub \
-  npm start</code></pre>
-              <p>The stub profile accepts any request without real payment.</p>
-            </div>
-
-            <div class="card">
-              <h4>Run MCP Server in Stub Mode</h4>
-              <pre><code>MUSICWIRE_API_URL='http://127.0.0.1:8787' \
-MUSICWIRE_MCP_PAYMENT_MODE=stub \
-npx -y musicwire-mcp</code></pre>
-              <p>
-                Stub mode works only with <code>localhost</code>, <code>127.0.0.1</code>, or
-                <code>::1</code>.
+      <section class="section section-tight" id="single-instrument">
+        <div class="container narrow">
+          <div class="example-heading">
+            <span class="example-letter">A</span>
+            <div>
+              <p class="eyebrow">[ SINGLE INSTRUMENT ]</p>
+              <h2>Solo piano in C major</h2>
+              <p class="text-secondary">
+                Save this as <code>solo-piano.musicxml</code>. It is a short, complete two-bar piano
+                phrase at 96 BPM.
               </p>
             </div>
           </div>
+          <pre><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;score-partwise version="4.0"&gt;
+  &lt;work&gt;&lt;work-title&gt;Small Steps&lt;/work-title&gt;&lt;/work&gt;
+  &lt;identification&gt;&lt;creator type="composer"&gt;Your agent&lt;/creator&gt;&lt;/identification&gt;
+  &lt;part-list&gt;
+    &lt;score-part id="P1"&gt;&lt;part-name&gt;Piano&lt;/part-name&gt;&lt;/score-part&gt;
+  &lt;/part-list&gt;
+  &lt;part id="P1"&gt;
+    &lt;measure number="1"&gt;
+      &lt;attributes&gt;&lt;divisions&gt;1&lt;/divisions&gt;&lt;key&gt;&lt;fifths&gt;0&lt;/fifths&gt;&lt;mode&gt;major&lt;/mode&gt;&lt;/key&gt;&lt;time&gt;&lt;beats&gt;4&lt;/beats&gt;&lt;beat-type&gt;4&lt;/beat-type&gt;&lt;/time&gt;&lt;clef&gt;&lt;sign&gt;G&lt;/sign&gt;&lt;line&gt;2&lt;/line&gt;&lt;/clef&gt;&lt;/attributes&gt;
+      &lt;direction placement="above"&gt;&lt;direction-type&gt;&lt;metronome&gt;&lt;beat-unit&gt;quarter&lt;/beat-unit&gt;&lt;per-minute&gt;96&lt;/per-minute&gt;&lt;/metronome&gt;&lt;/direction-type&gt;&lt;sound tempo="96"/&gt;&lt;/direction&gt;
+      &lt;note&gt;&lt;pitch&gt;&lt;step&gt;C&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+      &lt;note&gt;&lt;pitch&gt;&lt;step&gt;E&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+      &lt;note&gt;&lt;pitch&gt;&lt;step&gt;G&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+      &lt;note&gt;&lt;rest/&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+    &lt;/measure&gt;
+    &lt;measure number="2"&gt;
+      &lt;note&gt;&lt;pitch&gt;&lt;step&gt;G&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+      &lt;note&gt;&lt;pitch&gt;&lt;step&gt;E&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+      &lt;note&gt;&lt;pitch&gt;&lt;step&gt;D&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+      &lt;note&gt;&lt;pitch&gt;&lt;step&gt;C&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;1&lt;/duration&gt;&lt;type&gt;quarter&lt;/type&gt;&lt;/note&gt;
+      &lt;barline location="right"&gt;&lt;bar-style&gt;light-heavy&lt;/bar-style&gt;&lt;/barline&gt;
+    &lt;/measure&gt;
+  &lt;/part&gt;
+&lt;/score-partwise&gt;</code></pre>
+          <h3>Render, pay, and get the result</h3>
+          <p>
+            Create the JSON request from the file, then use your x402 buyer to submit it. Keep one
+            idempotency key for safe retries of this same request.
+          </p>
+          <pre><code>node -e 'const fs=require("fs"); console.log(JSON.stringify({musicxml:fs.readFileSync(process.argv[1],"utf8"),formats:["mp3","midi"]}))' solo-piano.musicxml &gt; request.json
 
-          <div class="doc-section">
-            <h2>Endpoint Reference</h2>
-            <p>
-              All endpoints are versioned under <code>/v1/</code>. The <code>/manifest</code> and
-              <code>/.well-known/x402</code> endpoints provide machine-readable service and payment
-              information.
-            </p>
-
-            <div class="endpoint-list">
-              <div class="endpoint-item">
-                <h3><code>GET /v1/compose-guide</code></h3>
-                <p>
-                  <strong>Free</strong> - Static MusicXML authoring guide with versioned prompts.
-                </p>
-                <h4>Query Parameters:</h4>
-                <ul>
-                  <li><code>style</code> - Optional: musical style (e.g., waltz, march)</li>
-                  <li><code>key</code> - Optional: key signature (e.g., C major, F major)</li>
-                  <li><code>tempo</code> - Optional: BPM value</li>
-                </ul>
-                <h4>Example:</h4>
-                <pre><code>curl 'http://localhost:8787/v1/compose-guide?style=waltz&key=F%20major&tempo=84'</code></pre>
-              </div>
-
-              <div class="endpoint-item">
-                <h3><code>POST /v1/validate</code></h3>
-                <p>
-                  <span id="price-validate" class="manifest-loading-placeholder price"
-                    ><span class="loading">Loading...</span></span
-                  >
-                  - Detailed MusicXML validation with line-level diagnostics.
-                </p>
-                <h4>Request Body:</h4>
-                <pre><code>{
-  "musicxml": "&lt;?xml version=&quot;1.0&quot;?&gt;&lt;score-partwise version=&quot;4.0&quot;&gt;...&lt;/score-partwise&gt;"
-}</code></pre>
-                <p>
-                  Accepts raw <code>application/xml</code> bytes or JSON with
-                  <code>musicxml</code> string.
-                </p>
-                <h4>Headers:</h4>
-                <ul>
-                  <li>
-                    <code>Idempotency-Key</code> - Optional: indefinite replay only for the same
-                    verified payer and MusicXML request context
-                  </li>
-                  <li>
-                    <code>Payment-Signature</code> - x402 payment authorization (auto-added by MCP
-                    client)
-                  </li>
-                </ul>
-                <h4>Response:</h4>
-                <pre><code>{
-  "valid": true,
-  "errors": [],
-  "price_usd": "0.10",
-  "payment": { "status": "settled" },
-  "receipt": { ... }
-}</code></pre>
-                <p>
-                  On validation failure (422), includes <code>errors</code> array with line,
-                  measure, message, and fix_hint.
-                </p>
-              </div>
-
-              <div class="endpoint-item">
-                <h3><code>POST /v1/render</code></h3>
-                <p>
-                  <span id="price-render" class="manifest-loading-placeholder">
-                    <span class="loading">Loading...</span>
-                  </span>
-                  - Queue a MusicXML render with multiple output formats.
-                </p>
-                <h4>Request Body:</h4>
-                <pre><code>{
-  "musicxml": "&lt;?xml version=&quot;1.0&quot;?&gt;&lt;score-partwise version=&quot;4.0&quot;&gt;...&lt;/score-partwise&gt;",
-  "formats": ["pdf", "mp3", "midi"],
-  "constraints_check": {
-    "tempo": 120,
-    "duration_seconds": 60,
-    "key_fifths": 0,
-    "mode": "major"
-  }
-}</code></pre>
-                <h4>Headers:</h4>
-                <ul>
-                  <li>
-                    <code>Idempotency-Key</code> - Strongly recommended: 24-hour replay only for the
-                    same verified payer and render request context
-                  </li>
-                  <li><code>Payment-Signature</code> - x402 payment authorization</li>
-                </ul>
-                <h4>Response (202 Accepted):</h4>
-                <pre><code>{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+npx awal x402 pay https://musicwire.5432wire.com/v1/render \
+  -X POST -d "$(cat request.json)" \
+  -h '{"content-type":"application/json","Idempotency-Key":"solo-piano-001"}' \
+  --max-amount 1000000 --json</code></pre>
+          <p>The successful submission returns a job immediately. Its fields look like this:</p>
+          <pre><code>{
+  "job_id": "a-render-job-id",
   "status": "queued",
-  "estimated_seconds": 30,
-  "price_usd": "0.25",
-  "payment": {
-    "status": "verified_pending_qc",
-    "capture_policy": "capture_only_after_qc_pass"
-  },
-  "poll_url": "/v1/jobs/550e8400-e29b-41d4-a716-446655440000"
+  "estimated_seconds": 25,
+  "price_usd": "live quoted price",
+  "payment": { "status": "verified_pending_qc", "capture_policy": "capture_only_after_qc_pass" },
+  "poll_url": "/v1/jobs/a-render-job-id"
 }</code></pre>
-                <h4>Supported Formats:</h4>
-                <p>
-                  <code>mscz</code>, <code>pdf</code>, <code>svg</code>, <code>png</code>,
-                  <code>midi</code>, <code>mp3</code>, <code>wav</code>. Always returns:
-                  <code>musicxml</code>, <code>NOTICE.txt</code>, <code>receipt.json</code>.
-                </p>
-                <p>
-                  <code>svg</code> and <code>png</code> are page sets (multiple files for multi-page
-                  scores).
-                </p>
-                <p>
-                  <strong>Note:</strong> Pricing is
-                  <span id="price-render-detail" class="manifest-loading-placeholder"
-                    >loading...</span
-                  >. Solo pricing applies to 1 part; ensemble pricing applies when part count
-                  exceeds the boundary.
-                </p>
-              </div>
+          <p>
+            Poll until <code>status</code> is <code>completed</code>, then open the
+            <code>.mp3</code> artifact URL. That is the moment the human hears the piece.
+          </p>
+          <pre><code>curl https://musicwire.5432wire.com/v1/jobs/a-render-job-id</code></pre>
+        </div>
+      </section>
 
-              <div class="endpoint-item">
-                <h3><code>GET /v1/jobs/{id}</code></h3>
-                <p>
-                  <span id="price-jobs" class="manifest-loading-placeholder price"
-                    ><span class="loading">Loading...</span></span
-                  >
-                  - Poll job status and retrieve artifacts.
-                </p>
-                <h4>Response:</h4>
-                <pre><code>{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "completed",
-  "facts": {
-    "partCount": 1,
-    "tempo": 120,
-    "key": { "fifths": 0, "mode": "major" },
-    "scoreDurationSeconds": 60
-  },
-  "qc": {
-    "status": "passed",
-    "checks": ["validation", "renderer_exit", "artifacts_present", ...]
-  },
-  "payment": { "status": "settled" },
-  "receipt": { ... },
-  "expires_at": "2026-01-01T00:00:00.000Z",
-  "artifacts": [
-    {
-      "name": "receipt.json",
-      "sha256": "abc123...",
-      "bytes": 1234,
-      "url": "/v1/artifacts/.../receipt.json?expires=...&token=..."
-    },
-    { "name": "output.pdf", ... }
-  ]
-}</code></pre>
-                <p>
-                  Poll until <code>status</code> is <code>completed</code> or
-                  <code>failed_not_charged</code>.
-                </p>
-              </div>
-
-              <div class="endpoint-item">
-                <h3><code>GET /v1/artifacts/{jobId}/{name}</code></h3>
-                <p><strong>Free</strong> - Download a signed artifact URL.</p>
-                <p>
-                  The signed API URL authorizes access, then responds with a 302 redirect to a
-                  short-lived, artifact-scoped presigned URL in the private S3 bucket. Clients must
-                  follow redirects to download the named binary artifact.
-                </p>
-              </div>
-            </div>
-
-            <div class="endpoint-list">
-              <div class="endpoint-item">
-                <h3><code>GET /manifest</code></h3>
-                <p>
-                  <strong>Free</strong> - Machine-readable service manifest with all endpoints,
-                  pricing, and capabilities.
-                </p>
-              </div>
-              <div class="endpoint-item">
-                <h3><code>GET /.well-known/x402</code></h3>
-                <p>
-                  <strong>Free</strong> - x402-specific payment configuration for automated client
-                  discovery.
-                </p>
-              </div>
-              <div class="endpoint-item">
-                <h3><code>GET /health</code></h3>
-                <p><strong>Free</strong> - Renderer readiness probe.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="doc-section">
-            <h2>Payment Explainer</h2>
-
-            <div class="card">
-              <h3>Mainnet and testnet</h3>
-              <p>
-                <strong>The network in force is the one this deployment advertises.</strong> Read it
-                from <code>GET /manifest</code> and from the <code>402</code> quote itself; every
-                payment requirement is issued for that network only.
-              </p>
-              <ul>
-                <li>
-                  <strong>Network:</strong> <span data-live="network-label">Base</span> (<code
-                    data-live="network-id"
-                    >eip155:8453</code
-                  >)
-                </li>
-                <li><strong>Asset:</strong> USDC</li>
-                <li>
-                  <strong>Receiver:</strong>
-                  <code data-live="payment-receiver">see GET /.well-known/x402</code>
-                </li>
-                <li><strong>Payment Mode:</strong> x402 Exact via CDP Facilitator</li>
-              </ul>
-              <p>
-                The hosted deployment at <code>musicwire.5432wire.com</code> is pinned to
-                <strong>Base mainnet</strong> (<code>eip155:8453</code>) and charges real USDC.
-                Local and stub deployments default to <strong>Base Sepolia</strong>
-                (<code>eip155:84532</code>) and charge test USDC. Never send mainnet funds to a test
-                deployment.
-              </p>
-              <p>
-                Get test USDC for Base Sepolia runs from the
-                <a href="https://faucet.circle.com/" target="_blank">Circle Base Sepolia faucet</a>
-                or the
-                <a href="https://base-sepolia-faucet.quicknode.com/" target="_blank"
-                  >QuickNode Base Sepolia faucet</a
-                >.
-              </p>
-            </div>
-
-            <div class="card">
-              <h3>How Payment Works</h3>
-              <ol>
-                <li>
-                  <strong>Discovery:</strong> You send a request. Musicwire returns
-                  <code>402 Payment Required</code> with the exact quote including network, asset,
-                  amount, and payment requirements.
-                </li>
-                <li>
-                  <strong>Authorization:</strong> Your x402 client reads the
-                  <code>Payment-Required</code> header, signs an EIP-3009 Exact authorization with
-                  your buyer wallet, and retries the identical request with
-                  <code>Payment-Signature</code> header.
-                </li>
-                <li>
-                  <strong>Verification:</strong> Musicwire verifies the authorization before
-                  starting any work.
-                </li>
-                <li>
-                  <strong>QC Pass:</strong> For paid endpoints (<code>validate</code>,
-                  <code>render</code>), Musicwire runs quality control on the result.
-                </li>
-                <li>
-                  <strong>Settlement:</strong> Only after QC passes, Musicwire settles the payment
-                  via the CDP facilitator and returns the receipt with transaction hash.
-                </li>
-              </ol>
-              <p>
-                <strong>Important:</strong> A charge is structurally impossible until QC passes.
-                Failed validation or rendering is <code>failed_not_charged</code> with no
-                settlement.
-              </p>
-            </div>
-
-            <div class="card">
-              <h3>Payment Statuses</h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Status</th>
-                    <th>Meaning</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>not_charged</code></td>
-                    <td>No payment was authorized or attempted</td>
-                  </tr>
-                  <tr>
-                    <td><code>verified_pending_qc</code></td>
-                    <td>Authorization verified, waiting for QC result</td>
-                  </tr>
-                  <tr>
-                    <td><code>settled</code></td>
-                    <td>Payment settled on-chain, transaction confirmed</td>
-                  </tr>
-                  <tr>
-                    <td><code>settlement_pending</code></td>
-                    <td>Settlement in progress, will retry</td>
-                  </tr>
-                  <tr>
-                    <td><code>failed_not_charged</code></td>
-                    <td>QC failed, no charge was made</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div class="card">
-              <h3>Idempotency</h3>
-              <p>
-                Use the <code>Idempotency-Key</code> header to safely retry requests without
-                double-charging.
-              </p>
-              <ul>
-                <li>
-                  <code>POST /v1/render</code> replays for 24 hours only when the same verified
-                  payer submits the same render request context with the same key.
-                </li>
-                <li>
-                  <code>POST /v1/validate</code> replays indefinitely only when the same verified
-                  payer submits the same MusicXML request context with the same key.
-                </li>
-                <li>Replay includes the original payment status and receipt</li>
-                <li>A key presented by a different payer never resolves another payer's result.</li>
-              </ul>
-              <p>
-                <strong>Best practice:</strong> Always use an idempotency key for paid requests.
+      <section class="section section-tight" id="ensemble">
+        <div class="container narrow">
+          <div class="example-heading">
+            <span class="example-letter">B</span>
+            <div>
+              <p class="eyebrow">[ ENSEMBLE ]</p>
+              <h2>Violin and cello in two parts</h2>
+              <p class="text-secondary">
+                Parts are declared in <code>part-list</code> and written separately by their IDs.
+                Save this as <code>violin-cello.musicxml</code>.
               </p>
             </div>
           </div>
+          <pre><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;score-partwise version="4.0"&gt;
+  &lt;work&gt;&lt;work-title&gt;Two Voices&lt;/work-title&gt;&lt;/work&gt;
+  &lt;identification&gt;&lt;creator type="composer"&gt;Your agent&lt;/creator&gt;&lt;/identification&gt;
+  &lt;part-list&gt;
+    &lt;score-part id="P1"&gt;&lt;part-name&gt;Violin&lt;/part-name&gt;&lt;/score-part&gt;
+    &lt;score-part id="P2"&gt;&lt;part-name&gt;Violoncello&lt;/part-name&gt;&lt;/score-part&gt;
+  &lt;/part-list&gt;
+  &lt;part id="P1"&gt;&lt;measure number="1"&gt;
+    &lt;attributes&gt;&lt;divisions&gt;1&lt;/divisions&gt;&lt;key&gt;&lt;fifths&gt;0&lt;/fifths&gt;&lt;mode&gt;major&lt;/mode&gt;&lt;/key&gt;&lt;time&gt;&lt;beats&gt;4&lt;/beats&gt;&lt;beat-type&gt;4&lt;/beat-type&gt;&lt;/time&gt;&lt;clef&gt;&lt;sign&gt;G&lt;/sign&gt;&lt;line&gt;2&lt;/line&gt;&lt;/clef&gt;&lt;/attributes&gt;
+    &lt;direction placement="above"&gt;&lt;direction-type&gt;&lt;metronome&gt;&lt;beat-unit&gt;quarter&lt;/beat-unit&gt;&lt;per-minute&gt;84&lt;/per-minute&gt;&lt;/metronome&gt;&lt;/direction-type&gt;&lt;sound tempo="84"/&gt;&lt;/direction&gt;
+    &lt;note&gt;&lt;pitch&gt;&lt;step&gt;E&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;2&lt;/duration&gt;&lt;type&gt;half&lt;/type&gt;&lt;/note&gt;
+    &lt;note&gt;&lt;pitch&gt;&lt;step&gt;G&lt;/step&gt;&lt;octave&gt;5&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;2&lt;/duration&gt;&lt;type&gt;half&lt;/type&gt;&lt;/note&gt;
+    &lt;barline location="right"&gt;&lt;bar-style&gt;light-heavy&lt;/bar-style&gt;&lt;/barline&gt;
+  &lt;/measure&gt;&lt;/part&gt;
+  &lt;part id="P2"&gt;&lt;measure number="1"&gt;
+    &lt;attributes&gt;&lt;divisions&gt;1&lt;/divisions&gt;&lt;key&gt;&lt;fifths&gt;0&lt;/fifths&gt;&lt;mode&gt;major&lt;/mode&gt;&lt;/key&gt;&lt;time&gt;&lt;beats&gt;4&lt;/beats&gt;&lt;beat-type&gt;4&lt;/beat-type&gt;&lt;/time&gt;&lt;clef&gt;&lt;sign&gt;F&lt;/sign&gt;&lt;line&gt;4&lt;/line&gt;&lt;/clef&gt;&lt;/attributes&gt;
+    &lt;note&gt;&lt;pitch&gt;&lt;step&gt;C&lt;/step&gt;&lt;octave&gt;3&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;2&lt;/duration&gt;&lt;type&gt;half&lt;/type&gt;&lt;/note&gt;
+    &lt;note&gt;&lt;pitch&gt;&lt;step&gt;G&lt;/step&gt;&lt;octave&gt;2&lt;/octave&gt;&lt;/pitch&gt;&lt;duration&gt;2&lt;/duration&gt;&lt;type&gt;half&lt;/type&gt;&lt;/note&gt;
+    &lt;barline location="right"&gt;&lt;bar-style&gt;light-heavy&lt;/bar-style&gt;&lt;/barline&gt;
+  &lt;/measure&gt;&lt;/part&gt;
+&lt;/score-partwise&gt;</code></pre>
+          <p>
+            The request is the same. The live manifest automatically applies the ensemble price when
+            the score has more than one part.
+          </p>
+          <pre><code>node -e 'const fs=require("fs"); console.log(JSON.stringify({musicxml:fs.readFileSync(process.argv[1],"utf8"),formats:["mp3","midi","pdf"]}))' violin-cello.musicxml &gt; request.json
 
-          <div class="doc-section">
-            <h2 id="attribution">Attribution</h2>
-            <div class="card">
-              <p>Each completed render includes <code>NOTICE.txt</code> containing:</p>
-              <ul>
-                <li>MS Basic license text</li>
-                <li>FluidR3 font attribution</li>
-                <li>Michael Cowgill attribution</li>
-                <li>S. Christian Collins attribution</li>
-              </ul>
-              <p><code>receipt.json</code> includes:</p>
-              <ul>
-                <li>Renderer version</li>
-                <li>Sound profile</li>
-                <li>Soundfont SHA-256</li>
-                <li><code>rendered_by: "Musicwire"</code></li>
-                <li>This repository URL</li>
-              </ul>
-              <p>
-                <strong>Customers own their compositions.</strong> Audio can be used commercially
-                when the NOTICE travels with it.
-              </p>
-            </div>
-          </div>
+npx awal x402 pay https://musicwire.5432wire.com/v1/render \
+  -X POST -d "$(cat request.json)" \
+  -h '{"content-type":"application/json","Idempotency-Key":"violin-cello-001"}' \
+  --max-amount 1000000 --json</code></pre>
+          <p>
+            When it completes, play the <code>.mp3</code>, import the <code>.midi</code>, and use
+            the <code>.pdf</code> only when someone needs the written score.
+          </p>
+        </div>
+      </section>
 
-          <div class="doc-section">
-            <h2>Rate Limits &amp; Retention</h2>
-            <div class="card">
-              <h3>Rate Limiting</h3>
-              <p>Default: 60 requests per minute per IP address.</p>
-              <p>Rate limited responses return <code>429 Too Many Requests</code>.</p>
-            </div>
-            <div class="card">
-              <h3>Artifact Retention</h3>
+      <section class="section" id="after-run">
+        <div class="container narrow">
+          <p class="eyebrow">[ AFTER THE RUN ]</p>
+          <h2>Give the human the right file.</h2>
+          <div class="after-grid">
+            <article>
+              <h3>Listen</h3>
               <p>
-                Completed artifacts are retained for 30 days and then removed. Download what you
-                need before then.
+                Open the MP3 or WAV artifact URL in a browser or audio player. Download it before
+                the job's <code>expires_at</code> time.
               </p>
-              <p>Artifact URLs are signed and expire with the job retention window.</p>
+            </article>
+            <article>
+              <h3>Keep editing</h3>
               <p>
-                Job records, payment status, and receipts are retained after an artifact expires, so
-                payment proof always outlives the artifact it paid for.
+                Import MIDI into a DAW or notation app. MusicXML is always included as the source
+                score.
               </p>
-            </div>
+            </article>
+            <article>
+              <h3>Read or print</h3>
+              <p>
+                Request PDF for standard sheet music. SVG and PNG are page images, useful when your
+                workflow needs graphics.
+              </p>
+            </article>
+            <article>
+              <h3>Keep proof</h3>
+              <p>
+                Save <code>receipt.json</code> with the audio. It records the paid render and its
+                quality outcome. <code>NOTICE.txt</code> carries the soundfont attribution.
+              </p>
+            </article>
           </div>
+          <p class="text-secondary">
+            A completed job includes MusicXML, <code>NOTICE.txt</code>, and
+            <code>receipt.json</code> automatically. Artifact links are available until the
+            completed job's <code>expires_at</code> timestamp. Save any file you need before then.
+          </p>
+        </div>
+      </section>
+
+      <section class="section verification-section" id="verify">
+        <div class="container narrow">
+          <p class="eyebrow">[ VERIFY IT CAME FROM US ]</p>
+          <h2>Render verification is arriving.</h2>
+          <p>
+            musicwire’s signed provenance verification endpoint is landing alongside the attribution
+            update. Until it is live in the public API, keep the completed job response and
+            <code>receipt.json</code> with the files you share. This section will be replaced with
+            the exact verification request when the endpoint ships.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="reference">
+        <div class="container narrow">
+          <p class="eyebrow">[ CONCISE REFERENCE ]</p>
+          <h2>The endpoints you will use.</h2>
+          <div class="reference-list">
+            <article>
+              <h3>
+                <code>GET /v1/compose-guide</code>
+                <span data-price="compose-guide" class="manifest-loading-placeholder"
+                  ><span class="loading">Loading...</span></span
+                >
+              </h3>
+              <p>Returns the agent authoring prompt and MusicXML quality bar.</p>
+            </article>
+            <article>
+              <h3>
+                <code>POST /v1/validate</code>
+                <span data-price="validate" class="manifest-loading-placeholder"
+                  ><span class="loading">Loading...</span></span
+                >
+              </h3>
+              <p>Checks MusicXML and returns detailed errors when the score is invalid.</p>
+            </article>
+            <article>
+              <h3>
+                <code>POST /v1/render</code>
+                <span data-price="render" class="manifest-loading-placeholder"
+                  ><span class="loading">Loading...</span></span
+                >
+              </h3>
+              <p>
+                Requires JSON with <code>musicxml</code> and a non-empty <code>formats</code> list.
+                Returns an asynchronous job.
+              </p>
+            </article>
+            <article>
+              <h3>
+                <code>GET /v1/jobs/{id}</code>
+                <span data-price="jobs" class="manifest-loading-placeholder"
+                  ><span class="loading">Loading...</span></span
+                >
+              </h3>
+              <p>Returns status, quality result, receipt, expiry, and artifact URLs.</p>
+            </article>
+            <article>
+              <h3><code>GET /manifest</code></h3>
+              <p>Live machine-readable capabilities, prices, formats, and payment network.</p>
+            </article>
+          </div>
+          <h3>Useful statuses and errors</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Response</th>
+                <th>What to do</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>402</code></td>
+                <td>Authorize the exact quoted x402 payment, then retry the same request.</td>
+              </tr>
+              <tr>
+                <td><code>422</code></td>
+                <td>
+                  For validation, read the line-level errors. For a render, correct the MusicXML and
+                  try again.
+                </td>
+              </tr>
+              <tr>
+                <td><code>completed</code></td>
+                <td>Open the audio artifact and save the files you need.</td>
+              </tr>
+              <tr>
+                <td><code>failed_not_charged</code></td>
+                <td>The render did not pass. Read its error. Payment is not captured.</td>
+              </tr>
+              <tr>
+                <td><code>429</code></td>
+                <td>Slow down and retry after one minute.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="text-secondary">
+            Use an <code>Idempotency-Key</code> on paid requests. Reusing it with the same verified
+            payer and identical request context safely returns the original outcome instead of
+            creating another charge.
+          </p>
         </div>
       </section>
     </main>
-
     <footer class="footer">
       <div class="container">
         <div class="footer-links">
-          <a href="/">Home</a>
-          <a href="/docs">Documentation</a>
-          <a href="https://github.com/thatdudealso/musicwire" target="_blank">GitHub</a>
-          <a href="https://github.com/thatdudealso/musicwire/tree/main/mcp" target="_blank"
-            >MCP Package</a
+          <a href="/">Home</a><a href="/llms.txt">Agent guide</a
+          ><a href="https://github.com/thatdudealso/musicwire" target="_blank" rel="noreferrer"
+            >GitHub</a
+          ><a href="https://www.npmjs.com/package/musicwire-mcp" target="_blank" rel="noreferrer"
+            >MCP package</a
           >
-          <a href="https://github.com/thatdudealso/musicwire/issues" target="_blank">Issues</a>
         </div>
-        <p class="mt-4">
-          Musicwire &copy; 2025 - Uses
-          <a href="https://musescore.org/" target="_blank">MuseScore</a> with MS Basic soundfont.
-        </p>
+        <p class="mt-3">musicwire uses MuseScore with the MS Basic soundfont.</p>
       </div>
     </footer>
-
     <script src="/app.js"></script>
   </body>
 </html>

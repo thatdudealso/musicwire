@@ -60,19 +60,24 @@
     return `<span class="price"><label>${label}</label>${formatPrice(priceUsd)}</span>`;
   }
 
+  function setPrice(name, html) {
+    const byId = document.getElementById(`price-${name}`);
+    if (byId) byId.innerHTML = html;
+    document.querySelectorAll(`[data-price="${name}"]`).forEach((element) => {
+      element.innerHTML = html;
+    });
+  }
+
   // Update pricing elements based on manifest data
   function updatePricing(manifest) {
     const endpoints = manifest.endpoints || {};
 
     // Update validate price
-    const validatePriceEl = document.getElementById('price-validate');
-    if (validatePriceEl && endpoints.validate) {
-      validatePriceEl.innerHTML = formatPriceWithLabel(endpoints.validate.price_usd, 'Validation');
-    }
+    if (endpoints.validate)
+      setPrice('validate', formatPriceWithLabel(endpoints.validate.price_usd, 'Validation'));
 
     // Update render pricing
-    const renderPriceEl = document.getElementById('price-render');
-    if (renderPriceEl && endpoints.render) {
+    if (endpoints.render) {
       const render = endpoints.render;
       let html;
 
@@ -86,7 +91,7 @@
         html = formatPriceWithLabel(render.price_usd, 'Rendering');
       }
 
-      renderPriceEl.innerHTML = html;
+      setPrice('render', html);
     }
 
     // Update render detail for docs page
@@ -99,19 +104,15 @@
     }
 
     // Update compose guide price
-    const guidePriceEl = document.getElementById('price-compose-guide');
-    if (guidePriceEl && endpoints.compose_guide) {
-      guidePriceEl.innerHTML = formatPriceWithLabel(
-        endpoints.compose_guide.price_usd,
-        'Compose Guide',
+    if (endpoints.compose_guide)
+      setPrice(
+        'compose-guide',
+        formatPriceWithLabel(endpoints.compose_guide.price_usd, 'Compose Guide'),
       );
-    }
 
     // Update jobs price
-    const jobsPriceEl = document.getElementById('price-jobs');
-    if (jobsPriceEl && endpoints.jobs) {
-      jobsPriceEl.innerHTML = formatPriceWithLabel(endpoints.jobs.price_usd, 'Job Status');
-    }
+    if (endpoints.jobs)
+      setPrice('jobs', formatPriceWithLabel(endpoints.jobs.price_usd, 'Job Status'));
 
     // Update network labels from the network this deployment actually advertises
     if (manifest.payment && manifest.payment.network) {

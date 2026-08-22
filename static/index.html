@@ -5,21 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Musicwire - MusicXML validation, rendering, and QC API. Agents pay per call in USDC via x402 on Base."
+      content="Musicwire turns MusicXML into verified music you can listen to. Agents and developers submit a score, pay with x402, and receive audio, MIDI, and a render receipt."
     />
-    <meta name="theme-color" content="#000000" />
-    <title>Musicwire - MusicXML Render API</title>
+    <meta name="theme-color" content="#0C0D0D" />
+    <meta property="og:title" content="musicwire - Make music an agent can deliver" />
+    <meta
+      property="og:description"
+      content="Send MusicXML. Receive music you can listen to, edit, and verify."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://musicwire.5432wire.com/" />
+    <meta property="og:image" content="https://musicwire.5432wire.com/musicwire-social-card.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="musicwire - Make music an agent can deliver" />
+    <meta
+      name="twitter:description"
+      content="Send MusicXML. Receive music you can listen to, edit, and verify."
+    />
+    <meta name="twitter:image" content="https://musicwire.5432wire.com/musicwire-social-card.svg" />
+    <title>musicwire - Render music you can hear</title>
+    <link rel="icon" type="image/svg+xml" href="/musicwire-favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="header">
       <div class="container">
-        <nav class="nav">
-          <div class="logo">Musicwire</div>
+        <nav class="nav" aria-label="Primary navigation">
+          <a class="brand" href="/" aria-label="musicwire home"
+            ><img src="/musicwire-mark.svg" alt="" /><span>musicwire</span></a
+          >
           <div class="nav-links">
-            <a href="/">Home</a>
-            <a href="/docs">Docs</a>
-            <a href="https://github.com/thatdudealso/musicwire" target="_blank">GitHub</a>
+            <a href="/docs">Docs</a><a href="#pricing">Pricing</a
+            ><a href="https://github.com/thatdudealso/musicwire" target="_blank" rel="noreferrer"
+              >GitHub</a
+            >
           </div>
         </nav>
       </div>
@@ -27,197 +46,140 @@
 
     <main>
       <section class="hero">
-        <div class="container">
-          <h1>Musicwire</h1>
-          <p class="text-secondary">
-            A deterministic MusicXML validation, MuseScore rendering, and automated QC API.
-            <strong>Agents pay per call</strong> in USDC via x402 on Base.
-          </p>
-          <div class="hero-actions">
-            <a href="/docs" class="btn">Get Started</a>
-            <a href="#pricing" class="btn">View Pricing</a>
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">[ VERIFIED MUSIC OUTPUT ]</p>
+            <h1>Make music your agent can <em>deliver.</em></h1>
+            <p class="lede">
+              Send a description or a MusicXML score. musicwire returns a finished render your human
+              can listen to, plus MIDI they can edit and proof it was rendered here.
+            </p>
+            <div class="hero-actions">
+              <a href="/docs#quickstart" class="btn">Make your first render</a
+              ><a href="/docs#examples" class="text-link"
+                >Read the examples <span aria-hidden="true">→</span></a
+              >
+            </div>
+            <ul class="signal-list" aria-label="Musicwire workflow">
+              <li><b>01</b> Write a score</li>
+              <li><b>02</b> Render and pay</li>
+              <li><b>03</b> Listen and share</li>
+            </ul>
+            <div class="mt-3">
+              <span id="network-badge" class="badge">x402 payment available</span
+              ><span id="network-info" class="manifest-loading-placeholder quiet-badge"
+                ><span class="loading">Loading live payment details...</span></span
+              >
+            </div>
           </div>
-          <div class="mt-4">
-            <span id="network-badge" class="badge">Live on Base</span>
-            <span id="network-info" class="manifest-loading-placeholder badge">Loading...</span>
+          <div class="hero-art-wrap">
+            <img
+              class="hero-art"
+              src="/musicwire-hero-art.svg"
+              alt="A completed musicwire render card showing a score, passed quality check, audio meter, MP3 and MIDI outputs, and a receipt."
+            />
           </div>
         </div>
       </section>
 
-      <section class="section">
+      <section class="section section-tight" id="pricing">
         <div class="container">
-          <h2>What is Musicwire?</h2>
-          <p>
-            Musicwire is an API that lets AI agents and developers validate, render, and
-            quality-check
-            <a href="https://www.musicxml.com/" target="_blank">MusicXML</a> scores with
-            professional results.
-          </p>
-
-          <div class="pricing-table" id="pricing">
-            <div class="pricing-card">
-              <h3>Compose Guide</h3>
-              <p class="description">Free MusicXML authoring guide with versioned prompts</p>
+          <p class="eyebrow">[ LIVE PRICING ]</p>
+          <h2>Pay for finished music, not a maze of steps.</h2>
+          <div class="pricing-table">
+            <article class="pricing-card">
+              <p class="card-kicker">Start here</p>
+              <h3>Compose guide</h3>
+              <p class="description">A free prompt and quality bar for writing MusicXML.</p>
               <div id="price-compose-guide" class="manifest-loading-placeholder">
                 <span class="loading">Loading...</span>
               </div>
-            </div>
-
-            <div class="pricing-card">
+            </article>
+            <article class="pricing-card">
+              <p class="card-kicker">Check the score</p>
               <h3>Validate</h3>
-              <p class="description">Detailed validation with line-level error diagnostics</p>
+              <p class="description">Detailed diagnostics before you ask for a render.</p>
               <div id="price-validate" class="manifest-loading-placeholder">
                 <span class="loading">Loading...</span>
               </div>
-            </div>
-
-            <div class="pricing-card">
+            </article>
+            <article class="pricing-card featured">
+              <p class="card-kicker">Hear the result</p>
               <h3>Render</h3>
               <p class="description">
-                MuseScore rendering with automated QC and multiple output formats
+                Request MP3 to listen and MIDI to keep creating. Sheet exports are available when
+                needed.
               </p>
               <div id="price-render" class="manifest-loading-placeholder">
                 <span class="loading">Loading...</span>
               </div>
-            </div>
+            </article>
+          </div>
+          <p class="text-secondary">
+            Your request receives an exact x402 quote before payment. A render is charged only after
+            its quality checks pass.
+          </p>
+        </div>
+      </section>
 
-            <div class="pricing-card">
-              <h3>Job Status</h3>
-              <p class="description">Poll render jobs to completion and retrieve artifacts</p>
-              <div id="price-jobs" class="manifest-loading-placeholder">
-                <span class="loading">Loading...</span>
+      <section class="section workflow-section">
+        <div class="container split-grid">
+          <div>
+            <p class="eyebrow">[ FOR AGENTS AND HUMANS ]</p>
+            <h2>The useful path is short.</h2>
+            <p class="text-secondary">
+              An agent supplies the score and follows the response. A human opens the MP3 in a
+              browser or audio player, imports MIDI into a music app, and keeps the receipt with the
+              work.
+            </p>
+          </div>
+          <ol class="workflow">
+            <li>
+              <span>1</span>
+              <div>
+                <h3>Connect</h3>
+                <p>Use the MCP server or a plain HTTPS request.</p>
               </div>
+            </li>
+            <li>
+              <span>2</span>
+              <div>
+                <h3>Request</h3>
+                <p>Submit MusicXML and ask for MP3 and MIDI.</p>
+              </div>
+            </li>
+            <li>
+              <span>3</span>
+              <div>
+                <h3>Receive</h3>
+                <p>Poll the job, open the audio link, and save what matters.</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container result-grid">
+          <div>
+            <p class="eyebrow">[ WHAT YOU GET ]</p>
+            <h2>Music first. Paper when it helps.</h2>
+          </div>
+          <div class="result-list">
+            <div><b>MP3 or WAV</b><span>Listen immediately. Share the sound.</span></div>
+            <div>
+              <b>MIDI</b><span>Open it in your DAW or notation editor and continue working.</span>
+            </div>
+            <div>
+              <b>MusicXML and receipt</b><span>Keep the source score and proof of the render.</span>
+            </div>
+            <div>
+              <b>PDF, SVG, PNG, MSCZ</b
+              ><span
+                >Request notation or project exports when a score needs to be read or edited.</span
+              >
             </div>
           </div>
-
-          <p>
-            Payment uses
-            <a href="https://eips.ethereum.org/EIPS/eip-3009" target="_blank">EIP-3009 x402</a> with
-            Exact USDC on Base. Charges are only captured <strong>after</strong> quality control
-            passes - you only pay for valid, successful renders.
-          </p>
-        </div>
-      </section>
-
-      <section class="section">
-        <div class="container">
-          <h2>How It Works</h2>
-
-          <div class="card">
-            <h3>For Agent Developers</h3>
-            <p>
-              Use the <code>musicwire-mcp</code> npm package for seamless integration with MCP
-              clients like <a href="https://claude.ai/" target="_blank">Claude Code</a> and
-              <a href="https://cursor.com/" target="_blank">Cursor</a>.
-            </p>
-            <pre><code>npx -y musicwire-mcp</code></pre>
-            <p>Or install globally:</p>
-            <pre><code>npm install -g musicwire-mcp</code></pre>
-            <p>Then configure your MCP client with:</p>
-            <pre><code>{
-  "mcpServers": {
-    "musicwire": {
-      "command": "musicwire-mcp",
-      "env": {
-        "MUSICWIRE_API_URL": "https://musicwire.5432wire.com"
-      }
-    }
-  }
-}</code></pre>
-            <p>
-              Set <code>MUSICWIRE_X402_PRIVATE_KEY</code> in your shell environment with a wallet
-              funded on the network the target deployment advertises: Base mainnet USDC for
-              <code>musicwire.5432wire.com</code>, Base Sepolia test USDC for a local deployment.
-            </p>
-          </div>
-
-          <div class="card">
-            <h3>Raw HTTP + x402 Flow</h3>
-            <p>Or call the API directly with x402 payment authorization:</p>
-            <pre><code># 1. Get a price quote
-curl -X POST https://musicwire.5432wire.com/v1/render \
-  -H 'content-type: application/json' \
-  -H 'Idempotency-Key: my-render-001' \
-  --data '{"musicxml":"...","formats":["pdf","mp3"]}'
-
-# Returns 402 Payment Required with quote details</code></pre>
-            <pre><code># 2. Sign and retry with x402
-npx awal x402 pay https://musicwire.5432wire.com/v1/render \
-  -X POST \
-  -d '{"musicxml":"...","formats":["pdf","mp3"]}' \
-  -h '{"content-type":"application/json","Idempotency-Key":"my-render-001"}' \
-  --max-amount 500000</code></pre>
-            <p>See the <a href="/docs">full documentation</a> for complete examples.</p>
-          </div>
-
-          <div class="card">
-            <h3>Supported Formats</h3>
-            <p>
-              Musicwire returns MusicXML, NOTICE.txt, and receipt.json with every completed render.
-              Optionally request additional formats:
-            </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Format</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><code>mscz</code></td>
-                  <td>MuseScore project file</td>
-                </tr>
-                <tr>
-                  <td><code>pdf</code></td>
-                  <td>Sheet music PDF</td>
-                </tr>
-                <tr>
-                  <td><code>svg</code></td>
-                  <td>Vector graphics (page set)</td>
-                </tr>
-                <tr>
-                  <td><code>png</code></td>
-                  <td>Raster graphics (page set)</td>
-                </tr>
-                <tr>
-                  <td><code>midi</code></td>
-                  <td>MIDI file</td>
-                </tr>
-                <tr>
-                  <td><code>mp3</code></td>
-                  <td>Audio render</td>
-                </tr>
-                <tr>
-                  <td><code>wav</code></td>
-                  <td>Uncompressed audio</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section class="section">
-        <div class="container">
-          <h2>Quality Guarantees</h2>
-          <p>Every paid render includes automated quality control that verifies:</p>
-          <ul>
-            <li>MusicXML parse and semantic validation</li>
-            <li>MuseScore renderer exit code 0</li>
-            <li>All requested artifacts are present</li>
-            <li>Audio containers are valid with non-silent RMS</li>
-            <li>Score duration matches requested constraints (within 10% tolerance)</li>
-            <li>Optional key, tempo, and duration constraints match</li>
-          </ul>
-          <p>
-            <strong>Failed QC = No charge.</strong> You only pay for successful, validated renders.
-          </p>
-          <p>
-            Idempotency keys replay the original outcome to the same verified payer, ensuring you're
-            never charged twice for the same request. See the
-            <a href="/docs">idempotency documentation</a> for the exact replay windows.
-          </p>
         </div>
       </section>
     </main>
@@ -225,20 +187,16 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
     <footer class="footer">
       <div class="container">
         <div class="footer-links">
-          <a href="/">Home</a>
-          <a href="/docs">Documentation</a>
-          <a href="https://github.com/thatdudealso/musicwire" target="_blank">GitHub</a>
-          <a href="https://www.npmjs.com/package/musicwire-mcp" target="_blank">MCP Package</a>
-          <a href="https://github.com/thatdudealso/musicwire/issues" target="_blank">Issues</a>
+          <a href="/docs">Documentation</a><a href="/llms.txt">Agent guide</a
+          ><a href="https://github.com/thatdudealso/musicwire" target="_blank" rel="noreferrer"
+            >GitHub</a
+          ><a href="https://www.npmjs.com/package/musicwire-mcp" target="_blank" rel="noreferrer"
+            >MCP package</a
+          >
         </div>
-        <p class="mt-4">
-          Musicwire &copy; 2025 - Uses
-          <a href="https://musescore.org/" target="_blank">MuseScore</a> with MS Basic soundfont. -
-          <a href="/docs#attribution">Attribution</a>
-        </p>
+        <p class="mt-3">musicwire uses MuseScore with the MS Basic soundfont.</p>
       </div>
     </footer>
-
     <script src="/app.js"></script>
   </body>
 </html>

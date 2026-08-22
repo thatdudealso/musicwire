@@ -25,12 +25,17 @@ test('landing page, docs page, and static assets are served', async () => {
     const landing = await fetch(`${base}/`);
     assert.equal(landing.status, 200);
     assert.match(landing.headers.get('content-type'), /text\/html/);
-    assert.match(await landing.text(), /<h1>Musicwire<\/h1>/);
+    const landingHtml = await landing.text();
+    assert.match(landingHtml, /Make music your agent can/);
+    assert.match(landingHtml, /musicwire-favicon\.svg/);
 
     const docs = await fetch(`${base}/docs`);
     assert.equal(docs.status, 200);
     assert.match(docs.headers.get('content-type'), /text\/html/);
-    assert.match(await docs.text(), /<h1>Musicwire Documentation<\/h1>/);
+    const docsHtml = await docs.text();
+    assert.match(docsHtml, /Connect, request, pay, receive, listen/);
+    assert.match(docsHtml, /Solo piano in C major/);
+    assert.match(docsHtml, /Violin and cello in two parts/);
 
     const styles = await fetch(`${base}/styles.css`);
     assert.equal(styles.status, 200);
@@ -39,6 +44,18 @@ test('landing page, docs page, and static assets are served', async () => {
     const script = await fetch(`${base}/app.js`);
     assert.equal(script.status, 200);
     assert.match(script.headers.get('content-type'), /javascript/);
+
+    const favicon = await fetch(`${base}/musicwire-favicon.svg`);
+    assert.equal(favicon.status, 200);
+    assert.match(favicon.headers.get('content-type'), /^image\/svg\+xml/);
+
+    const robots = await fetch(`${base}/robots.txt`);
+    assert.equal(robots.status, 200);
+    assert.match(await robots.text(), /User-agent: \*/);
+
+    const llms = await fetch(`${base}/llms.txt`);
+    assert.equal(llms.status, 200);
+    assert.match(await llms.text(), /musicwire renders MusicXML/);
 
     const missing = await fetch(`${base}/no-such-page.html`);
     assert.equal(missing.status, 404);
