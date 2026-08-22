@@ -5,7 +5,6 @@
   'use strict';
 
   const MANIFEST_URL = '/manifest';
-  const PAYMENT_DESCRIPTION_URL = '/.well-known/x402';
   const TIMEOUT_MS = 3000;
 
   // Known network labels, used only when the service does not advertise its own
@@ -31,13 +30,6 @@
   // Prefer the label the service publishes so the page can never drift from it
   function networkLabel(payment) {
     return payment.network_label || NETWORK_LABELS[payment.network] || payment.network;
-  }
-
-  // Replace every documented placeholder with the value this deployment reports
-  function setLiveText(name, value) {
-    document.querySelectorAll(`[data-live="${name}"]`).forEach((el) => {
-      el.textContent = value;
-    });
   }
 
   // Format price for display
@@ -94,15 +86,6 @@
       setPrice('render', html);
     }
 
-    // Update render detail for docs page
-    const renderDetailEl = document.getElementById('price-render-detail');
-    if (renderDetailEl && endpoints.render) {
-      const render = endpoints.render;
-      if (render.price_usd && typeof render.price_usd === 'object') {
-        renderDetailEl.innerHTML = `${formatPrice(render.price_usd.solo)} for solo (1 part), ${formatPrice(render.price_usd.multi_instrument)} for ensemble (${render.price_usd.part_boundary + 1}+ parts)`;
-      }
-    }
-
     // Update compose guide price
     if (endpoints.compose_guide)
       setPrice(
@@ -116,7 +99,6 @@
 
     // Update network labels from the network this deployment actually advertises
     if (manifest.payment && manifest.payment.network) {
-      const network = manifest.payment.network;
       const asset = manifest.payment.asset || 'USDC';
       const label = networkLabel(manifest.payment);
 
@@ -129,9 +111,6 @@
       if (badgeEl) {
         badgeEl.textContent = `Live on ${label}`;
       }
-
-      setLiveText('network-label', label);
-      setLiveText('network-id', network);
     }
 
     // Remove loading state
@@ -171,34 +150,6 @@
       });
   }
 
-  // Fill in the live receiving address where the page shows one. Best effort:
-  // the documented static fallback stays in place when it is unavailable.
-  function fetchPaymentDescription() {
-    if (document.querySelectorAll('[data-live="payment-receiver"]').length === 0) return;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    fetch(PAYMENT_DESCRIPTION_URL, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    })
-      .then((response) => {
-        clearTimeout(timeout);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((description) => {
-        const payTo = description && description.receiver && description.receiver.pay_to;
-        if (payTo) {
-          setLiveText('payment-receiver', payTo);
-        }
-      })
-      .catch(() => {});
-  }
-
   // Initialize when DOM is ready
   function init() {
     // Add loading state
@@ -206,7 +157,6 @@
 
     // Fetch manifest
     fetchManifest();
-    fetchPaymentDescription();
   }
 
   // Run on DOM ready

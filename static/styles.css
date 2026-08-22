@@ -11,6 +11,7 @@
   --pass: #00cfa8;
   --pass-ink: #003c32;
   --wire: #f44250;
+  --family: #4ade80;
   --border: #30332f;
   --border-strong: #484b45;
   --code-bg: #101211;
@@ -230,6 +231,15 @@ h1 em {
   background: #102b24;
   border-color: #176f5a;
   color: var(--pass);
+}
+.badge::before {
+  background: var(--family);
+  border-radius: 50%;
+  content: '';
+  display: inline-block;
+  height: 0.45em;
+  margin-right: 0.45em;
+  width: 0.45em;
 }
 .quiet-badge {
   color: var(--text-secondary);

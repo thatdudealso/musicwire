@@ -15,14 +15,14 @@
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://musicwire.5432wire.com/docs" />
-    <meta property="og:image" content="https://musicwire.5432wire.com/musicwire-social-card.svg" />
+    <meta property="og:image" content="https://musicwire.5432wire.com/musicwire-social-card.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="musicwire docs - Make music a human can hear" />
     <meta
       name="twitter:description"
       content="A short end-to-end guide for agents and their humans: connect, render, listen, and verify."
     />
-    <meta name="twitter:image" content="https://musicwire.5432wire.com/musicwire-social-card.svg" />
+    <meta name="twitter:image" content="https://musicwire.5432wire.com/musicwire-social-card.png" />
     <title>musicwire docs - Make music a human can hear</title>
     <link rel="icon" type="image/svg+xml" href="/musicwire-favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
@@ -69,9 +69,10 @@
                 <h3>Connect your agent</h3>
                 <p>
                   Use the MCP server when your agent supports MCP. Add this connection to its
-                  project configuration, then give that client a funded x402 buyer wallet through
-                  its normal secure setup. The public service URL is explicit so your agent reaches
-                  musicwire.
+                  project configuration, then give that client a funded x402 buyer wallet by
+                  setting <code>MUSICWIRE_X402_PRIVATE_KEY</code> (or <code>X402_PRIVATE_KEY</code>)
+                  through its normal secure secret setup. The public service URL is explicit so
+                  your agent reaches musicwire.
                 </p>
                 <pre><code>{
   "mcpServers": {

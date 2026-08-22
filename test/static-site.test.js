@@ -49,6 +49,10 @@ test('landing page, docs page, and static assets are served', async () => {
     assert.equal(favicon.status, 200);
     assert.match(favicon.headers.get('content-type'), /^image\/svg\+xml/);
 
+    const socialCard = await fetch(`${base}/musicwire-social-card.png`);
+    assert.equal(socialCard.status, 200);
+    assert.match(socialCard.headers.get('content-type'), /^image\/png/);
+
     const robots = await fetch(`${base}/robots.txt`);
     assert.equal(robots.status, 200);
     assert.match(await robots.text(), /User-agent: \*/);
