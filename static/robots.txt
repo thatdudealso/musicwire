@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+
+# AI agents and search crawlers are welcome to read the public docs and manifest.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
