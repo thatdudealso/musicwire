@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "musicwire": {
+      "command": "npx",
+      "args": ["-y", "musicwire-mcp"],
+      "env": {
+        "MUSICWIRE_API_URL": "https://musicwire.5432wire.com"
+      }
+    }
+  }
+}

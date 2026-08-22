@@ -9,6 +9,7 @@ import {
   encodePaymentRequiredHeader,
   encodePaymentSignatureHeader,
 } from '@x402/core/http';
+import { validateDiscoveryExtension } from '@x402/extensions/bazaar';
 import { createApp } from '../src/app.js';
 import {
   CdpX402Gateway,
@@ -54,13 +55,17 @@ test('CDP gateway decodes the standard payment-signature header before verificat
     store: {},
     wallet: { address: async () => requirements.payTo },
   });
+  let declaredExtensions;
   gateway.serverPromise = Promise.resolve({
     buildPaymentRequirements: async () => [requirements],
-    createPaymentRequiredResponse: async (_requirements, resource) => ({
-      x402Version: 2,
-      resource,
-      accepts: [requirements],
-    }),
+    createPaymentRequiredResponse: async (_requirements, resource, _error, extensions) => {
+      declaredExtensions = extensions;
+      return {
+        x402Version: 2,
+        resource,
+        accepts: [requirements],
+      };
+    },
     findMatchingRequirements: (available) => available[0],
     verifyPayment: async () => ({
       isValid: true,
@@ -85,6 +90,10 @@ test('CDP gateway decodes the standard payment-signature header before verificat
   assert.deepEqual(result.payment.payment_payload, payload);
   assert.equal(result.payment.status, 'verified_pending_qc');
   assert.equal(result.payment.payer, '0x2222222222222222222222222222222222222222');
+  assert.equal(declaredExtensions.bazaar.info.input.method, 'POST');
+  assert.equal(declaredExtensions.bazaar.info.input.bodyType, 'json');
+  assert.equal(declaredExtensions.bazaar.info.input.body.formats[0], 'pdf');
+  assert.deepEqual(validateDiscoveryExtension(declaredExtensions.bazaar), { valid: true });
 
   const reencodedPayload = {
     payload: {

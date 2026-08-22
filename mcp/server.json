@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.thatdudealso/musicwire-mcp",
+  "description": "Paid MusicXML validation, rendering, and automated QC for MCP clients.",
+  "repository": {
+    "url": "https://github.com/thatdudealso/musicwire",
+    "source": "github",
+    "id": "1337252218",
+    "subfolder": "mcp"
+  },
+  "version": "0.1.0",
+  "websiteUrl": "https://musicwire.5432wire.com/docs",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "musicwire-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "-y"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "MUSICWIRE_API_URL",
+          "description": "Musicwire API base URL.",
+          "default": "https://musicwire.5432wire.com"
+        },
+        {
+          "name": "MUSICWIRE_X402_PRIVATE_KEY",
+          "description": "Throwaway buyer key funded with USDC on the API's advertised network.",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

@@ -44,6 +44,10 @@ test('public API publishes the Phase 2 Base Sepolia prices', async () => {
     });
     assert.equal(manifest.payment.network, 'eip155:84532');
     assert.equal(manifest.payment.asset, 'USDC');
+    assert.deepEqual(manifest.payment.discovery.bazaar, {
+      discoverable: true,
+      routes: ['POST /v1/validate', 'POST /v1/render'],
+    });
     const paymentDescription = await (await fetch(`${base}/.well-known/x402`)).json();
     assert.equal(paymentDescription.network, 'eip155:84532');
     assert.equal(paymentDescription.capture_policy, 'only_after_qc_pass');
