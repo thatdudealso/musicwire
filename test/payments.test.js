@@ -581,6 +581,89 @@ test('payment quotes follow the live price configuration', async () => {
   }
 });
 
+test('discovery probes without a payment receive the 402 challenge before payload validation', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const probes = [
+      ['empty JSON body', { headers: { 'content-type': 'application/json' }, body: '{}' }],
+      ['absent body', {}],
+      ['non-JSON content type', { headers: { 'content-type': 'text/plain' }, body: 'probe' }],
+      ['malformed JSON body', { headers: { 'content-type': 'application/json' }, body: '{nope' }],
+    ];
+    for (const [path, priceUsd] of [
+      ['/v1/validate', '0.10'],
+      ['/v1/render', '0.25'],
+    ]) {
+      for (const [label, init] of probes) {
+        const response = await fetch(`${base}${path}`, { method: 'POST', ...init });
+        assert.equal(response.status, 402, `${path} with ${label}`);
+        const required = decodePaymentRequiredHeader(response.headers.get('payment-required'));
+        assert.equal(required.accepts[0].amount, usdToAtomic(priceUsd), `${path} with ${label}`);
+        const body = await response.json();
+        assert.equal(body.quote.price_usd, priceUsd, `${path} with ${label}`);
+        assert.equal(body.quote.settlement, 'after_qc_pass', `${path} with ${label}`);
+      }
+    }
+    assert.deepEqual(events, []);
+  } finally {
+    await close();
+  }
+});
+
+test('a render discovery probe with a readable score quotes its real price tier', async () => {
+  const { base, close } = await startServer({ events: [] });
+  try {
+    const parts = [1, 2, 3]
+      .map(
+        (id) =>
+          `<score-part id="P${id}"><part-name>Part ${id}</part-name></score-part>|<part id="P${id}"><measure number="1"><attributes><divisions>1</divisions></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure></part>`,
+      )
+      .map((pair) => pair.split('|'));
+    const multiPartXml = `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="4.0"><part-list>${parts.map(([scorePart]) => scorePart).join('')}</part-list>${parts.map(([, part]) => part).join('')}</score-partwise>`;
+    const quote = await fetch(`${base}/v1/render`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ musicxml: multiPartXml, formats: ['pdf'] }),
+    });
+    assert.equal(quote.status, 402);
+    assert.equal(
+      decodePaymentRequiredHeader(quote.headers.get('payment-required')).accepts[0].amount,
+      usdToAtomic('0.50'),
+    );
+  } finally {
+    await close();
+  }
+});
+
+test('a presented payment with an invalid payload keeps its failure code and never charges', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const validate = await fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'payer-a' },
+      body: '{}',
+    });
+    assert.equal(validate.status, 400);
+    assert.equal((await validate.json()).error.code, 'musicxml_required');
+
+    const render = await fetch(`${base}/v1/render`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'payer-a' },
+      body: JSON.stringify({ musicxml: 'not music xml at all', formats: ['pdf'] }),
+    });
+    assert.equal(render.status, 422);
+    const renderBody = await render.json();
+    assert.equal(renderBody.status, 'failed_not_charged');
+    assert.equal(renderBody.payment.status, 'not_charged');
+
+    assert.equal(events.filter((event) => event === 'settle').length, 0);
+  } finally {
+    await close();
+  }
+});
+
 test('validation uses the same 402 quote and settles only after a valid QC result', async () => {
   const events = [];
   const { base, close } = await startServer({ events });
@@ -762,13 +845,13 @@ test('a definitively unused authorization after QC keeps artifacts and records f
   }
 });
 
-test('unpaid invalid render requests expose only a coarse validation error', async () => {
+test('invalid render payloads expose only a coarse validation error and are never charged', async () => {
   const events = [];
   const { base, close } = await startServer({ events });
   try {
     const response = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'payer-a' },
       body: JSON.stringify({ musicxml: '<score-partwise><invalid>', formats: ['pdf'] }),
     });
     assert.equal(response.status, 422);
