@@ -36,6 +36,7 @@ test('public API publishes the Phase 2 Base Sepolia prices', async () => {
     });
   try {
     const manifest = await (await fetch(`${base}/manifest`)).json();
+    assert.equal(manifest.discoverable, true);
     assert.equal(manifest.endpoints.validate.price_usd, '0.10');
     assert.deepEqual(manifest.endpoints.render.price_usd, {
       solo: '0.25',

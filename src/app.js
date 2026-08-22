@@ -914,6 +914,7 @@ function manifest(config, store) {
   return {
     name: 'Musicwire',
     version: 'v1',
+    discoverable: true,
     payment: {
       protocol: 'x402',
       x402_version: 2,

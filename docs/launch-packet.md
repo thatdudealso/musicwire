@@ -51,11 +51,13 @@ Claims to retain: "validate, render, QC, and return artifacts" and "charge only 
 
 The MCP package is a stdio server, not a public Streamable HTTP `/mcp` endpoint. Do not claim a remote MCP URL to Claude Connectors or Smithery. Use the package/registry route once npm is live, or defer remote-only surfaces until a real public Streamable HTTP endpoint exists.
 
+For the three listing images, use a 1440 by 1024 browser viewport, wait for the manifest-backed values to load, and capture the landing hero and documentation quickstart. Capture the settlement response only after the captain-approved purchase succeeds. Save the final files as `musicwire-landing.png`, `musicwire-docs.png`, and `musicwire-settlement.png`; do not commit a buyer key, payment signature, or presigned artifact URL into the images.
+
 ## 3. Day-0 captain runbook
 
 ### 3.1 CDP x402 Bazaar
 
-Prerequisite: merge and deploy this PR so live `402` responses include the Bazaar extension for both paid routes. The metadata uses explicit JSON input and output schemas, service name `Musicwire`, and tags `musicxml`, `rendering`, and `qc`. The public manifest also states `payment.discovery.bazaar.discoverable: true`.
+Prerequisite: merge and deploy this PR so live `402` responses include the Bazaar extension for both paid routes. The metadata uses explicit JSON input and output schemas, service name `Musicwire`, and tags `musicxml`, `rendering`, and `qc`. The public manifest states `discoverable: true` and `payment.discovery.bazaar.discoverable: true`.
 
 Before paying, inspect the route from a clean external network:
 
