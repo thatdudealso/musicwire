@@ -287,7 +287,8 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
               <h3>Keep proof</h3>
               <p>
                 Save <code>receipt.json</code> with the audio. It records the paid render and its
-                quality outcome. <code>NOTICE.txt</code> carries the soundfont attribution.
+                quality outcome. <code>NOTICE.txt</code> carries the soundfont attribution plus the
+                render receipt ID and the free verification URL.
               </p>
             </article>
           </div>
@@ -304,9 +305,8 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
           <p class="eyebrow">[ VERIFY IT CAME FROM US ]</p>
           <h2>Every artifact is attributed and provable.</h2>
           <p>
-            Every rendered artifact contains musicwire attribution plus its render receipt ID, and
-            each completed render includes <code>NOTICE.txt</code> with that receipt ID and the
-            free verification URL.
+            Every rendered artifact carries embedded musicwire attribution plus its render receipt
+            ID, without altering the audio samples or the notation:
           </p>
           <ul>
             <li>MP3 and WAV: encoded-by, comment, and copyright metadata</li>
@@ -317,54 +317,22 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
             <li>MusicXML and MSCZ: musicwire software metadata</li>
           </ul>
           <p>
-            To verify a file, compute its SHA-256 and submit it to the free
-            <code>POST /v1/provenance/verify</code> endpoint:
+            Each completed render also includes <code>NOTICE.txt</code> with that receipt ID and the
+            free verification URL. Embedded tags are useful attribution but can be removed by a
+            determined party. The durable signed hash receipt is the provenance proof: calculate the
+            SHA-256 of an unmodified file and submit it to the free
+            <code>POST /v1/provenance/verify</code> endpoint. A changed file has a different hash
+            and cannot be verified as the original musicwire output.
           </p>
-          <pre><code>{ "sha256": "64-character-lowercase-hex-hash" }</code></pre>
+          <pre><code>shasum -a 256 output.mp3
+
+curl -s -X POST https://musicwire.5432wire.com/v1/provenance/verify \
+  -H 'content-type: application/json' \
+  -d '{"sha256":"64-character-lowercase-hex-hash"}'</code></pre>
           <p>
-            A matching response includes <code>rendered_by_musicwire</code>, the receipt ID, render
-            time, signed receipt, and matching artifact record. An unknown hash returns
+            A matching response includes <code>rendered_by_musicwire: true</code>, the receipt ID,
+            render time, signed receipt, and matching artifact record. An unknown hash returns
             <code>{ "rendered_by_musicwire": false }</code>.
-          </p>
-          <p class="text-secondary">
-            Embedded tags are useful attribution but can be removed by a determined party. The
-            durable signed hash receipt is the provenance proof: a changed file has a different
-            hash and cannot be verified as the original musicwire output.
-          </p>
-        </div>
-      </section>
-
-      <section class="section section-tight" id="discovery">
-        <div class="container narrow">
-          <p class="eyebrow">[ DISCOVERY FLOW ]</p>
-          <h2>Probe, get the 402 challenge, pay, get the result.</h2>
-          <h3>For humans</h3>
-          <p>
-            You never need to know the price in advance. Send any request without a payment to
-            <code>POST /v1/validate</code> or <code>POST /v1/render</code> - even with an empty or
-            missing body - and musicwire answers <code>402 Payment Required</code> with a quote
-            listing the price, network, asset, and receiving address. Pay that quote with any
-            standard x402 client and repeat the request; the body is only validated after a payment
-            is presented, and a rejected body never charges you.
-          </p>
-          <h3>For agents</h3>
-          <pre><code># 1. Probe a priced route. Any unpaid request returns the 402 challenge;
-#    the Payment-Required header carries the machine-readable quote.
-curl -si -X POST https://musicwire.5432wire.com/v1/validate
-
-# 2. Or read the requirements with standard x402 buyer tooling.
-npx -y awal x402 details https://musicwire.5432wire.com/v1/validate --json
-
-# 3. Sign the quote and retry with payment in one step.
-npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
-  -X POST -d '{"musicxml":"&lt;your complete MusicXML document&gt;"}'
-
-# 4. Read the result. 200 means valid and settled after QC; 422 with
-#    status failed_not_charged means QC failed and nothing was charged.</code></pre>
-          <p class="text-secondary">
-            The same flow applies to <code>POST /v1/render</code>. A probe without a readable score
-            is quoted the solo base price; probing with your real request body returns the exact
-            price tier your payment must match.
           </p>
         </div>
       </section>
@@ -450,7 +418,10 @@ npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
             </article>
             <article>
               <h3><code>POST /v1/provenance/verify</code></h3>
-              <p>Free. Verifies a file SHA-256 against musicwire's signed render receipts.</p>
+              <p>
+                Free. Submit <code>{ "sha256": "..." }</code> to check a file hash against
+                musicwire's signed render receipts.
+              </p>
             </article>
             <article>
               <h3><code>GET /manifest</code></h3>
