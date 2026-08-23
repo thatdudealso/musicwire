@@ -7,7 +7,7 @@ const musicwireUrl = 'https://musicwire.5432wire.com';
 
 export async function embedAttribution({ file, format, receiptId, verificationUrl, ffmpegBin }) {
   const attribution = `Rendered by Musicwire (${musicwireUrl}); receipt ${receiptId}; verify ${verificationUrl}`;
-  if (format === 'mp3' || format === 'wav') {
+  if (format === 'mp3') {
     await rewriteAudioMetadata(file, format, attribution, ffmpegBin);
     return;
   }
@@ -160,7 +160,8 @@ async function rewriteAudioMetadata(file, format, attribution, ffmpegBin) {
       `comment=${attribution}`,
       '-metadata',
       `copyright=Musicwire ${musicwireUrl}`,
-      ...(format === 'mp3' ? ['-id3v2_version', '3'] : []),
+      '-id3v2_version',
+      '3',
       output,
     ]);
     fs.renameSync(output, file);

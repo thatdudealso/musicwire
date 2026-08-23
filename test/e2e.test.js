@@ -47,7 +47,7 @@ test(
         headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({
           musicxml,
-          formats: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'],
+          formats: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3'],
           constraints_check: {
             tempo: facts.tempo,
             key_fifths: facts.key.fifths,
@@ -79,7 +79,6 @@ test(
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'score-1.png'));
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mid'));
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mp3'));
-      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.wav'));
       const download = async (name) => {
         const artifact = job.artifacts.find((item) => item.name === name);
         assert.ok(artifact, `Missing ${name}`);
@@ -110,7 +109,7 @@ test(
       const midi = await download('score.mid');
       assert.equal(midi.subarray(0, 4).toString(), 'MThd');
       assert.match(midi.toString('utf8'), /Musicwire/);
-      for (const name of ['score.mp3', 'score.wav']) {
+      for (const name of ['score.mp3']) {
         const destination = path.join(dataDirectory, name);
         fs.writeFileSync(destination, await download(name));
         const audio = await probeAudio('ffprobe', destination);

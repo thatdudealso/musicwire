@@ -11,6 +11,8 @@ const musicxml = fs.readFileSync(
   'utf8',
 );
 
+const soundElement = musicxml.match(/<sound tempo="\d+"\/>/)[0];
+
 test('public API publishes the Phase 2 Base Sepolia prices', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-prices-'));
   const server = createApp({
@@ -111,7 +113,7 @@ test('render requires JSON and at least one output format before queuing', async
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
-        musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90" dacapo="yes"/>'),
+        musicxml: musicxml.replace(soundElement, soundElement.replace('/>', ' dacapo="yes"/>')),
         formats: ['mp3'],
       }),
     });
@@ -121,7 +123,7 @@ test('render requires JSON and at least one output format before queuing', async
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
-        musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90" fine="yes"/>'),
+        musicxml: musicxml.replace(soundElement, soundElement.replace('/>', ' fine="yes"/>')),
         formats: ['mp3'],
       }),
     });
@@ -132,8 +134,8 @@ test('render requires JSON and at least one output format before queuing', async
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml: musicxml.replace(
-          '<sound tempo="90"/>',
-          '<sound tempo="90"/><direction><direction-type><words>D.C. al Fine</words></direction-type></direction>',
+          soundElement,
+          `${soundElement}<direction><direction-type><words>D.C. al Fine</words></direction-type></direction>`,
         ),
         formats: ['mp3'],
       }),
@@ -145,8 +147,8 @@ test('render requires JSON and at least one output format before queuing', async
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml: musicxml.replace(
-          '<sound tempo="90"/>',
-          '<sound tempo="90"/><direction><direction-type><words>Fine</words></direction-type></direction>',
+          soundElement,
+          `${soundElement}<direction><direction-type><words>Fine</words></direction-type></direction>`,
         ),
         formats: ['pdf'],
         constraints_check: { tempo: 90 },

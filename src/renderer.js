@@ -21,7 +21,6 @@ const extensionFor = {
   svg: 'svg',
   png: 'png',
   mp3: 'mp3',
-  wav: 'wav',
 };
 
 export class Renderer {
@@ -110,7 +109,7 @@ export class Renderer {
   }
 
   async #checkAudio(rendered, expectedDuration) {
-    for (const audio of rendered.filter((item) => item.format === 'mp3' || item.format === 'wav')) {
+    for (const audio of rendered.filter((item) => item.format === 'mp3')) {
       const probe = await probeAudio(this.config.ffprobeBin, audio.path);
       if (!probe.ok) return failed(probe.code, probe.message);
       const silence = await verifyNonSilent(this.config.ffmpegBin, audio.path);
@@ -163,31 +162,7 @@ export class Renderer {
     }
   }
 
-  async #runMuseScore(input, output, workspace) {
-    if (path.extname(output) === '.wav') {
-      const mp3Output = `${output}.mp3`;
-      try {
-        const result = await this.#run(
-          ['-f', '--sound-profile', 'MuseScore Basic', '-o', mp3Output, input],
-          workspace,
-        );
-        if (result.code !== 0) return result;
-        try {
-          execFileSync(this.config.ffmpegBin, ['-y', '-i', mp3Output, output], {
-            stdio: 'pipe',
-          });
-          return result;
-        } catch (error) {
-          return {
-            ...result,
-            code: error.status ?? 1,
-            stderr: error.stderr?.toString() ?? error.message,
-          };
-        }
-      } finally {
-        fs.rmSync(mp3Output, { force: true });
-      }
-    }
+  #runMuseScore(input, output, workspace) {
     return this.#run(['-f', '--sound-profile', 'MuseScore Basic', '-o', output, input], workspace);
   }
 

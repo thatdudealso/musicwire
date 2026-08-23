@@ -14,9 +14,9 @@ test('validates a MusicXML 4.0 partwise score and extracts render facts', () => 
   assert.deepEqual(validateMusicXml(validScore), { valid: true, errors: [] });
   const facts = scoreFacts(validScore);
   assert.equal(facts.partCount, 1);
-  assert.equal(facts.tempo, 90);
+  assert.equal(facts.tempo, 30);
   assert.equal(facts.key.fifths, 0);
-  assert.ok(facts.scoreDurationSeconds > 3.9 && facts.scoreDurationSeconds < 4.1);
+  assert.ok(facts.scoreDurationSeconds > 11.9 && facts.scoreDurationSeconds < 12.1);
 });
 
 test('rejects external entity declarations before XML parsing', () => {

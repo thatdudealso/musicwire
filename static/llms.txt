@@ -6,4 +6,4 @@ musicwire renders MusicXML into music people can hear, edit, and verify. Start w
 - https://musicwire.5432wire.com/manifest - machine-readable service capabilities and live prices
 - https://musicwire.5432wire.com/.well-known/x402 - machine-readable payment discovery
 
-Core workflow: connect through the musicwire MCP server or use HTTPS, submit complete MusicXML with requested formats, authorize the quoted x402 payment, poll the returned job, then open the MP3 or WAV link and save MIDI and receipt artifacts.
+Core workflow: connect through the musicwire MCP server or use HTTPS, submit complete MusicXML with requested formats, authorize the quoted x402 payment, poll the returned job, then open the MP3 link and save MIDI and receipt artifacts.

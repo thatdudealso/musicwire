@@ -376,9 +376,7 @@ export function createApp(overrides = {}) {
       config.maxPlaybackTempoEvents,
     );
     const requiresDurationModel =
-      formats.some((format) => format === 'mp3' || format === 'wav') ||
-      'tempo' in constraints ||
-      'duration_seconds' in constraints;
+      formats.includes('mp3') || 'tempo' in constraints || 'duration_seconds' in constraints;
     if (requiresDurationModel && (facts.scoreDurationSeconds <= 0 || facts.durationModelError))
       return response.status(422).json({
         status: 'failed_not_charged',

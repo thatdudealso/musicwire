@@ -29,7 +29,7 @@ Use this copy verbatim where a directory has a short description:
 Use cases:
 
 - Validate agent-generated MusicXML before sending it to a musician or renderer.
-- Render a score to PDF, SVG, PNG, MIDI, MP3, WAV, or MuseScore format after validation.
+- Render a score to PDF, SVG, PNG, MIDI, MP3, or MuseScore format after validation.
 - Require key, tempo, and duration constraints, with no charge when QC fails.
 
 Claims to retain: "validate, render, QC, and return artifacts" and "charge only after QC passes." Do not describe Musicwire as a composition model.
