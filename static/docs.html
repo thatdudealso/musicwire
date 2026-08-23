@@ -312,6 +312,41 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
         </div>
       </section>
 
+      <section class="section section-tight" id="discovery">
+        <div class="container narrow">
+          <p class="eyebrow">[ DISCOVERY FLOW ]</p>
+          <h2>Probe, get the 402 challenge, pay, get the result.</h2>
+          <h3>For humans</h3>
+          <p>
+            You never need to know the price in advance. Send any request without a payment to
+            <code>POST /v1/validate</code> or <code>POST /v1/render</code> - even with an empty or
+            missing body - and musicwire answers <code>402 Payment Required</code> with a quote
+            listing the price, network, asset, and receiving address. Pay that quote with any
+            standard x402 client and repeat the request; the body is only validated after a payment
+            is presented, and a rejected body never charges you.
+          </p>
+          <h3>For agents</h3>
+          <pre><code># 1. Probe a priced route. Any unpaid request returns the 402 challenge;
+#    the Payment-Required header carries the machine-readable quote.
+curl -si -X POST https://musicwire.5432wire.com/v1/validate
+
+# 2. Or read the requirements with standard x402 buyer tooling.
+npx -y awal x402 details https://musicwire.5432wire.com/v1/validate --json
+
+# 3. Sign the quote and retry with payment in one step.
+npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
+  -X POST -d '{"musicxml":"&lt;your complete MusicXML document&gt;"}'
+
+# 4. Read the result. 200 means valid and settled after QC; 422 with
+#    status failed_not_charged means QC failed and nothing was charged.</code></pre>
+          <p class="text-secondary">
+            The same flow applies to <code>POST /v1/render</code>. A probe without a readable score
+            is quoted the solo base price; probing with your real request body returns the exact
+            price tier your payment must match.
+          </p>
+        </div>
+      </section>
+
       <section class="section" id="reference">
         <div class="container narrow">
           <p class="eyebrow">[ CONCISE REFERENCE ]</p>

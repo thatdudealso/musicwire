@@ -80,6 +80,10 @@ const bazaarExtensions = {
   }),
 };
 
+export function paymentSignaturePresented(request) {
+  return Boolean(request.get('payment-signature'));
+}
+
 export class PaymentConfigurationError extends Error {}
 export class PaymentVerificationError extends Error {}
 export class PaymentSettlementError extends Error {

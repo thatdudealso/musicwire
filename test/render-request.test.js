@@ -77,21 +77,21 @@ test('render requires JSON and at least one output format before queuing', async
   try {
     const raw = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/xml' },
+      headers: { 'content-type': 'application/xml', 'Payment-Signature': 'test-payment' },
       body: musicxml,
     });
     assert.equal(raw.status, 415);
     assert.equal((await raw.json()).error.code, 'render_json_required');
     const empty = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml, formats: [] }),
     });
     assert.equal(empty.status, 400);
     assert.equal((await empty.json()).error.code, 'invalid_formats');
     const malformedConstraint = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml,
         formats: ['pdf'],
@@ -102,14 +102,14 @@ test('render requires JSON and at least one output format before queuing', async
     assert.equal((await malformedConstraint.json()).error.code, 'invalid_constraints');
     const nullConstraint = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: null }),
     });
     assert.equal(nullConstraint.status, 400);
     assert.equal((await nullConstraint.json()).error.code, 'invalid_constraints');
     const navigation = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90" dacapo="yes"/>'),
         formats: ['mp3'],
@@ -119,7 +119,7 @@ test('render requires JSON and at least one output format before queuing', async
     assert.equal((await navigation.json()).error.code, 'score_duration_model_unsupported');
     const fineNavigation = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml: musicxml.replace('<sound tempo="90"/>', '<sound tempo="90" fine="yes"/>'),
         formats: ['mp3'],
@@ -129,7 +129,7 @@ test('render requires JSON and at least one output format before queuing', async
     assert.equal((await fineNavigation.json()).error.code, 'score_duration_model_unsupported');
     const wordsNavigation = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml: musicxml.replace(
           '<sound tempo="90"/>',
@@ -142,7 +142,7 @@ test('render requires JSON and at least one output format before queuing', async
     assert.equal((await wordsNavigation.json()).error.code, 'score_duration_model_unsupported');
     const constrainedNavigation = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml: musicxml.replace(
           '<sound tempo="90"/>',
@@ -159,14 +159,14 @@ test('render requires JSON and at least one output format before queuing', async
     );
     const invalidMode = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { mode: 'dorian' } }),
     });
     assert.equal(invalidMode.status, 400);
     assert.equal((await invalidMode.json()).error.code, 'invalid_constraints');
     const unknownConstraint = await fetch(`${base}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { duration: 30 } }),
     });
     assert.equal(unknownConstraint.status, 400);
@@ -459,7 +459,7 @@ test('render rejects audio whose repeat expansion exceeds the configured limit',
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml: repeated, formats: ['mp3'] }),
     });
     assert.equal(response.status, 422);
@@ -490,7 +490,7 @@ test('render rejects audio whose replayed tempo events exceed the configured lim
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/render`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({ musicxml: repeated, formats: ['mp3'] }),
     });
     assert.equal(response.status, 422);

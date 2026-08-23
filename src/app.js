@@ -14,6 +14,7 @@ import {
   PaymentSettlementError,
   PaymentVerificationError,
   paymentPayerIdentity,
+  paymentSignaturePresented,
 } from './payment.js';
 import { Renderer } from './renderer.js';
 import { failureCodes } from './qc.js';
@@ -178,7 +179,25 @@ export function createApp(overrides = {}) {
     });
   });
 
+  // x402 discovery: a request without a payment must always receive the 402
+  // challenge, even when its body would fail validation, so buyer tooling and
+  // directory probes can read price, network, asset, and payTo before paying.
+  const paymentChallenge = async (request, endpoint, priceUsd) =>
+    (
+      await payments.authorize({
+        request,
+        endpoint,
+        priceUsd,
+        outputSchema: paymentOutputSchema(endpoint),
+      })
+    ).challenge;
+
   app.post('/v1/validate', async (request, response) => {
+    if (!paymentSignaturePresented(request))
+      return sendPaymentChallenge(
+        response,
+        await paymentChallenge(request, 'validate', config.validatePriceUsd),
+      );
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
     const idempotencyKey = request.get('Idempotency-Key');
@@ -280,6 +299,11 @@ export function createApp(overrides = {}) {
   });
 
   app.post('/v1/render', async (request, response) => {
+    if (!paymentSignaturePresented(request))
+      return sendPaymentChallenge(
+        response,
+        await paymentChallenge(request, 'render', renderQuotePriceUsd(request, config)),
+      );
     if (!request.is('application/json'))
       return response.status(415).json({
         error: {
@@ -444,7 +468,7 @@ export function createApp(overrides = {}) {
     }
   });
 
-  app.use((error, _request, response, _next) => {
+  app.use(async (error, request, response, _next) => {
     if (error instanceof PaymentConfigurationError)
       return response.status(503).json({
         error: { code: 'payment_unavailable', message: error.message },
@@ -475,6 +499,23 @@ export function createApp(overrides = {}) {
       return response
         .status(error.expired ? 404 : 503)
         .json({ error: { code: error.code, message: error.message } });
+    // A malformed body on a priced route fails JSON parsing before the route
+    // handler runs, so the discovery challenge must also be issued here.
+    const probeEndpoint = unpaidProbeEndpoint(request);
+    if (probeEndpoint) {
+      try {
+        return sendPaymentChallenge(
+          response,
+          await paymentChallenge(
+            request,
+            probeEndpoint,
+            probeEndpoint === 'validate' ? config.validatePriceUsd : config.renderSoloPriceUsd,
+          ),
+        );
+      } catch {
+        // fall through to the generic parse failure
+      }
+    }
     return response
       .status(400)
       .json({ error: { code: 'invalid_request', message: 'Request body could not be parsed.' } });
@@ -648,6 +689,29 @@ function createSettlementReconciler({ store, payments, artifactStore, config }) 
     timers.set(key, timer);
   };
   return { schedule };
+}
+
+function unpaidProbeEndpoint(request) {
+  if (request.method !== 'POST' || paymentSignaturePresented(request)) return null;
+  if (request.path === '/v1/validate') return 'validate';
+  if (request.path === '/v1/render') return 'render';
+  return null;
+}
+
+function renderQuotePriceUsd(request, config) {
+  // Discovery probes may carry no readable score; quote the real price tier
+  // when the body allows and the solo base price otherwise.
+  if (!request.is('application/json')) return config.renderSoloPriceUsd;
+  const input = extractInput(request, config);
+  if (input.error) return config.renderSoloPriceUsd;
+  const facts = scoreFacts(
+    input.musicxml,
+    config.maxPlaybackMeasures,
+    config.maxPlaybackTempoEvents,
+  );
+  return facts.partCount > config.multiInstrumentPartBoundary
+    ? config.renderMultiPriceUsd
+    : config.renderSoloPriceUsd;
 }
 
 function extractInput(request, config) {
