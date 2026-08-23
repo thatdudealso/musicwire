@@ -189,6 +189,9 @@ Resources:
       Protocol: TCP
       Port: 8787
       TargetType: ip
+      TargetGroupAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: 'true'
       HealthCheckEnabled: true
       HealthCheckProtocol: HTTP
       HealthCheckPath: /health
