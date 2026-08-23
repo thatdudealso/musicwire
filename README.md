@@ -103,10 +103,16 @@ MusicXML supplied in a JSON request body must be a UTF-8 string. Render requests
 { "musicxml": "<score-partwise version=\"4.0\">...</score-partwise>", "formats": ["pdf", "svg", "mp3"], "constraints_check": { "tempo": 84, "duration_seconds": 30, "key_fifths": -1, "mode": "minor" } }
 
 // 202 render response. The verified authorization is not yet settled.
-{ "job_id": "uuid", "status": "queued", "estimated_seconds": 30, "price_usd": "0.25", "payment": { "status": "verified_pending_qc", "capture_policy": "capture_only_after_qc_pass" }, "poll_url": "/v1/jobs/uuid" }
+{ "job_id": "uuid", "status": "queued", "estimated_seconds": 30, "price_usd": "0.25", "payment": { "status": "verified_pending_qc", "capture_policy": "capture_only_after_qc_pass" }, "poll_url": "/v1/jobs/uuid", "provenance": { "receipt_id": "uuid", "verification_url": "https://musicwire.example/v1/provenance/verify" } }
 
 // GET /v1/jobs/{id}
-{ "job_id": "uuid", "status": "completed", "facts": { "partCount": 1, "tempo": 84, "key": { "fifths": -1, "mode": "minor" }, "scoreDurationSeconds": 30 }, "qc": { "status": "passed" }, "error": null, "payment": { "status": "settled" }, "receipt": { "status": "settled", "tx_hash": "0x...", "amount_usd": "0.25", "amount_atomic": "250000", "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e", "network": "eip155:84532", "pay_to": "0x2855..." }, "expires_at": "2026-01-01T00:00:00.000Z", "artifacts": [{ "name": "receipt.json", "sha256": "hex", "bytes": 1234, "url": "/v1/artifacts/uuid/receipt.json?expires=...&token=..." }] }
+{ "job_id": "uuid", "status": "completed", "facts": { "partCount": 1, "tempo": 84, "key": { "fifths": -1, "mode": "minor" }, "scoreDurationSeconds": 30 }, "qc": { "status": "passed" }, "error": null, "payment": { "status": "settled" }, "receipt": { "status": "settled", "tx_hash": "0x...", "amount_usd": "0.25", "amount_atomic": "250000", "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e", "network": "eip155:84532", "pay_to": "0x2855..." }, "provenance": { "receipt_id": "uuid", "verification_url": "https://musicwire.example/v1/provenance/verify" }, "expires_at": "2026-01-01T00:00:00.000Z", "artifacts": [{ "name": "receipt.json", "sha256": "hex", "bytes": 1234, "url": "/v1/artifacts/uuid/receipt.json?expires=...&token=..." }] }
+
+// POST /v1/provenance/verify - free, no payment required
+{ "sha256": "64-character-lowercase-hex-sha-256-of-an-artifact-file" }
+
+// 200 when the hash matches a Musicwire-rendered artifact; unknown hashes return { "rendered_by_musicwire": false }
+{ "rendered_by_musicwire": true, "receipt_id": "uuid", "rendered_at": "2026-01-01T00:00:00.000Z", "artifact": { "name": "score.mp3", "sha256": "hex", "bytes": 1234 }, "receipt": { "receipt_id": "uuid", "rendered_by": "Musicwire", "verification_url": "https://musicwire.example/v1/provenance/verify", "rendered_at": "2026-01-01T00:00:00.000Z", "artifacts": [{ "name": "score.mp3", "sha256": "hex", "bytes": 1234 }], "signature": "base64url", "signature_algorithm": "HMAC-SHA-256" } }
 
 // POST /reviews - tx_hash must be from a settled Musicwire render payment
 { "tx_hash": "0x...", "rating": 5, "comment": "Accurate output and clean artifacts." }
@@ -125,23 +131,57 @@ Artifact URLs are signed and expire with the job retention window. A local-stora
 
 ## API contract
 
-| Endpoint                             |                      Price | Result                                                   |
-| ------------------------------------ | -------------------------: | -------------------------------------------------------- |
-| `GET /v1/compose-guide`              |                       Free | Static, versioned BYO-LLM authoring guide.               |
-| `POST /v1/validate`                  |                      $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`.  |
-| `POST /v1/render`                    | $0.25 solo, $0.50 ensemble | Returns `job_id` and `estimated_seconds`.                |
-| `GET /v1/jobs/{id}`                  |                       Free | Status, QC outcome, receipt, and signed artifact URLs.   |
-| `POST /reviews`                      |                       Free | Creates one 1-5 review for a settled render `tx_hash`.   |
-| `GET /reviews`                       |                       Free | Paginated public reviews with their transaction anchors. |
-| `GET /manifest`, `/.well-known/x402` |                       Free | Machine-readable service and payment requirements.       |
-| `GET /health`                        |                       Free | Renderer readiness.                                      |
-| `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.    |
+| Endpoint                             |                      Price | Result                                                     |
+| ------------------------------------ | -------------------------: | ---------------------------------------------------------- |
+| `GET /v1/compose-guide`              |                       Free | Static, versioned BYO-LLM authoring guide.                 |
+| `POST /v1/validate`                  |                      $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`.    |
+| `POST /v1/render`                    | $0.25 solo, $0.50 ensemble | Returns `job_id` and `estimated_seconds`.                  |
+| `GET /v1/jobs/{id}`                  |                       Free | Status, QC outcome, receipt, and signed artifact URLs.     |
+| `POST /v1/provenance/verify`         |                       Free | Checks an artifact SHA-256 against signed render receipts. |
+| `POST /reviews`                      |                       Free | Creates one 1-5 review for a settled render `tx_hash`.     |
+| `GET /reviews`                       |                       Free | Paginated public reviews with their transaction anchors.   |
+| `GET /manifest`, `/.well-known/x402` |                       Free | Machine-readable service and payment requirements.         |
+| `GET /health`                        |                       Free | Renderer readiness.                                        |
+| `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.      |
 
 The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mscz`, `pdf`, `svg`, `png`, `midi`, and `mp3`.
 
 Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. Payment statuses are `verified_pending_qc`, `settled`, `settlement_pending`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. `POST /reviews` accepts a transaction hash only when it matches a settled Musicwire render and permits one review per transaction. Payment requirements use x402 Exact USDC through the CDP facilitator on the configured network: Base mainnet in production, Base Sepolia for local and stub runs. `GET /manifest` publishes that network and its human-readable label plus `review_stats.count` and `review_stats.average_rating`, and `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
 
 QC passes only when MusicXML validates, MuseScore exits successfully, every requested artifact exists, requested audio has a valid container, non-silent RMS, and score-duration agreement within 10%, with a bounded two-second natural release-tail allowance, and optional key, tempo, and duration constraints match. Failures return a typed catalogued error and are not charged.
+
+## Attribution and verifiable provenance
+
+Every rendered artifact is attributed to Musicwire at render time, after QC, in a way that never alters the audio samples or the notation:
+
+| Format   | Embedded attribution                                                               |
+| -------- | ---------------------------------------------------------------------------------- |
+| MP3      | ID3 tags: `encoded_by`, `comment`, and `copyright`, written by ffmpeg stream copy. |
+| PDF      | `Creator` and `Producer` document metadata added as an incremental update.         |
+| MIDI     | Copyright and text meta events in the first track.                                 |
+| PNG      | `tEXt` metadata chunks: `Software`, `Comment`, and `MusicwireReceipt`.             |
+| SVG      | A `metadata` element.                                                              |
+| MSCZ     | A `metaTag` element in the embedded score.                                         |
+| MusicXML | `software` and `encoding-description` entries in `identification/encoding`.        |
+
+At render completion Musicwire computes each artifact's SHA-256 and signs a render receipt with an HMAC-SHA-256 key derived from `ARTIFACT_SIGNING_SECRET` (domain-separated, so the receipt key is never the artifact URL key). The receipt is stored durably alongside the job, included in `receipt.json`, and its `receipt_id` and verification URL appear in the render API response and in `NOTICE.txt`.
+
+The honest limitation: embedded tags credit Musicwire but can be stripped by a determined party. The signed hash receipt is what proves provenance regardless, because a stripped or otherwise modified file no longer matches any recorded artifact hash.
+
+### For humans
+
+Keep the rendered file unmodified. To check that a file came from Musicwire, compute the file's SHA-256 hash and submit it to the free verification endpoint at `https://musicwire.5432wire.com/v1/provenance/verify`. If Musicwire rendered that exact file, the answer includes the render receipt; any edit to the file changes its hash and the check answers no.
+
+### For agents
+
+```sh
+HASH="$(shasum -a 256 output.mp3 | cut -d' ' -f1)"
+curl -s -X POST https://musicwire.5432wire.com/v1/provenance/verify \
+  -H 'content-type: application/json' \
+  -d "{\"sha256\":\"$HASH\"}"
+```
+
+A match returns `rendered_by_musicwire: true` with the receipt id, render time, matching artifact record, and the full signed receipt; an unknown hash returns `{ "rendered_by_musicwire": false }`. Verification is free and requires no payment.
 
 ## Run locally
 
@@ -257,7 +297,7 @@ curl -sS -L "$SIGNED_ARTIFACT_URL" -o /dev/null
 
 ## Rights, attribution, and acceptable use
 
-Each completed render includes `NOTICE.txt` containing the installed MS Basic license and FluidR3, Michael Cowgill, and S. Christian Collins attribution. `receipt.json` includes the renderer version, sound profile, soundfont SHA-256 where configured, `rendered_by: "Musicwire"`, and this repository URL.
+Each completed render includes `NOTICE.txt` containing the installed MS Basic license and FluidR3, Michael Cowgill, and S. Christian Collins attribution, plus the render receipt id and the free provenance verification URL. `receipt.json` includes the renderer version, sound profile, soundfont SHA-256 where configured, `rendered_by: "Musicwire"`, this repository URL, and the signed provenance receipt.
 
 Customers own their compositions. Audio can be used commercially when the NOTICE travels with it. Musicwire sells a render and QC service and never sells copyright in a composition. Only the pinned MS Basic soundfont is supported. Custom soundfonts, plugins, external XML entities, and copyrighted-melody transcription are prohibited. The renderer performs no intentional network operations; strict egress control is a deploy-phase follow-up, and any future network use must be limited to music-request processing, never general browsing.
 

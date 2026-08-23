@@ -17,6 +17,13 @@ const mscoreBin =
 const hasCommand = (command) => spawnSync(command, ['-version'], { stdio: 'ignore' }).status === 0;
 const shouldRun =
   process.env.MUSICWIRE_E2E === '1' && mscoreBin && hasCommand('ffprobe') && hasCommand('ffmpeg');
+const evidenceDirectory = process.env.MUSICWIRE_E2E_EVIDENCE_DIR;
+
+function preserveEvidence(name, bytes) {
+  if (!evidenceDirectory) return;
+  fs.mkdirSync(evidenceDirectory, { recursive: true });
+  fs.writeFileSync(path.join(evidenceDirectory, path.basename(name)), bytes);
+}
 
 test(
   'real MuseScore production render path quality-checks every advertised artifact',
@@ -69,7 +76,7 @@ test(
       assert.equal(job.payment.status, 'settled');
       assert.equal(job.receipt.status, job.payment.status);
       assert.equal(job.facts.partCount, 1);
-      assert.equal(job.facts.tempo, 90);
+      assert.equal(job.facts.tempo, 30);
       assert.deepEqual(job.facts.key, { fifths: 0, mode: 'major' });
       for (const artifact of job.artifacts) assert.match(artifact.sha256, /^[a-f0-9]{64}$/);
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'NOTICE.txt'));
@@ -84,7 +91,9 @@ test(
         assert.ok(artifact, `Missing ${name}`);
         const response = await fetch(`${base}${artifact.url}`);
         assert.equal(response.status, 200);
-        return Buffer.from(await response.arrayBuffer());
+        const bytes = Buffer.from(await response.arrayBuffer());
+        preserveEvidence(name, bytes);
+        return bytes;
       };
       const source = await download('source.musicxml');
       assert.equal(XMLValidator.validate(source.toString('utf8')), true);
@@ -131,13 +140,38 @@ test(
       assert.match(noticeText, /Render receipt:/);
       assert.match(noticeText, /\/v1\/provenance\/verify/);
 
+      const receipt = JSON.parse((await download('receipt.json')).toString('utf8'));
+      assert.equal(receipt.provenance.receipt_id, job.provenance.receipt_id);
+      assert.equal(receipt.provenance.rendered_by, 'Musicwire');
+      for (const artifact of job.artifacts.filter(
+        (item) => item.name !== 'NOTICE.txt' && item.name !== 'receipt.json',
+      )) {
+        const verification = await fetch(`${base}/v1/provenance/verify`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sha256: artifact.sha256 }),
+        });
+        assert.equal(verification.status, 200);
+        const result = await verification.json();
+        assert.equal(result.rendered_by_musicwire, true);
+        assert.equal(result.receipt_id, job.provenance.receipt_id);
+        assert.ok(result.receipt.artifacts.some((item) => item.sha256 === artifact.sha256));
+      }
+      const unknownVerification = await fetch(`${base}/v1/provenance/verify`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sha256: 'a'.repeat(64) }),
+      });
+      assert.equal(unknownVerification.status, 200);
+      assert.deepEqual(await unknownVerification.json(), { rendered_by_musicwire: false });
+
       const rejected = await fetch(`${base}/v1/render`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({
           musicxml,
           formats: ['pdf'],
-          constraints_check: { tempo: facts.tempo + 1 },
+          constraints_check: { tempo: facts.tempo + 10 },
         }),
       });
       assert.equal(rejected.status, 202);

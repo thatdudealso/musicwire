@@ -66,6 +66,10 @@ test('embeds Musicwire attribution without changing notation payloads', async ()
     const embeddedPdf = fs.readFileSync(pdf, 'latin1');
     assert.match(embeddedPdf, /\/Creator \(Musicwire\)/);
     assert.match(embeddedPdf, /\/Producer \(Musicwire\)/);
+    const startxref = Number(embeddedPdf.match(/startxref\s+(\d+)\s+%%EOF\s*$/)[1]);
+    assert.equal(embeddedPdf.slice(startxref, startxref + 4), 'xref');
+    const objectOffset = Number(embeddedPdf.slice(startxref).match(/\n(\d{10}) 00000 n /)[1]);
+    assert.match(embeddedPdf.slice(objectOffset), /^\d+ 0 obj\n/);
 
     const msczDirectory = path.join(directory, 'mscz');
     fs.mkdirSync(msczDirectory);
@@ -80,6 +84,39 @@ test('embeds Musicwire attribution without changing notation payloads', async ()
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('keeps MusicXML schema order when identification or score headers already exist', () => {
+  const merged = embedMusicXmlAttribution(
+    Buffer.from(
+      '<score-partwise version="4.0"><identification><creator type="composer">A</creator><encoding><software>MuseScore</software></encoding><source>manuscript</source></identification><part-list/></score-partwise>',
+    ),
+    receiptId,
+    verificationUrl,
+  ).toString();
+  assert.equal(merged.match(/<encoding>/g).length, 1);
+  assert.match(merged, /<software>MuseScore<\/software><software>Musicwire/);
+  assert.equal(merged.indexOf('<encoding-description>') < merged.indexOf('<source>'), true);
+
+  const inserted = embedMusicXmlAttribution(
+    Buffer.from(
+      '<score-partwise version="4.0"><identification><creator type="composer">A</creator><source>manuscript</source></identification><part-list/></score-partwise>',
+    ),
+    receiptId,
+    verificationUrl,
+  ).toString();
+  assert.equal(inserted.indexOf('<encoding>') > inserted.indexOf('</creator>'), true);
+  assert.equal(inserted.indexOf('</encoding>') < inserted.indexOf('<source>'), true);
+
+  const headed = embedMusicXmlAttribution(
+    Buffer.from(
+      '<score-partwise version="4.0"><work><work-title>Etude</work-title></work><movement-title>I</movement-title><part-list/></score-partwise>',
+    ),
+    receiptId,
+    verificationUrl,
+  ).toString();
+  assert.equal(headed.indexOf('<identification>') > headed.indexOf('</movement-title>'), true);
+  assert.equal(headed.indexOf('<identification>') < headed.indexOf('<part-list'), true);
 });
 
 function minimalPng() {
