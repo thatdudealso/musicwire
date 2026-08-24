@@ -21,7 +21,6 @@ export function artifactContentType(name) {
   if (name.endsWith('.svg')) return 'image/svg+xml';
   if (name.endsWith('.png')) return 'image/png';
   if (name.endsWith('.mp3')) return 'audio/mpeg';
-  if (name.endsWith('.wav')) return 'audio/wav';
   return 'application/octet-stream';
 }
 

@@ -265,8 +265,8 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
             <article>
               <h3>Listen</h3>
               <p>
-                Open the MP3 or WAV artifact URL in a browser or audio player. Download it before
-                the job's <code>expires_at</code> time.
+                Open the MP3 artifact URL in a browser or audio player. Download it before the job's
+                <code>expires_at</code> time.
               </p>
             </article>
             <article>
@@ -287,7 +287,8 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
               <h3>Keep proof</h3>
               <p>
                 Save <code>receipt.json</code> with the audio. It records the paid render and its
-                quality outcome. <code>NOTICE.txt</code> carries the soundfont attribution.
+                quality outcome. <code>NOTICE.txt</code> carries the soundfont attribution plus the
+                render receipt ID and the free verification URL.
               </p>
             </article>
           </div>
@@ -302,12 +303,36 @@ npx awal x402 pay https://musicwire.5432wire.com/v1/render \
       <section class="section verification-section" id="verify">
         <div class="container narrow">
           <p class="eyebrow">[ VERIFY IT CAME FROM US ]</p>
-          <h2>Render verification is arriving.</h2>
+          <h2>Every artifact is attributed and provable.</h2>
           <p>
-            musicwire’s signed provenance verification endpoint is landing alongside the attribution
-            update. Until it is live in the public API, keep the completed job response and
-            <code>receipt.json</code> with the files you share. This section will be replaced with
-            the exact verification request when the endpoint ships.
+            Every rendered artifact carries embedded musicwire attribution plus its render receipt
+            ID, without altering the audio samples or the notation:
+          </p>
+          <ul>
+            <li>MP3: encoded-by, comment, and copyright metadata</li>
+            <li>PDF: Creator and Producer metadata</li>
+            <li>MIDI: copyright and text meta events</li>
+            <li>PNG: <code>tEXt</code> metadata chunks</li>
+            <li>SVG: a metadata element</li>
+            <li>MusicXML and MSCZ: musicwire software metadata</li>
+          </ul>
+          <p>
+            Each completed render also includes <code>NOTICE.txt</code> with that receipt ID and the
+            free verification URL. Embedded tags are useful attribution but can be removed by a
+            determined party. The durable signed hash receipt is the provenance proof: calculate the
+            SHA-256 of an unmodified file and submit it to the free
+            <code>POST /v1/provenance/verify</code> endpoint. A changed file has a different hash
+            and cannot be verified as the original musicwire output.
+          </p>
+          <pre><code>shasum -a 256 output.mp3
+
+curl -s -X POST https://musicwire.5432wire.com/v1/provenance/verify \
+  -H 'content-type: application/json' \
+  -d '{"sha256":"64-character-lowercase-hex-hash"}'</code></pre>
+          <p>
+            A matching response includes <code>rendered_by_musicwire: true</code>, the receipt ID,
+            render time, signed receipt, and matching artifact record. An unknown hash returns
+            <code>{ "rendered_by_musicwire": false }</code>.
           </p>
         </div>
       </section>
@@ -390,6 +415,13 @@ npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
                 >
               </h3>
               <p>Returns status, quality result, receipt, expiry, and artifact URLs.</p>
+            </article>
+            <article>
+              <h3><code>POST /v1/provenance/verify</code></h3>
+              <p>
+                Free. Submit <code>{ "sha256": "..." }</code> to check a file hash against
+                musicwire's signed render receipts.
+              </p>
             </article>
             <article>
               <h3><code>GET /manifest</code></h3>

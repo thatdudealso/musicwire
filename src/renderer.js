@@ -3,7 +3,9 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { embedAttribution, embedMusicXmlAttribution } from './attribution.js';
 import { noticeText } from './notice.js';
+import { verificationUrl } from './provenance.js';
 import {
   checkAudioDuration,
   probeAudio,
@@ -19,7 +21,6 @@ const extensionFor = {
   svg: 'svg',
   png: 'png',
   mp3: 'mp3',
-  wav: 'wav',
 };
 
 export class Renderer {
@@ -35,6 +36,10 @@ export class Renderer {
     try {
       const input = path.join(workspace, 'source.musicxml');
       fs.writeFileSync(input, job.inputXml, { mode: 0o600 });
+      const provenance = {
+        receiptId: job.renderReceiptId,
+        verificationUrl: verificationUrl(this.config.publicBaseUrl),
+      };
       const rendered = [];
       for (const format of job.formats) {
         const stem = path.join(workspace, 'score');
@@ -75,13 +80,26 @@ export class Renderer {
           `Score does not meet requested constraints: ${mismatches.join(', ')}.`,
           { mismatches },
         );
+      for (const artifact of rendered)
+        await embedAttribution({
+          file: artifact.path,
+          format: artifact.format,
+          receiptId: provenance.receiptId,
+          verificationUrl: provenance.verificationUrl,
+          ffmpegBin: this.config.ffmpegBin,
+        });
+      const source = embedMusicXmlAttribution(
+        Buffer.from(job.inputXml),
+        provenance.receiptId,
+        provenance.verificationUrl,
+      );
       const receipt = await this.#receipt(job);
       const artifacts = await Promise.all([
-        this.artifactStore.put('source.musicxml', Buffer.from(job.inputXml)),
+        this.artifactStore.put('source.musicxml', source),
         ...rendered.map((item) => this.artifactStore.put(item.name, fs.readFileSync(item.path))),
         this.artifactStore.put(
           'NOTICE.txt',
-          Buffer.from(noticeText(this.config.soundfontLicensePath)),
+          Buffer.from(noticeText(this.config.soundfontLicensePath, provenance)),
         ),
       ]);
       return { ok: true, artifacts, receipt };
@@ -91,7 +109,7 @@ export class Renderer {
   }
 
   async #checkAudio(rendered, expectedDuration) {
-    for (const audio of rendered.filter((item) => item.format === 'mp3' || item.format === 'wav')) {
+    for (const audio of rendered.filter((item) => item.format === 'mp3')) {
       const probe = await probeAudio(this.config.ffprobeBin, audio.path);
       if (!probe.ok) return failed(probe.code, probe.message);
       const silence = await verifyNonSilent(this.config.ffmpegBin, audio.path);
@@ -144,7 +162,7 @@ export class Renderer {
     }
   }
 
-  async #runMuseScore(input, output, workspace) {
+  #runMuseScore(input, output, workspace) {
     return this.#run(['-f', '--sound-profile', 'MuseScore Basic', '-o', output, input], workspace);
   }
 

@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { createMusicwireClient, MusicwireApiError } from './client.js';
 
-const formats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'];
+const formats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3'];
 
 const composeGuideSchema = {
   style: z.string().optional(),

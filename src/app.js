@@ -17,6 +17,7 @@ import {
   paymentSignaturePresented,
 } from './payment.js';
 import { Renderer } from './renderer.js';
+import { signedRenderReceipt, verificationUrl } from './provenance.js';
 import { failureCodes } from './qc.js';
 
 export function createApp(overrides = {}) {
@@ -41,7 +42,7 @@ export function createApp(overrides = {}) {
   const inflightValidations = new Map();
   const reconciler = createSettlementReconciler({ store, payments, artifactStore, config });
   const queue = createRenderQueue(config.maxConcurrentRenders, config.maxPendingRenders, (id) =>
-    processJob(id, { store, renderer, artifactStore, payments, reconciler }),
+    processJob(id, { store, renderer, artifactStore, payments, reconciler, config }),
   );
   const readinessProbe =
     overrides.readinessProbe ??
@@ -122,6 +123,27 @@ export function createApp(overrides = {}) {
     }
   });
   app.get('/v1/compose-guide', (request, response) => response.json(composeGuide(request.query)));
+
+  app.post('/v1/provenance/verify', (request, response) => {
+    const hash =
+      typeof request.body?.sha256 === 'string' ? request.body.sha256.trim().toLowerCase() : null;
+    if (hash === null || !/^[a-f0-9]{64}$/.test(hash))
+      return response.status(400).json({
+        error: {
+          code: 'invalid_sha256',
+          message: 'sha256 must be a 64-character hexadecimal hash.',
+        },
+      });
+    const receipt = store.getRenderReceiptByArtifactHash(hash);
+    if (!receipt) return response.json({ rendered_by_musicwire: false });
+    return response.json({
+      rendered_by_musicwire: true,
+      receipt_id: receipt.receipt_id,
+      rendered_at: receipt.rendered_at,
+      artifact: receipt.artifacts.find((artifact) => artifact.sha256 === hash),
+      receipt,
+    });
+  });
 
   app.post('/reviews', (request, response) => {
     const input = reviewInput(request.body);
@@ -355,9 +377,7 @@ export function createApp(overrides = {}) {
       config.maxPlaybackTempoEvents,
     );
     const requiresDurationModel =
-      formats.some((format) => format === 'mp3' || format === 'wav') ||
-      'tempo' in constraints ||
-      'duration_seconds' in constraints;
+      formats.includes('mp3') || 'tempo' in constraints || 'duration_seconds' in constraints;
     if (requiresDurationModel && (facts.scoreDurationSeconds <= 0 || facts.durationModelError))
       return response.status(422).json({
         status: 'failed_not_charged',
@@ -417,6 +437,7 @@ export function createApp(overrides = {}) {
           jobId: 'pending',
           authorization: pendingPayment,
         }),
+        renderReceiptId: crypto.randomUUID(),
         createdAt: now.toISOString(),
         expiresAt: new Date(
           now.getTime() + config.artifactRetentionDays * 86_400_000,
@@ -445,7 +466,7 @@ export function createApp(overrides = {}) {
         .status(404)
         .json({ error: { code: 'job_not_found', message: 'No job exists with this id.' } });
     setSettlementHeader(response, payments, job.payment);
-    response.json(publicJob(job, artifactStore, payments));
+    response.json(publicJob(job, artifactStore, payments, config));
   });
 
   app.get('/v1/artifacts/:jobId/:name', async (request, response, next) => {
@@ -572,8 +593,17 @@ async function renderAndSettleJob(id, services) {
     return;
   }
   const intent = services.payments.settlementIntent(job.payment);
+  const renderedAt = new Date().toISOString();
+  const provenance = signedRenderReceipt({
+    id: job.renderReceiptId,
+    renderedAt,
+    artifacts: result.artifacts.filter((artifact) => artifact.name !== 'NOTICE.txt'),
+    signingSecret: services.config.artifactSigningSecret,
+    publicBaseUrl: services.config.publicBaseUrl,
+  });
   const receipt = {
     ...result.receipt,
+    provenance,
     payment: services.payments.receipt(intent),
   };
   const artifacts = [
@@ -583,6 +613,7 @@ async function renderAndSettleJob(id, services) {
       Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`),
     ),
   ];
+  services.store.saveRenderReceipt(provenance);
   services.store.update(id, {
     state: 'completed',
     qc_json: JSON.stringify({
@@ -797,7 +828,7 @@ function publicReview(review) {
   };
 }
 
-function publicJob(job, artifactStore, payments) {
+function publicJob(job, artifactStore, payments, config) {
   const expires = new Date(job.expires_at).getTime();
   return {
     job_id: job.id,
@@ -808,6 +839,10 @@ function publicJob(job, artifactStore, payments) {
     error: job.error,
     payment: payments.publicPayment(job.payment),
     receipt: payments.receipt(job.payment),
+    provenance: {
+      receipt_id: job.renderReceiptId,
+      verification_url: verificationUrl(config.publicBaseUrl),
+    },
     expires_at: job.expires_at,
     artifacts: job.artifacts.map((artifact) => ({
       name: artifact.name,
@@ -863,6 +898,10 @@ function renderResponse(record, config) {
     price_usd: record.price_usd,
     payment: { status: record.payment.status, capture_policy: 'capture_only_after_qc_pass' },
     poll_url: `/v1/jobs/${record.id}`,
+    provenance: {
+      receipt_id: record.renderReceiptId,
+      verification_url: verificationUrl(config.publicBaseUrl),
+    },
   };
 }
 
@@ -1024,6 +1063,11 @@ function manifest(config, store) {
         },
       },
       jobs: { method: 'GET', path: '/v1/jobs/{id}', price_usd: '0.00' },
+      provenance_verify: {
+        method: 'POST',
+        path: '/v1/provenance/verify',
+        price_usd: '0.00',
+      },
       reviews: { methods: ['GET', 'POST'], path: '/reviews', price_usd: '0.00' },
     },
     review_stats: {

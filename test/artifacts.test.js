@@ -55,8 +55,8 @@ test('the API delivers a signed S3 artifact by redirect, including one over 10 M
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-api-'));
   const s3 = new MemoryS3();
   // Larger than the API Gateway 10 MB payload quota the redirect exists to avoid.
-  const bytes = Buffer.alloc(11 * 1024 * 1024, 'wav-audio-payload');
-  const artifact = storedArtifact('score.wav', bytes);
+  const bytes = Buffer.alloc(11 * 1024 * 1024, 'mp3-audio-payload');
+  const artifact = storedArtifact('score.mp3', bytes);
   s3.seed('musicwire-test-artifacts', artifact.storageKey, bytes);
   const objectStore = await startObjectServer(s3, 'musicwire-test-artifacts');
   const server = createApp({
@@ -77,24 +77,24 @@ test('the API delivers a signed S3 artifact by redirect, including one over 10 M
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     const job = await renderAndPoll(base, 'completed');
-    const signedUrl = `${base}${job.artifacts.find((item) => item.name === 'score.wav').url}`;
+    const signedUrl = `${base}${job.artifacts.find((item) => item.name === 'score.mp3').url}`;
 
     const redirect = await fetch(signedUrl, { redirect: 'manual' });
     assert.equal(redirect.status, 302);
     const location = redirect.headers.get('location');
     assert.match(location, /X-Amz-Expires=900/);
     const presigned = new URL(location);
-    assert.equal(presigned.searchParams.get('response-content-type'), 'audio/wav');
+    assert.equal(presigned.searchParams.get('response-content-type'), 'audio/mpeg');
     assert.equal(
       presigned.searchParams.get('response-content-disposition'),
-      'attachment; filename="score.wav"',
+      'attachment; filename="score.mp3"',
     );
     assert.equal(Number(redirect.headers.get('content-length') ?? 0) < bytes.length, true);
 
     const delivered = await fetch(signedUrl);
     assert.equal(delivered.status, 200);
-    assert.equal(delivered.headers.get('content-type'), 'audio/wav');
-    assert.equal(delivered.headers.get('content-disposition'), 'attachment; filename="score.wav"');
+    assert.equal(delivered.headers.get('content-type'), 'audio/mpeg');
+    assert.equal(delivered.headers.get('content-disposition'), 'attachment; filename="score.mp3"');
     assert.deepEqual(Buffer.from(await delivered.arrayBuffer()), bytes);
     assert.deepEqual(s3.headedKeys, [artifact.storageKey, artifact.storageKey]);
     assert.deepEqual(objectStore.servedKeys, [artifact.storageKey]);

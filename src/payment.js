@@ -57,7 +57,7 @@ const bazaarExtensions = {
         formats: {
           type: 'array',
           description: 'One or more artifact formats to render.',
-          items: { enum: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3', 'wav'] },
+          items: { enum: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3'] },
           minItems: 1,
           uniqueItems: true,
         },
