@@ -1,0 +1,35 @@
+name: Publish MCP registry entry
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the npm package this entry points at is published
+        run: |
+          published="$(npm view "musicwire-mcp@$(node -p "require('./mcp/server.json').version")" version)"
+          if [ -z "$published" ]; then
+            echo "musicwire-mcp is not published on npm at the version in mcp/server.json; publish npm first." >&2
+            exit 1
+          fi
+          echo "npm has musicwire-mcp@$published"
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to the MCP registry with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Validate and publish mcp/server.json
+        run: |
+          ./mcp-publisher validate mcp/server.json
+          ./mcp-publisher publish mcp/server.json
