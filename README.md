@@ -105,7 +105,7 @@ Coinbase `@x402/fetch` with a CDP-backed signer is the reference buyer and the c
 import { CdpX402Client } from '@coinbase/cdp-sdk/x402';
 import { wrapFetchWithPayment } from '@x402/fetch';
 
-// environment: 'production' -> Base mainnet; 'development' (or omit for a local server) -> Base Sepolia.
+// environment: 'production' (the default when omitted) -> Base mainnet; set 'development' explicitly for Base Sepolia (local or stub servers).
 const client = new CdpX402Client({
   environment: 'production',
   walletConfig: { type: 'eoa', accountName: 'my-buyer' },
