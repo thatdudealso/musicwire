@@ -185,7 +185,7 @@ A match returns `rendered_by_musicwire: true` with the receipt id, render time, 
 
 ## Run locally
 
-Requires Node 22.5+, MuseScore Studio 4, and `ffmpeg`/`ffprobe` for audio QC. On Apple silicon, point `MSCORE_BIN` to the app binary and leave `MSCORE_ARCH=arm64`.
+Requires Node 22.5+, MuseScore Studio 4, `ffmpeg`/`ffprobe` for audio QC and MP3 attribution, and `zip`/`unzip` for MSCZ attribution. On Apple silicon, point `MSCORE_BIN` to the app binary and leave `MSCORE_ARCH=arm64`.
 
 ```sh
 npm install --ignore-scripts
