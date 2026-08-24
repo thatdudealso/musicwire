@@ -309,9 +309,23 @@ export class CdpX402Gateway {
     let verification;
     try {
       verification = await server.verifyPayment(paymentPayload, matchedRequirements);
-    } catch {
-      throw new PaymentVerificationError(
-        'The Base facilitator could not verify this payment. No payment was settled.',
+    } catch (error) {
+      verification = determinateVerification(error);
+      if (!verification) {
+        // Genuinely indeterminate: a network fault, timeout, 5xx, credential, or
+        // SDK error. We do not know the facilitator refused, so we must not say
+        // so. Preserve the real cause for diagnosis (never secrets) and surface
+        // an honest error that maps to 503, not a facilitator-refused claim.
+        console.error(
+          `x402 verify could not be completed on /v1/${endpoint}: ${describeVerificationFailure(error)}`,
+        );
+        throw new PaymentVerificationError(
+          'Payment verification could not be completed. No payment was settled.',
+          { cause: error },
+        );
+      }
+      console.warn(
+        `x402 verify rejected on /v1/${endpoint}: ${verification.invalidReason ?? 'unknown_reason'}`,
       );
     }
     if (!verification.isValid) {
@@ -557,6 +571,34 @@ function padTopic(address) {
 
 function isBytes32(value) {
   return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function determinateVerification(error) {
+  // @x402/core's HTTPFacilitatorClient throws a VerifyError (error.name ===
+  // "VerifyError") when the facilitator answered with a non-2xx status whose
+  // body still carries a determinate { isValid:false } verdict - which is how
+  // the CDP facilitator reports insufficient funds, an expired or malformed
+  // authorization, or an already-used nonce. That is a real verification
+  // result, not an outage, so recover it into the shape a resolved verify would
+  // return and let the isValid === false path re-challenge with the true reason.
+  if (error?.name !== 'VerifyError') return null;
+  return {
+    isValid: false,
+    invalidReason: error.invalidReason,
+    invalidMessage: error.invalidMessage,
+    payer: error.payer,
+  };
+}
+
+function describeVerificationFailure(error) {
+  // Diagnostic context for the server log. x402-core error messages are safe to
+  // log - HTTP status excerpts and timeout notices, never credentials, which
+  // live in request headers the SDK does not echo into error messages.
+  const parts = [error?.name ?? 'Error'];
+  if (error?.statusCode !== undefined) parts.push(`status=${error.statusCode}`);
+  if (error?.message) parts.push(error.message);
+  if (error?.cause?.message) parts.push(`cause=${error.cause.message}`);
+  return parts.join(' ');
 }
 
 function paymentAuthorizationFingerprint(paymentPayload, requirements) {

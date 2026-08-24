@@ -16,6 +16,7 @@ import {
   PaymentConfigurationError,
   PaymentService,
   PaymentSettlementError,
+  PaymentVerificationError,
   verifyRpcNetwork,
 } from '../src/payment.js';
 import { JobStore } from '../src/store.js';
@@ -169,6 +170,133 @@ test('CDP gateway decodes the standard payment-signature header before verificat
     outputSchema: {},
   });
   assert.equal(malformed.authorized, false);
+});
+
+function gatewayWithVerify(verifyPayment) {
+  const requirements = {
+    scheme: 'exact',
+    network: 'eip155:84532',
+    amount: '250000',
+    asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    payTo: '0x1111111111111111111111111111111111111111',
+    maxTimeoutSeconds: 300,
+    extra: { name: 'USDC', version: '2' },
+  };
+  const gateway = new CdpX402Gateway({
+    config: { x402Network: 'eip155:84532', x402PaymentTimeoutSeconds: 300, publicBaseUrl: '' },
+    store: {},
+    wallet: { address: async () => requirements.payTo },
+  });
+  gateway.serverPromise = Promise.resolve({
+    buildPaymentRequirements: async () => [requirements],
+    createPaymentRequiredResponse: async (_requirements, resource) => ({
+      x402Version: 2,
+      resource,
+      accepts: [requirements],
+    }),
+    findMatchingRequirements: (available) => available[0],
+    verifyPayment,
+  });
+  return gateway;
+}
+
+function authorizeWithSignedPayment(gateway) {
+  const payload = {
+    x402Version: 2,
+    accepted: {
+      scheme: 'exact',
+      network: 'eip155:84532',
+      amount: '250000',
+      asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+      payTo: '0x1111111111111111111111111111111111111111',
+      maxTimeoutSeconds: 300,
+      extra: { name: 'USDC', version: '2' },
+    },
+    payload: {
+      authorization: {
+        from: '0x2222222222222222222222222222222222222222',
+        nonce: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+      signature: 'test',
+    },
+  };
+  return gateway.authorize({
+    request: {
+      protocol: 'https',
+      originalUrl: '/v1/render',
+      get: (name) =>
+        name.toLowerCase() === 'payment-signature'
+          ? encodePaymentSignatureHeader(payload)
+          : 'musicwire.test',
+    },
+    endpoint: 'render',
+    priceUsd: '0.25',
+    outputSchema: {},
+  });
+}
+
+// A determinate rejection reaches us as a thrown VerifyError because the CDP
+// facilitator answers /verify with a non-2xx status whose body still carries an
+// { isValid:false } verdict, and @x402/core converts that into a throw.
+function verifyError({ invalidReason, invalidMessage, payer, statusCode = 400 }) {
+  const error = new Error(invalidMessage ? `${invalidReason}: ${invalidMessage}` : invalidReason);
+  error.name = 'VerifyError';
+  error.statusCode = statusCode;
+  error.invalidReason = invalidReason;
+  error.invalidMessage = invalidMessage;
+  error.payer = payer;
+  return error;
+}
+
+test('a thrown determinate VerifyError re-challenges with the real reason instead of a swallowed error', async () => {
+  const gateway = gatewayWithVerify(async () => {
+    throw verifyError({
+      invalidReason: 'insufficient_funds',
+      invalidMessage: 'payer balance is below the required amount',
+      payer: '0x2222222222222222222222222222222222222222',
+    });
+  });
+
+  const result = await authorizeWithSignedPayment(gateway);
+
+  assert.equal(result.authorized, false);
+  assert.ok(result.challenge.headers['payment-required']);
+  // The buyer must see the true reason, not a blanket facilitator-refused claim.
+  assert.equal(result.challenge.body.error, 'payer balance is below the required amount');
+  assert.doesNotMatch(result.challenge.body.error, /could not verify/i);
+});
+
+test('a thrown consumed-authorization VerifyError still exposes the replay payer', async () => {
+  const gateway = gatewayWithVerify(async () => {
+    throw verifyError({
+      invalidReason: 'invalid_exact_evm_nonce_already_used',
+      payer: '0x2222222222222222222222222222222222222222',
+    });
+  });
+
+  const result = await authorizeWithSignedPayment(gateway);
+
+  assert.equal(result.authorized, false);
+  assert.equal(result.replayPayment.payer, '0x2222222222222222222222222222222222222222');
+  assert.equal(result.challenge.body.error, 'invalid_exact_evm_nonce_already_used');
+});
+
+test('an indeterminate verify failure surfaces an honest error that never blames the facilitator', async () => {
+  const cause = new Error('fetch failed: socket hang up');
+  const gateway = gatewayWithVerify(async () => {
+    throw cause;
+  });
+
+  await assert.rejects(authorizeWithSignedPayment(gateway), (error) => {
+    assert.ok(error instanceof PaymentVerificationError);
+    // Honest: we could not complete verification; we do NOT assert a refusal.
+    assert.match(error.message, /could not be completed/i);
+    assert.doesNotMatch(error.message, /facilitator/i);
+    assert.doesNotMatch(error.message, /could not verify this payment/i);
+    // The real cause is preserved for diagnosis rather than discarded.
+    assert.equal(error.cause, cause);
+    return true;
+  });
 });
 
 class RecordingGateway {
