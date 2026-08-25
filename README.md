@@ -60,28 +60,78 @@ curl -sS -D /tmp/musicwire-402.headers -o /tmp/musicwire-402.json \
   --data-binary @request.json
 ```
 
-For Coinbase Agentic Wallet CLI, fund its Base Sepolia wallet with test USDC, authenticate Awal, inspect the quote, then send the identical JSON request. The `max-amount` guard is in USDC atomic units.
+### Paying successfully
 
-```sh
-REQUEST_JSON="$(tr -d '\n' < request.json)"
-npx awal x402 details "$MUSICWIRE_URL/v1/render" -X POST
-npx awal x402 pay "$MUSICWIRE_URL/v1/render" \
-  -X POST \
-  -d "$REQUEST_JSON" \
-  -h '{"content-type":"application/json","Idempotency-Key":"agent-render-001"}' \
-  --max-amount 250000 \
-  --json
+To pay, a buyer must (1) hold at least the quoted price in the **advertised network's** USDC in a wallet it controls, and (2) present an EIP-3009 payment authorization for that quote in a `Payment-Signature` header. Musicwire verifies the authorization with the CDP facilitator before doing any work, and settles only after server-side QC passes. Both externally-owned (private-key) wallets and Coinbase managed smart-contract wallets settle through this flow.
+
+Fund the buyer on whichever network the quote names. Production advertises Base mainnet (`eip155:8453`) and native USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`; local and stub runs advertise Base Sepolia test USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`. The receiving wallet and chain are fixed by the deployment; do not send funds to a local or test deployment.
+
+Read the response status to know what to do next:
+
+- `202` (render) or `200` (validate): payment verified; poll the `job_id` (free) until `completed` or `failed_not_charged`.
+- `402` with a JSON `error` field: verification returned a determinate reason. The `error` states exactly what to fix (for example `insufficient_funds`, `invalid_payload`, an expired authorization window, or `invalid_exact_evm_nonce_already_used` for a replayed nonce). Correct it and retry with a fresh authorization.
+- `503 payment_verification_unavailable`: verification could not be completed (network or facilitator problem). This is **not** a refusal and **no** payment was attempted; retry later.
+
+#### For humans (Coinbase Agentic Wallet, interactive)
+
+1. Install and sign in with an email one-time code:
+   ```sh
+   npx awal auth login you@example.com
+   npx awal auth verify <flow-id> <code-from-email>
+   ```
+2. Fund the awal wallet with at least the quoted price in USDC on the advertised network, and confirm the balance:
+   ```sh
+   npx awal balance --json
+   ```
+3. Inspect the quote, then pay the identical request body. `--max-amount` is a guard in USDC atomic units (`250000` = $0.25):
+   ```sh
+   export MUSICWIRE_URL='https://musicwire.example'
+   REQUEST_JSON="$(tr -d '\n' < request.json)"
+   npx awal x402 details "$MUSICWIRE_URL/v1/render" -X POST
+   npx awal x402 pay "$MUSICWIRE_URL/v1/render" \
+     -X POST \
+     -d "$REQUEST_JSON" \
+     -h '{"content-type":"application/json","Idempotency-Key":"agent-render-001"}' \
+     --max-amount 250000 \
+     --json
+   ```
+4. Poll the returned `job_id` until `status` is `completed` (artifacts and a settled `receipt.tx_hash`) or `failed_not_charged`.
+
+#### For agents (programmatic, non-interactive)
+
+Coinbase `@x402/fetch` with a CDP-backed signer is the reference buyer and the client the automated E2E proof uses. Provision the wallet, fund the returned address with at least the quoted price in the advertised network's USDC, then let `@x402/fetch` handle the 402 retry:
+
+```js
+import { CdpX402Client } from '@coinbase/cdp-sdk/x402';
+import { wrapFetchWithPayment } from '@x402/fetch';
+
+// environment: 'production' (the default when omitted) -> Base mainnet; set 'development' explicitly for Base Sepolia (local or stub servers).
+const client = new CdpX402Client({
+  environment: 'production',
+  walletConfig: { type: 'eoa', accountName: 'my-buyer' },
+});
+const { evmAddress } = await client.getAddresses(); // fund this address with USDC first
+const pay = wrapFetchWithPayment(fetch, client);
+
+const res = await pay(`${process.env.MUSICWIRE_URL}/v1/render`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'Idempotency-Key': 'agent-render-001' },
+  body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+});
+// 202 -> poll (await res.json()).job_id ; 402 -> read (await res.json()).error for the exact reason.
 ```
 
-`@x402/fetch` is the programmatic buyer used by the Base Sepolia E2E test. Set `MUSICWIRE_X402_E2E=1`, fund the named `musicwire-x402-e2e-buyer` account with at least 0.25 test USDC, then run `npm run test:x402-e2e`.
+The automated settlement proof runs this client on Base Sepolia: set `MUSICWIRE_X402_E2E=1`, fund the named `musicwire-x402-e2e-buyer` account with at least 0.25 test USDC, then run `npm run test:x402-e2e`.
 
-For the independent Rust client, use a throwaway Base Sepolia key only:
+The independent Rust `x402curl` client works the same way with a funded key on the advertised network:
 
 ```sh
-X402_PRIVATE_KEY="$TESTNET_PRIVATE_KEY" x402curl --x402-rpc-url https://sepolia.base.org -X POST -H 'content-type: application/json' --data-binary @request.json "$MUSICWIRE_URL/v1/render"
+X402_PRIVATE_KEY="$FUNDED_KEY" x402curl --x402-rpc-url https://mainnet.base.org \
+  -X POST -H 'content-type: application/json' -H 'Idempotency-Key: agent-render-001' \
+  --data-binary @request.json "$MUSICWIRE_URL/v1/render"
 ```
 
-Compatibility note: `x402curl 0.2.0` was installed and tested. It receives the v2 quote and signs the retry, but that v2 signed retry does not complete with the CDP facilitator, so no job or settlement is reached. The Coinbase `@x402/fetch` E2E is the required payment proof for this phase.
+Compatibility note: a live payment has settled against the production deployment on Base mainnet (transaction `0x1df77f5748fc3b0ebed13bed14069dfc17ed349a670cf00216766597fffbbf84`), confirming third-party buyers - including Coinbase managed smart-contract wallets - can pay end to end. An earlier report that signed retries "never complete" was an artifact of a server bug that replaced every verification exception with a fixed "facilitator could not verify" message regardless of the real cause; that bug is fixed, so a determinate rejection now returns the facilitator's actual reason in the `402` re-challenge (for example fund the wallet, widen the validity window, or use a fresh nonce, then retry). `x402curl 0.2.0` and Coinbase `@x402/fetch` both produce structurally valid v2 payloads that reach verification, and the `@x402/fetch` Base Sepolia E2E remains the automated regression proof.
 
 An `Idempotency-Key` header replays the original paid outcome and cannot create a second charge. A render key replays for 24 hours only when the same verified payer submits the same render request context; a validation key replays indefinitely only when the same verified payer submits the same MusicXML request context. Replay hashing sorts object keys and the unordered render `formats` selection, since format order cannot alter requested work; MusicXML and any order-sensitive input remain unchanged. A key from another payer never resolves a retained result. Musicwire verifies an authorization before work begins, then calls the facilitator settlement endpoint only after server-side QC passes. A QC failure returns `failed_not_charged` and a receipt with `tx_hash: null`. Before every settle attempt Musicwire durably records the payment as `settlement_pending` alongside the QC-passed artifacts, so a crash mid-settlement resumes as reconciliation on restart instead of a false `failed_not_charged`. If the facilitator settlement outcome is unknown after QC passes, the result is delivered with `payment.status: "settlement_pending"` and `tx_hash: null`, and Musicwire retries the settlement check in the background until it is confirmed or definitively failed; the EIP-3009 authorization nonce makes a reconciliation retry unable to charge twice. When a reconciliation retry is refused by the facilitator, Musicwire checks ground truth on the configured network (`X402_RPC_URL`, default `https://sepolia.base.org`, and `https://mainnet.base.org` in production): a consumed authorization resolves to `settled` with the located transaction hash, an authorization provably unused past its expiry resolves to `failed_not_charged`, and anything else stays `settlement_pending`. A definitive facilitator refusal on `POST /v1/validate` returns `502 payment_settlement_failed` with no charge. A request to a priced route without a `Payment-Signature` receives the `402` challenge before payload validation, even when its body is empty, missing, or malformed, so discovery probes can read the quote; payload validation and its not-charged failure codes apply only once a payment is presented, while oversized and compressed bodies are still rejected at the transport layer. A paid `POST /v1/render` with an invalid score returns a coarse 422 without charging and without line-level diagnostics; those are the paid `POST /v1/validate` product.
 
