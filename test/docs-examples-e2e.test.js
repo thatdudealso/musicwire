@@ -35,9 +35,8 @@ test(
     const base = `http://127.0.0.1:${server.address().port}`;
     try {
       const jobs = [];
-      for (const section of publishedMusicXmlExamples()) {
-        const formats = formatsFromSection(section);
-        jobs.push(await renderAndAssertCompleted(base, musicxmlFromSection(section), formats));
+      for (const example of publishedRenderExamples()) {
+        jobs.push(await renderAndAssertCompleted(base, example.musicxml, example.formats));
       }
       const shortStringJob = jobs.find((job) =>
         job.facts.instruments.some((instrument) => /violin|violoncello|cello/i.test(instrument)),
@@ -55,27 +54,32 @@ test(
   },
 );
 
-function publishedMusicXmlExamples() {
+function publishedRenderExamples() {
   const docs = fs.readFileSync(new URL('../static/docs.html', import.meta.url), 'utf8');
   const sections = [...docs.matchAll(/<section\b[^>]*>[\s\S]*?<\/section>/gi)]
     .map((match) => match[0])
     .filter((section) => /&lt;score-partwise\b/i.test(section));
   assert.ok(sections.length > 0, 'Published documentation must contain MusicXML examples.');
-  return sections;
-}
-
-function musicxmlFromSection(section) {
-  const match = [...section.matchAll(/<pre><code>([\s\S]*?)<\/code><\/pre>/g)].find(([, code]) =>
-    /&lt;score-partwise\b/i.test(code),
-  );
-  assert.ok(match, 'Published example must contain MusicXML.');
-  return match[1].replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
-}
-
-function formatsFromSection(section) {
-  const match = section.match(/formats:(\[[^\]]+\])/);
-  assert.ok(match, 'Published example must contain request formats.');
-  return JSON.parse(match[1]);
+  return sections.flatMap((section) => {
+    const codeBlocks = [...section.matchAll(/<pre><code>([\s\S]*?)<\/code><\/pre>/g)].map(
+      (match) => match[1],
+    );
+    return codeBlocks.flatMap((code, index) => {
+      if (!/&lt;score-partwise\b/i.test(code)) return [];
+      const followingBlocks = codeBlocks.slice(index + 1);
+      const nextMusicXml = followingBlocks.findIndex((block) => /&lt;score-partwise\b/i.test(block));
+      const requestBlocks = followingBlocks.slice(0, nextMusicXml === -1 ? undefined : nextMusicXml);
+      const request = requestBlocks.find((block) => /formats:\s*\[[^\]]+\]/.test(block));
+      assert.ok(request, 'Each published MusicXML example must have its own documented render request.');
+      const formats = request.match(/formats:\s*(\[[^\]]+\])/)[1];
+      return [
+        {
+          musicxml: code.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&'),
+          formats: JSON.parse(formats),
+        },
+      ];
+    });
+  });
 }
 
 async function renderAndAssertCompleted(base, musicxml, formats) {
