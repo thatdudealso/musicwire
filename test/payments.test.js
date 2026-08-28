@@ -417,14 +417,20 @@ class RecordingGateway {
   }
 }
 
-test('x402 challenge publishes exact Base Sepolia requirements and failed QC settles nothing', async () => {
+test('x402 challenge publishes exact Base Sepolia requirements and a duration QC failure settles nothing', async () => {
   const events = [];
   const { base, close } = await startServer({
     events,
     renderer: {
       render: async () => {
         events.push('render');
-        return { ok: false, error: { code: 'audio_silent', message: 'Audio QC found silence.' } };
+        return {
+          ok: false,
+          error: {
+            code: 'audio_duration_mismatch',
+            message: 'Audio duration exceeded the bounded release-tail allowance.',
+          },
+        };
       },
     },
   });
@@ -452,6 +458,7 @@ test('x402 challenge publishes exact Base Sepolia requirements and failed QC set
     assert.equal(accepted.status, 202);
     const job = await waitForJob(base, (await accepted.json()).job_id);
     assert.equal(job.status, 'failed_not_charged');
+    assert.equal(job.error.code, 'audio_duration_mismatch');
     assert.equal(job.payment.status, 'failed_not_charged');
     assert.equal(job.receipt.tx_hash, null);
     assert.deepEqual(events, ['verify', 'render', 'cancel']);

@@ -7,6 +7,7 @@ import { embedAttribution, embedMusicXmlAttribution } from './attribution.js';
 import { noticeText } from './notice.js';
 import { verificationUrl } from './provenance.js';
 import {
+  audioTailAllowanceForInstruments,
   checkAudioDuration,
   probeAudio,
   verifyNonSilent,
@@ -71,7 +72,11 @@ export class Renderer {
         for (const file of files)
           rendered.push({ name: file, format, path: path.join(workspace, file) });
       }
-      const audioFailure = await this.#checkAudio(rendered, job.facts.scoreDurationSeconds);
+      const audioFailure = await this.#checkAudio(
+        rendered,
+        job.facts.scoreDurationSeconds,
+        job.facts.instruments,
+      );
       if (audioFailure) return audioFailure;
       const mismatches = compareConstraints(job.facts, job.constraints);
       if (mismatches.length)
@@ -108,7 +113,7 @@ export class Renderer {
     }
   }
 
-  async #checkAudio(rendered, expectedDuration) {
+  async #checkAudio(rendered, expectedDuration, instruments) {
     for (const audio of rendered.filter((item) => item.format === 'mp3')) {
       const probe = await probeAudio(this.config.ffprobeBin, audio.path);
       if (!probe.ok) return failed(probe.code, probe.message);
@@ -117,7 +122,11 @@ export class Renderer {
       const duration = checkAudioDuration(
         expectedDuration,
         probe.duration,
-        this.config.audioTailAllowanceSeconds,
+        audioTailAllowanceForInstruments(
+          instruments,
+          this.config.audioTailAllowanceSeconds,
+          this.config.sustainedAudioTailAllowanceSeconds,
+        ),
       );
       if (!duration.ok) return failed(duration.code, duration.message, duration.details);
     }

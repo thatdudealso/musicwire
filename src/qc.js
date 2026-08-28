@@ -20,20 +20,39 @@ export const failureCodes = {
   interrupted: 'render_interrupted',
 };
 
+const sustainedInstrumentPattern =
+  /\b(?:violin|viola|violoncello|cello|contrabass|double\s+bass|acoustic\s+bass|flute|oboe|clarinet|bassoon|saxophone|trumpet|trombone|tuba|horn|organ|voice|vocal|choir|synth\s+pad)\b/i;
+
+export function audioTailAllowanceForInstruments(
+  instruments,
+  baseAllowanceSeconds = 0,
+  sustainedAllowanceSeconds = baseAllowanceSeconds,
+) {
+  const base = nonNegativeFinite(baseAllowanceSeconds);
+  const sustained = nonNegativeFinite(sustainedAllowanceSeconds);
+  const names = Array.isArray(instruments) ? instruments : [];
+  return names.some(
+    (instrument) => typeof instrument === 'string' && sustainedInstrumentPattern.test(instrument),
+  )
+    ? Math.max(base, sustained)
+    : base;
+}
+
 export function checkAudioDuration(expectedSeconds, actualSeconds, tailAllowanceSeconds = 0) {
   if (!(expectedSeconds > 0)) return { ok: true };
   const tolerance = expectedSeconds * 0.1;
   const shortfall = expectedSeconds - actualSeconds;
-  const overrun = actualSeconds - expectedSeconds - Math.max(0, tailAllowanceSeconds);
+  const tailAllowance = nonNegativeFinite(tailAllowanceSeconds);
+  const overrun = actualSeconds - expectedSeconds - tailAllowance;
   if (shortfall <= tolerance && overrun <= tolerance) return { ok: true };
   return {
     ok: false,
     code: failureCodes.duration,
-    message: `Audio duration ${actualSeconds.toFixed(2)}s differs from score duration ${expectedSeconds.toFixed(2)}s by more than 10% beyond the ${Math.max(0, tailAllowanceSeconds)}s release-tail allowance.`,
+    message: `Audio duration ${actualSeconds.toFixed(2)}s differs from score duration ${expectedSeconds.toFixed(2)}s by more than 10% beyond the ${tailAllowance}s release-tail allowance.`,
     details: {
       expected_seconds: expectedSeconds,
       actual_seconds: actualSeconds,
-      tail_allowance_seconds: Math.max(0, tailAllowanceSeconds),
+      tail_allowance_seconds: tailAllowance,
     },
   };
 }
@@ -164,4 +183,8 @@ function command(binary, args, timeoutMs) {
       resolve({ code, stdout, stderr });
     });
   });
+}
+
+function nonNegativeFinite(value) {
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
