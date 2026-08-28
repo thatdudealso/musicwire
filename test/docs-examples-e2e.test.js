@@ -46,7 +46,9 @@ test(
 
       const longerStringJob = await renderAndAssertCompleted(base, longerStringMusicXml, ['mp3']);
       assert.deepEqual(longerStringJob.facts.instruments, ['Violin', 'Violoncello']);
-      assert.ok(longerStringJob.facts.scoreDurationSeconds > shortStringJob.facts.scoreDurationSeconds);
+      assert.ok(
+        longerStringJob.facts.scoreDurationSeconds > shortStringJob.facts.scoreDurationSeconds,
+      );
     } finally {
       await new Promise((resolve) => server.close(resolve));
       fs.rmSync(dataDirectory, { recursive: true, force: true });
@@ -67,10 +69,18 @@ function publishedRenderExamples() {
     return codeBlocks.flatMap((code, index) => {
       if (!/&lt;score-partwise\b/i.test(code)) return [];
       const followingBlocks = codeBlocks.slice(index + 1);
-      const nextMusicXml = followingBlocks.findIndex((block) => /&lt;score-partwise\b/i.test(block));
-      const requestBlocks = followingBlocks.slice(0, nextMusicXml === -1 ? undefined : nextMusicXml);
+      const nextMusicXml = followingBlocks.findIndex((block) =>
+        /&lt;score-partwise\b/i.test(block),
+      );
+      const requestBlocks = followingBlocks.slice(
+        0,
+        nextMusicXml === -1 ? undefined : nextMusicXml,
+      );
       const request = requestBlocks.find((block) => /formats:\s*\[[^\]]+\]/.test(block));
-      assert.ok(request, 'Each published MusicXML example must have its own documented render request.');
+      assert.ok(
+        request,
+        'Each published MusicXML example must have its own documented render request.',
+      );
       const formats = request.match(/formats:\s*(\[[^\]]+\])/)[1];
       return [
         {
