@@ -18,15 +18,11 @@ const shouldRun =
 const examples = [
   {
     section: 'single-instrument',
-    formats: ['mp3', 'midi'],
     instruments: ['Piano'],
-    requestSnippet: 'formats:["mp3","midi"]',
   },
   {
     section: 'ensemble',
-    formats: ['mp3', 'midi', 'pdf'],
     instruments: ['Violin', 'Violoncello'],
-    requestSnippet: 'formats:["mp3","midi","pdf"]',
   },
 ];
 
@@ -51,13 +47,13 @@ test(
     try {
       for (const example of examples) {
         const section = docsSection(example.section);
-        assert.ok(section.includes(example.requestSnippet));
+        const formats = formatsFromSection(section);
         const submitted = await fetch(`${base}/v1/render`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
           body: JSON.stringify({
             musicxml: musicxmlFromSection(section),
-            formats: example.formats,
+            formats,
           }),
         });
         assert.equal(submitted.status, 202);
@@ -67,7 +63,7 @@ test(
         assert.equal(job.qc.status, 'passed');
         assert.equal(job.payment.status, 'settled');
         assert.deepEqual(job.facts.instruments, example.instruments);
-        for (const format of example.formats) {
+        for (const format of formats) {
           const extension = format === 'midi' ? 'mid' : format;
           assert.ok(job.artifacts.some((artifact) => artifact.name === `score.${extension}`));
         }
@@ -92,6 +88,12 @@ function musicxmlFromSection(section) {
   const match = section.match(/<pre><code>([\s\S]*?)<\/code><\/pre>/);
   assert.ok(match, 'Published example must contain MusicXML.');
   return match[1].replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+}
+
+function formatsFromSection(section) {
+  const match = section.match(/formats:(\[[^\]]+\])/);
+  assert.ok(match, 'Published example must contain request formats.');
+  return JSON.parse(match[1]);
 }
 
 async function waitForJob(base, jobId) {
