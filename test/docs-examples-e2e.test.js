@@ -15,17 +15,6 @@ const hasCommand = (command) => spawnSync(command, ['-version'], { stdio: 'ignor
 const shouldRun =
   process.env.MUSICWIRE_E2E === '1' && mscoreBin && hasCommand('ffprobe') && hasCommand('ffmpeg');
 
-const examples = [
-  {
-    section: 'single-instrument',
-    instruments: ['Piano'],
-  },
-  {
-    section: 'ensemble',
-    instruments: ['Violin', 'Violoncello'],
-  },
-];
-
 test(
   'every published MusicXML example completes through the real render path',
   {
@@ -45,29 +34,20 @@ test(
     await new Promise((resolve) => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
     try {
-      for (const example of examples) {
-        const section = docsSection(example.section);
+      const jobs = [];
+      for (const section of publishedMusicXmlExamples()) {
         const formats = formatsFromSection(section);
-        const submitted = await fetch(`${base}/v1/render`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-          body: JSON.stringify({
-            musicxml: musicxmlFromSection(section),
-            formats,
-          }),
-        });
-        assert.equal(submitted.status, 202);
-        const { job_id: jobId } = await submitted.json();
-        const job = await waitForJob(base, jobId);
-        assert.equal(job.status, 'completed', JSON.stringify(job.error));
-        assert.equal(job.qc.status, 'passed');
-        assert.equal(job.payment.status, 'settled');
-        assert.deepEqual(job.facts.instruments, example.instruments);
-        for (const format of formats) {
-          const extension = format === 'midi' ? 'mid' : format;
-          assert.ok(job.artifacts.some((artifact) => artifact.name === `score.${extension}`));
-        }
+        jobs.push(await renderAndAssertCompleted(base, musicxmlFromSection(section), formats));
       }
+      const shortStringJob = jobs.find((job) =>
+        job.facts.instruments.some((instrument) => /violin|violoncello|cello/i.test(instrument)),
+      );
+      assert.ok(shortStringJob, 'Published examples must include the short string score.');
+      assert.ok(shortStringJob.facts.scoreDurationSeconds < 3);
+
+      const longerStringJob = await renderAndAssertCompleted(base, longerStringMusicXml, ['mp3']);
+      assert.deepEqual(longerStringJob.facts.instruments, ['Violin', 'Violoncello']);
+      assert.ok(longerStringJob.facts.scoreDurationSeconds > shortStringJob.facts.scoreDurationSeconds);
     } finally {
       await new Promise((resolve) => server.close(resolve));
       fs.rmSync(dataDirectory, { recursive: true, force: true });
@@ -75,17 +55,19 @@ test(
   },
 );
 
-function docsSection(id) {
+function publishedMusicXmlExamples() {
   const docs = fs.readFileSync(new URL('../static/docs.html', import.meta.url), 'utf8');
-  const start = docs.indexOf(`<section class="section section-tight" id="${id}">`);
-  assert.notEqual(start, -1, `Missing ${id} example section.`);
-  const end = docs.indexOf('</section>', start);
-  assert.notEqual(end, -1, `Missing closing tag for ${id} example section.`);
-  return docs.slice(start, end);
+  const sections = [...docs.matchAll(/<section\b[^>]*>[\s\S]*?<\/section>/gi)]
+    .map((match) => match[0])
+    .filter((section) => /&lt;score-partwise\b/i.test(section));
+  assert.ok(sections.length > 0, 'Published documentation must contain MusicXML examples.');
+  return sections;
 }
 
 function musicxmlFromSection(section) {
-  const match = section.match(/<pre><code>([\s\S]*?)<\/code><\/pre>/);
+  const match = [...section.matchAll(/<pre><code>([\s\S]*?)<\/code><\/pre>/g)].find(([, code]) =>
+    /&lt;score-partwise\b/i.test(code),
+  );
   assert.ok(match, 'Published example must contain MusicXML.');
   return match[1].replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
 }
@@ -95,6 +77,45 @@ function formatsFromSection(section) {
   assert.ok(match, 'Published example must contain request formats.');
   return JSON.parse(match[1]);
 }
+
+async function renderAndAssertCompleted(base, musicxml, formats) {
+  const submitted = await fetch(`${base}/v1/render`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
+    body: JSON.stringify({ musicxml, formats }),
+  });
+  assert.equal(submitted.status, 202);
+  const { job_id: jobId } = await submitted.json();
+  const job = await waitForJob(base, jobId);
+  assert.equal(job.status, 'completed', JSON.stringify(job.error));
+  assert.equal(job.qc.status, 'passed');
+  assert.equal(job.payment.status, 'settled');
+  for (const format of formats) {
+    const extension = format === 'midi' ? 'mid' : format;
+    assert.ok(job.artifacts.some((artifact) => artifact.name === `score.${extension}`));
+  }
+  return job;
+}
+
+const longerStringMusicXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Violin</part-name></score-part>
+    <score-part id="P2"><part-name>Violoncello</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><direction><sound tempo="84"/></direction><note><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+    <measure number="2"><note><pitch><step>F</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+    <measure number="3"><note><pitch><step>G</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+    <measure number="4"><note><pitch><step>A</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+  </part>
+  <part id="P2">
+    <measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>F</sign><line>4</line></clef></attributes><note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+    <measure number="2"><note><pitch><step>D</step><octave>3</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+    <measure number="3"><note><pitch><step>E</step><octave>3</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+    <measure number="4"><note><pitch><step>F</step><octave>3</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+  </part>
+</score-partwise>`;
 
 async function waitForJob(base, jobId) {
   for (let attempt = 0; attempt < 45; attempt += 1) {
