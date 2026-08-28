@@ -21,7 +21,7 @@ export const failureCodes = {
 };
 
 const sustainedInstrumentPattern =
-  /\b(?:violin|viola|violoncello|cello|contrabass|double\s+bass|acoustic\s+bass|flute|oboe|clarinet|bassoon|saxophone|trumpet|trombone|tuba|horn|organ|voice|vocal|choir|synth\s+pad)\b/i;
+  /\b(?:strings?|violin|viola|violoncello|cello|contrabass|double\s+bass|acoustic\s+bass|woodwinds?|winds?|brass|flute|oboe|clarinet|bassoon|saxophone|trumpet|trombone|tuba|horn|organ|voice|vocal|choir|synth\s+pad)\b/i;
 
 export function audioTailAllowanceForInstruments(
   instruments,

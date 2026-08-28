@@ -105,6 +105,7 @@ test('score facts incorporate tempo and division changes, while audio allows a b
 test('audio duration tail budget covers renderer padding and recognized sustained instruments only', () => {
   assert.equal(audioTailAllowanceForInstruments(['Piano'], 3, 3.25), 3);
   assert.equal(audioTailAllowanceForInstruments(['Violin', 'Violoncello'], 3, 3.25), 3.25);
+  assert.equal(audioTailAllowanceForInstruments(['Strings', 'Woodwind', 'Brass'], 3, 3.25), 3.25);
   assert.equal(audioTailAllowanceForInstruments(['Unknown instrument'], 3, 3.25), 3);
   assert.equal(audioTailAllowanceForInstruments(['Violin'], 4, 3.25), 4);
 
