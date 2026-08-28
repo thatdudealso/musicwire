@@ -47,7 +47,7 @@ const bazaarExtensions = {
     bodyType: 'json',
     input: {
       musicxml: '<?xml version="1.0"?><score-partwise version="4.0">...</score-partwise>',
-      formats: ['pdf'],
+      formats: ['mp3', 'midi'],
     },
     inputSchema: {
       type: 'object',
@@ -56,8 +56,8 @@ const bazaarExtensions = {
         musicxml: { type: 'string', description: 'Complete UTF-8 MusicXML document.' },
         formats: {
           type: 'array',
-          description: 'One or more artifact formats to render.',
-          items: { enum: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3'] },
+          description: 'MP3 for listening and MIDI for editing.',
+          items: { enum: ['mp3', 'midi'] },
           minItems: 1,
           uniqueItems: true,
         },

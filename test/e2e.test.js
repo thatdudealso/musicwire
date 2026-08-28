@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { XMLValidator } from 'fast-xml-parser';
 import { createApp } from '../src/app.js';
@@ -54,7 +54,7 @@ test(
         headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({
           musicxml,
-          formats: ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3'],
+          formats: ['mp3', 'midi'],
           constraints_check: {
             tempo: facts.tempo,
             key_fifths: facts.key.fifths,
@@ -80,10 +80,6 @@ test(
       assert.deepEqual(job.facts.key, { fifths: 0, mode: 'major' });
       for (const artifact of job.artifacts) assert.match(artifact.sha256, /^[a-f0-9]{64}$/);
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'NOTICE.txt'));
-      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mscz'));
-      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.pdf'));
-      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score-1.svg'));
-      assert.ok(job.artifacts.some((artifact) => artifact.name === 'score-1.png'));
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mid'));
       assert.ok(job.artifacts.some((artifact) => artifact.name === 'score.mp3'));
       const download = async (name) => {
@@ -98,23 +94,6 @@ test(
       const source = await download('source.musicxml');
       assert.equal(XMLValidator.validate(source.toString('utf8')), true);
       assert.match(source.toString('utf8'), /<software>Musicwire/);
-      assert.equal((await download('score.mscz')).subarray(0, 2).toString(), 'PK');
-      const mscz = path.join(dataDirectory, 'score.mscz');
-      fs.writeFileSync(mscz, await download('score.mscz'));
-      assert.match(
-        spawnSync('unzip', ['-p', mscz, 'score.mscx'], { encoding: 'utf8' }).stdout,
-        /Musicwire/,
-      );
-      const pdf = await download('score.pdf');
-      assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
-      assert.match(pdf.toString('latin1'), /\/Creator \(Musicwire\)/);
-      const svg = (await download('score-1.svg')).toString('utf8');
-      assert.equal(XMLValidator.validate(svg), true);
-      assert.match(svg, /<svg\b/i);
-      assert.match(svg, /<metadata>Rendered by Musicwire/);
-      const png = await download('score-1.png');
-      assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-      assert.match(png.toString('latin1'), /MusicwireReceipt/);
       const midi = await download('score.mid');
       assert.equal(midi.subarray(0, 4).toString(), 'MThd');
       assert.match(midi.toString('utf8'), /Musicwire/);
@@ -170,7 +149,7 @@ test(
         headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
         body: JSON.stringify({
           musicxml,
-          formats: ['pdf'],
+          formats: ['midi'],
           constraints_check: { tempo: facts.tempo + 10 },
         }),
       });

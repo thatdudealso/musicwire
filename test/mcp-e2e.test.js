@@ -60,7 +60,7 @@ test('MCP stdio server calls every Musicwire API tool using the local stub payme
 
     const render = await client.callTool('musicwire_render', {
       musicxml,
-      formats: ['pdf'],
+      formats: ['midi'],
       constraints_check: { tempo: 90 },
     });
     assert.match(render.job_id, /^[0-9a-f-]{36}$/);

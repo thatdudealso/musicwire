@@ -18,7 +18,7 @@ curl -X POST http://localhost:8787/v1/validate \
   --data '{"musicxml":"<?xml version=\"1.0\"?><score-partwise version=\"4.0\">...</score-partwise>"}'
 ```
 
-Submit an asynchronous render. MusicXML, `NOTICE.txt`, and `receipt.json` are always returned. `svg` and `png` results are page sets.
+Submit an asynchronous render. Request MP3 for a human to listen to and MIDI for an agent or musician to edit. MusicXML, `NOTICE.txt`, and `receipt.json` are always returned.
 
 ```sh
 curl -X POST http://localhost:8787/v1/render \
@@ -26,7 +26,7 @@ curl -X POST http://localhost:8787/v1/render \
   -H 'Idempotency-Key: a-stable-request-id' \
   --data @request.json
 
-# request.json: {"musicxml":"...","formats":["pdf","svg","mp3"],"constraints_check":{"tempo":84}}
+# request.json: {"musicxml":"...","formats":["mp3","midi"],"constraints_check":{"tempo":84}}
 # Poll the returned job_id without charge:
 curl http://localhost:8787/v1/jobs/JOB_ID
 ```
@@ -116,7 +116,7 @@ const pay = wrapFetchWithPayment(fetch, client);
 const res = await pay(`${process.env.MUSICWIRE_URL}/v1/render`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', 'Idempotency-Key': 'agent-render-001' },
-  body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+  body: JSON.stringify({ musicxml, formats: ['mp3', 'midi'] }),
 });
 // 202 -> poll (await res.json()).job_id ; 402 -> read (await res.json()).error for the exact reason.
 ```
@@ -150,7 +150,7 @@ MusicXML supplied in a JSON request body must be a UTF-8 string. Render requests
 { "valid": true, "errors": [], "price_usd": "0.10", "payment": { "status": "settled" }, "receipt": { "tx_hash": "0x...", "amount_usd": "0.10", "amount_atomic": "100000", "network": "eip155:84532" } }
 
 // POST /v1/render
-{ "musicxml": "<score-partwise version=\"4.0\">...</score-partwise>", "formats": ["pdf", "svg", "mp3"], "constraints_check": { "tempo": 84, "duration_seconds": 30, "key_fifths": -1, "mode": "minor" } }
+{ "musicxml": "<score-partwise version=\"4.0\">...</score-partwise>", "formats": ["mp3", "midi"], "constraints_check": { "tempo": 84, "duration_seconds": 30, "key_fifths": -1, "mode": "minor" } }
 
 // 202 render response. The verified authorization is not yet settled.
 { "job_id": "uuid", "status": "queued", "estimated_seconds": 30, "price_usd": "0.25", "payment": { "status": "verified_pending_qc", "capture_policy": "capture_only_after_qc_pass" }, "poll_url": "/v1/jobs/uuid", "provenance": { "receipt_id": "uuid", "verification_url": "https://musicwire.example/v1/provenance/verify" } }
@@ -194,7 +194,7 @@ Artifact URLs are signed and expire with the job retention window. A local-stora
 | `GET /health`                        |                       Free | Renderer readiness.                                        |
 | `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.      |
 
-The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mscz`, `pdf`, `svg`, `png`, `midi`, and `mp3`.
+The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mp3` for listening and `midi` for editing.
 
 Jobs are `queued`, `running`, `completed`, or `failed_not_charged`. Payment statuses are `verified_pending_qc`, `settled`, `settlement_pending`, or `failed_not_charged`. A charge capture is structurally impossible until QC passes. `POST /reviews` accepts a transaction hash only when it matches a settled Musicwire render and permits one review per transaction. Payment requirements use x402 Exact USDC through the CDP facilitator on the configured network: Base mainnet in production, Base Sepolia for local and stub runs. `GET /manifest` publishes that network and its human-readable label plus `review_stats.count` and `review_stats.average_rating`, and `GET /.well-known/x402` serves the machine-readable payment description and receiving address.
 
@@ -202,16 +202,12 @@ QC passes only when MusicXML validates, MuseScore exits successfully, every requ
 
 ## Attribution and verifiable provenance
 
-Every rendered artifact is attributed to Musicwire at render time, after QC, in a way that never alters the audio samples or the notation:
+Every rendered artifact is attributed to Musicwire at render time, after QC, in a way that never alters the audio samples or MIDI events:
 
 | Format   | Embedded attribution                                                               |
 | -------- | ---------------------------------------------------------------------------------- |
 | MP3      | ID3 tags: `encoded_by`, `comment`, and `copyright`, written by ffmpeg stream copy. |
-| PDF      | `Creator` and `Producer` document metadata added as an incremental update.         |
 | MIDI     | Copyright and text meta events in the first track.                                 |
-| PNG      | `tEXt` metadata chunks: `Software`, `Comment`, and `MusicwireReceipt`.             |
-| SVG      | A `metadata` element.                                                              |
-| MSCZ     | A `metaTag` element in the embedded score.                                         |
 | MusicXML | `software` and `encoding-description` entries in `identification/encoding`.        |
 
 At render completion Musicwire computes each artifact's SHA-256 and signs a render receipt with an HMAC-SHA-256 key derived from `ARTIFACT_SIGNING_SECRET` (domain-separated, so the receipt key is never the artifact URL key). The receipt is stored durably alongside the job, included in `receipt.json`, and its `receipt_id` and verification URL appear in the render API response and in `NOTICE.txt`.
@@ -235,7 +231,7 @@ A match returns `rendered_by_musicwire: true` with the receipt id, render time, 
 
 ## Run locally
 
-Requires Node 22.5+, MuseScore Studio 4, `ffmpeg`/`ffprobe` for audio QC and MP3 attribution, and `zip`/`unzip` for MSCZ attribution. On Apple silicon, point `MSCORE_BIN` to the app binary and leave `MSCORE_ARCH=arm64`.
+Requires Node 22.5+, MuseScore Studio 4, and `ffmpeg`/`ffprobe` for audio QC and MP3 attribution. On Apple silicon, point `MSCORE_BIN` to the app binary and leave `MSCORE_ARCH=arm64`.
 
 ```sh
 npm install --ignore-scripts
@@ -257,11 +253,11 @@ MUSICWIRE_E2E=1 MSCORE_BIN='/Applications/MuseScore 4.app/Contents/MacOS/mscore'
 MUSICWIRE_X402_E2E=1 MSCORE_BIN='/Applications/MuseScore 4.app/Contents/MacOS/mscore' npm run test:x402-e2e
 ```
 
-The native quality suite skips with an explicit reason where MuseScore, ffmpeg, or ffprobe is absent. When enabled it exercises the real HTTP render queue, MuseScore, every advertised format and page-set, audio QC primitives, constraints, and a failed-not-charged outcome. It does not use a renderer stub.
+The native quality suite skips with an explicit reason where MuseScore, ffmpeg, or ffprobe is absent. When enabled it exercises the real HTTP render queue, MuseScore, MP3 and MIDI attribution, audio QC primitives, constraints, and a failed-not-charged outcome. It does not use a renderer stub.
 
 ### Native render quality evidence procedure
 
-This procedure is local render evidence and is independent of the AWS deployment below. Run the native suite with `MUSICWIRE_E2E=1` on the release commit and retain the TAP output in the PR. The suite verifies the complete artifact set, content signatures, XML/SVG structure, audio container/stream/channel/sample-rate/duration/RMS properties, score facts and payment state. It also submits a deliberate constraint mismatch and records a visible `failed_not_charged` job with `receipt.tx_hash: null`.
+This procedure is local render evidence and is independent of the AWS deployment below. Run the native suite with `MUSICWIRE_E2E=1` on the release commit and retain the TAP output in the PR. The suite verifies the MP3 and MIDI artifacts, their attribution, audio container/stream/channel/sample-rate/duration/RMS properties, score facts and payment state. It also submits a deliberate constraint mismatch and records a visible `failed_not_charged` job with `receipt.tx_hash: null`.
 
 The S3 redirect route is separately exercised with an artifact larger than 10 MB by `node --test test/artifacts.test.js`; its TAP output proves the signed redirect returns exact stored bytes outside the API payload limit. Do not treat a skipped native test as evidence - install the documented tools and rerun it before approval. For any environment where this cannot run, attach the command output and the reason to the PR before go-live.
 

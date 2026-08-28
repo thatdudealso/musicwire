@@ -17,10 +17,8 @@ export function sha256(data) {
 export function artifactContentType(name) {
   if (name.endsWith('.musicxml')) return 'application/vnd.recordare.musicxml+xml';
   if (name.endsWith('.json')) return 'application/json';
-  if (name.endsWith('.pdf')) return 'application/pdf';
-  if (name.endsWith('.svg')) return 'image/svg+xml';
-  if (name.endsWith('.png')) return 'image/png';
   if (name.endsWith('.mp3')) return 'audio/mpeg';
+  if (name.endsWith('.mid')) return 'audio/midi';
   return 'application/octet-stream';
 }
 

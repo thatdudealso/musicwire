@@ -9,7 +9,7 @@ import { JobStore } from '../src/store.js';
 const job = (id) => ({
   id,
   inputXml: '<score-partwise version="4.0" />',
-  formats: ['pdf'],
+  formats: ['midi'],
   constraints: {},
   facts: { partCount: 1 },
   priceUsd: '0.25',

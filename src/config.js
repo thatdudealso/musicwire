@@ -134,7 +134,7 @@ if (
     'MUSICWIRE_ARTIFACT_URL_TTL_SECONDS must be a positive number of seconds no greater than 3600.',
   );
 
-export const supportedFormats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3'];
+export const supportedFormats = ['mp3', 'midi'];
 
 function isHttpsUrl(value) {
   try {

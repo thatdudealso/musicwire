@@ -77,7 +77,7 @@ test(
     };
 
     try {
-      const renderRequest = { musicxml, formats: ['pdf'] };
+      const renderRequest = { musicxml, formats: ['midi'] };
       const quote = await fetch(`${baseUrl}/v1/render`, post(renderRequest, crypto.randomUUID()));
       assert.equal(quote.status, 402);
       const requirements = decodePaymentRequiredHeader(quote.headers.get('payment-required'));

@@ -93,7 +93,7 @@ test('CDP gateway decodes the standard payment-signature header before verificat
   assert.equal(result.payment.payer, '0x2222222222222222222222222222222222222222');
   assert.equal(declaredExtensions.bazaar.info.input.method, 'POST');
   assert.equal(declaredExtensions.bazaar.info.input.bodyType, 'json');
-  assert.equal(declaredExtensions.bazaar.info.input.body.formats[0], 'pdf');
+  assert.deepEqual(declaredExtensions.bazaar.info.input.body.formats, ['mp3', 'midi']);
   assert.deepEqual(validateDiscoveryExtension(declaredExtensions.bazaar), { valid: true });
 
   const reencodedPayload = {
@@ -521,14 +521,14 @@ test('render idempotency isolates payer and request context after payment author
     },
   });
   try {
-    const first = await renderRequest(base, 'payer-a-first', 'shared-render-key', ['pdf', 'svg']);
+    const first = await renderRequest(base, 'payer-a-first', 'shared-render-key', ['mp3', 'midi']);
     assert.equal(first.status, 202);
     const firstBody = await first.json();
     await waitForJob(base, firstBody.job_id);
 
     const reordered = await renderRequest(base, 'payer-a-reordered', 'shared-render-key', [
-      'svg',
-      'pdf',
+      'midi',
+      'mp3',
     ]);
     assert.equal(reordered.status, 202);
     assert.equal((await reordered.json()).job_id, firstBody.job_id);
@@ -752,7 +752,7 @@ test('a render discovery probe with a readable score quotes its real price tier'
     const quote = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ musicxml: multiPartXml, formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml: multiPartXml, formats: ['midi'] }),
     });
     assert.equal(quote.status, 402);
     assert.equal(
@@ -779,7 +779,7 @@ test('a presented payment with an invalid payload keeps its failure code and nev
     const render = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'payer-a' },
-      body: JSON.stringify({ musicxml: 'not music xml at all', formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml: 'not music xml at all', formats: ['midi'] }),
     });
     assert.equal(render.status, 422);
     const renderBody = await render.json();
@@ -787,6 +787,25 @@ test('a presented payment with an invalid payload keeps its failure code and nev
     assert.equal(renderBody.payment.status, 'not_charged');
 
     assert.equal(events.filter((event) => event === 'settle').length, 0);
+  } finally {
+    await close();
+  }
+});
+
+test('a removed render format is rejected before payment verification or capture', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const response = await fetch(`${base}/v1/render`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Payment-Signature': 'payer-a' },
+      body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+    });
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.error.code, 'invalid_formats');
+    assert.match(body.error.message, /mp3, midi/);
+    assert.deepEqual(events, []);
   } finally {
     await close();
   }
@@ -980,7 +999,7 @@ test('invalid render payloads expose only a coarse validation error and are neve
     const response = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'payer-a' },
-      body: JSON.stringify({ musicxml: '<score-partwise><invalid>', formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml: '<score-partwise><invalid>', formats: ['midi'] }),
     });
     assert.equal(response.status, 422);
     const body = await response.json();
@@ -1181,7 +1200,7 @@ test('restart recovery records interrupted jobs as failed_not_charged', async ()
     {
       id: 'interrupted-job',
       inputXml: musicxml,
-      formats: ['pdf'],
+      formats: ['midi'],
       constraints: {},
       facts: {},
       priceUsd: '0.25',
@@ -1210,7 +1229,7 @@ test('restart recovery retains durable settlement intents for reconciliation', (
     {
       id: 'settlement-intent-job',
       inputXml: musicxml,
-      formats: ['pdf'],
+      formats: ['midi'],
       constraints: {},
       facts: {},
       priceUsd: '0.25',
@@ -1245,7 +1264,7 @@ test('a replacement task retains completed jobs and payment records on its durab
       {
         id: 'completed-durable-job',
         inputXml: musicxml,
-        formats: ['pdf'],
+        formats: ['midi'],
         constraints: {},
         facts: {},
         priceUsd: '0.25',
@@ -1261,7 +1280,7 @@ test('a replacement task retains completed jobs and payment records on its durab
     );
     original.update('completed-durable-job', {
       state: 'completed',
-      artifacts_json: JSON.stringify([{ name: 'score.pdf', storageKey: 'artifacts/durable' }]),
+      artifacts_json: JSON.stringify([{ name: 'score.mid', storageKey: 'artifacts/durable' }]),
       payment_json: JSON.stringify({ provider: 'cdp', status: 'settled', tx_hash: '0xdurable' }),
     });
     original.savePaymentWallet({
@@ -1289,7 +1308,7 @@ test('a replacement task retains completed jobs and payment records on its durab
 
     const replacement = new JobStore(dataDirectory);
     assert.deepEqual(replacement.get('completed-durable-job').artifacts, [
-      { name: 'score.pdf', storageKey: 'artifacts/durable' },
+      { name: 'score.mid', storageKey: 'artifacts/durable' },
     ]);
     assert.deepEqual(replacement.get('completed-durable-job').payment, {
       provider: 'cdp',
@@ -1358,13 +1377,13 @@ test('local stub reviews require a settled render transaction and publish reputa
       body: JSON.stringify({
         tx_hash: job.receipt.tx_hash,
         rating: 4,
-        comment: 'Reliable PDF output.',
+        comment: 'Reliable MIDI output.',
       }),
     });
     assert.equal(accepted.status, 201);
     const acceptedBody = await accepted.json();
     assert.equal(acceptedBody.review.rating, 4);
-    assert.equal(acceptedBody.review.comment, 'Reliable PDF output.');
+    assert.equal(acceptedBody.review.comment, 'Reliable MIDI output.');
     assert.equal(acceptedBody.review.tx_hash, job.receipt.tx_hash);
     assert.equal(acceptedBody.review.network, 'eip155:84532');
     assert.match(acceptedBody.review.created_at, /^\d{4}-\d{2}-\d{2}T/);
@@ -1413,7 +1432,7 @@ async function startServer({ events, renderer = undefined, gateway = undefined, 
   };
 }
 
-function renderRequest(base, signature, idempotencyKey, formats = ['pdf']) {
+function renderRequest(base, signature, idempotencyKey, formats = ['midi']) {
   return fetch(`${base}/v1/render`, {
     method: 'POST',
     headers: {

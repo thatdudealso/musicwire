@@ -117,6 +117,7 @@ export function createApp(overrides = {}) {
         ...manifest(config, store).payment,
         receiver: await payments.description(),
         endpoints: manifest(config, store).endpoints,
+        formats: manifest(config, store).formats,
       });
     } catch (error) {
       next(error);
@@ -1077,7 +1078,6 @@ function manifest(config, store) {
     formats: {
       always: ['musicxml', 'NOTICE.txt', 'receipt.json'],
       requestable: supportedFormats,
-      page_sets: ['svg', 'png'],
     },
     qc_guarantees: [
       'parse and semantic validation',
