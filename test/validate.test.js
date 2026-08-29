@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { validateMusicXml, scoreFacts } from '../src/validate.js';
-import { checkAudioDuration, compareConstraints } from '../src/qc.js';
+import {
+  audioTailAllowanceForInstruments,
+  checkAudioDuration,
+  compareConstraints,
+} from '../src/qc.js';
 import { PaymentService } from '../src/payment.js';
 
 const validScore = fs.readFileSync(
@@ -14,6 +18,7 @@ test('validates a MusicXML 4.0 partwise score and extracts render facts', () => 
   assert.deepEqual(validateMusicXml(validScore), { valid: true, errors: [] });
   const facts = scoreFacts(validScore);
   assert.equal(facts.partCount, 1);
+  assert.deepEqual(facts.instruments, ['Piano']);
   assert.equal(facts.tempo, 30);
   assert.equal(facts.key.fifths, 0);
   assert.ok(facts.scoreDurationSeconds > 11.9 && facts.scoreDurationSeconds < 12.1);
@@ -95,6 +100,17 @@ test('score facts incorporate tempo and division changes, while audio allows a b
   assert.equal(facts.scoreDurationSeconds, 6);
   assert.equal(checkAudioDuration(6, 8, 2).ok, true);
   assert.equal(checkAudioDuration(6, 8.61, 2).code, 'audio_duration_mismatch');
+});
+
+test('audio duration tail budget covers renderer padding and recognized sustained instruments only', () => {
+  assert.equal(audioTailAllowanceForInstruments(['Piano'], 3, 3.25), 3);
+  assert.equal(audioTailAllowanceForInstruments(['Violin', 'Violoncello'], 3, 3.25), 3.25);
+  assert.equal(audioTailAllowanceForInstruments(['Strings', 'Woodwind', 'Brass'], 3, 3.25), 3.25);
+  assert.equal(audioTailAllowanceForInstruments(['Unknown instrument'], 3, 3.25), 3);
+  assert.equal(audioTailAllowanceForInstruments(['Violin'], 4, 3.25), 4);
+
+  assert.equal(checkAudioDuration(2.857, 5.93, 3.25).ok, true);
+  assert.equal(checkAudioDuration(2.857, 6.5, 3.25).code, 'audio_duration_mismatch');
 });
 
 test('score facts use MuseScore default tempo until an authored tempo takes effect', () => {

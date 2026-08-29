@@ -136,6 +136,7 @@ export function validateMusicXml(xml) {
 export function scoreFacts(xml, maxPlaybackMeasures = 20_000, maxPlaybackTempoEvents = 20_000) {
   const semanticXml = withoutNonElements(xml);
   const partCount = [...semanticXml.matchAll(/<part(?=\s|>)[^>]*id=["'][^"']+["'][^>]*>/gi)].length;
+  const instruments = scoreInstrumentNames(semanticXml);
   const keyFifths = Number(semanticXml.match(/<fifths>\s*(-?\d+)\s*<\/fifths>/i)?.[1] ?? 0);
   const mode = semanticXml.match(/<mode>\s*(major|minor)\s*<\/mode>/i)?.[1] ?? 'major';
   const parts = semanticXml.match(/<part(?=\s|>)[\s\S]*?<\/part>/gi) ?? [];
@@ -149,11 +150,26 @@ export function scoreFacts(xml, maxPlaybackMeasures = 20_000, maxPlaybackTempoEv
   const durationModelError = partFacts.find((part) => part.durationModelError)?.durationModelError;
   return {
     partCount,
+    instruments,
     tempo: longest.tempo,
     key: { fifths: keyFifths, mode },
     scoreDurationSeconds: longest.seconds,
     ...(durationModelError ? { durationModelError } : {}),
   };
+}
+
+function scoreInstrumentNames(xml) {
+  const names = [];
+  for (const scorePart of xml.match(/<score-part\b[\s\S]*?<\/score-part>/gi) ?? []) {
+    const declared = scorePart.matchAll(
+      /<(instrument-name|part-name)\b[^>]*>\s*([^<]+?)\s*<\/\1>/gi,
+    );
+    for (const match of declared) {
+      const name = match[2].replace(/\s+/g, ' ').trim();
+      if (name && !names.includes(name)) names.push(name);
+    }
+  }
+  return names;
 }
 
 function partDuration(part, maxPlaybackMeasures, maxPlaybackTempoEvents) {
