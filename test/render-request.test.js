@@ -428,6 +428,7 @@ test('render rejects requests once the pending backlog is full', async () => {
   }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  const jobIds = [];
   const request = (idempotencyKey) =>
     fetch(`${base}/v1/render`, {
       method: 'POST',
@@ -442,8 +443,11 @@ test('render rejects requests once the pending backlog is full', async () => {
     const accepted = await request('retry-under-overload');
     assert.equal(accepted.status, 202);
     const original = await accepted.json();
+    jobIds.push(original.job_id);
     await startedRender;
-    assert.equal((await request()).status, 202);
+    const queued = await request();
+    assert.equal(queued.status, 202);
+    jobIds.push((await queued.json()).job_id);
     const overloaded = await request();
     assert.equal(overloaded.status, 503);
     assert.equal((await overloaded.json()).error.code, 'render_queue_full');
@@ -452,7 +456,13 @@ test('render rejects requests once the pending backlog is full', async () => {
     assert.equal((await replay.json()).job_id, original.job_id);
   } finally {
     releaseRender();
-    await new Promise((resolve) => setImmediate(resolve));
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const jobs = await Promise.all(
+        jobIds.map(async (id) => await (await fetch(`${base}/v1/jobs/${id}`)).json()),
+      );
+      if (jobs.every((job) => job.status !== 'queued' && job.status !== 'running')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
