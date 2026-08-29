@@ -799,7 +799,7 @@ test('a removed render format is rejected before payment verification or capture
     const response = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'payer-a' },
-      body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml: 'not music xml at all', formats: ['pdf'] }),
     });
     assert.equal(response.status, 400);
     const body = await response.json();
