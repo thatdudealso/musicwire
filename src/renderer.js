@@ -17,10 +17,6 @@ import {
 
 const extensionFor = {
   midi: 'mid',
-  mscz: 'mscz',
-  pdf: 'pdf',
-  svg: 'svg',
-  png: 'png',
   mp3: 'mp3',
 };
 
@@ -57,13 +53,7 @@ export class Renderer {
             failureCodes.renderer,
             `MuseScore exited ${result.code}: ${result.stderr.slice(0, 500)}`,
           );
-        const files =
-          format === 'svg' || format === 'png'
-            ? fs
-                .readdirSync(workspace)
-                .filter((name) => new RegExp(`^score-\\d+\\.${extensionFor[format]}$`).test(name))
-                .sort()
-            : [path.basename(output)];
+        const files = [path.basename(output)];
         if (files.length === 0 || files.some((name) => !fs.existsSync(path.join(workspace, name))))
           return failed(
             failureCodes.artifacts,

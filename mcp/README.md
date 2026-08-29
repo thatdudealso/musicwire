@@ -7,6 +7,8 @@
 - `musicwire_render` - pay to queue a MusicXML render.
 - `musicwire_get_job` - inspect a render or poll it to completion.
 
+The only requestable render outputs are MP3 for listening and MIDI for editing. Completed renders also include the source MusicXML, `NOTICE.txt`, and `receipt.json`.
+
 Paid calls use x402 Exact USDC on Base. The server reads `GET /manifest` from the configured API and pays on the network that deployment advertises: Base mainnet (`eip155:8453`) or Base Sepolia (`eip155:84532`). It retries a `402 Payment Required` response with a signed payment automatically, and never logs or persists the private key.
 
 ## Install

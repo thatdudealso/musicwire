@@ -13,9 +13,9 @@ const musicxml = fs.readFileSync(
 
 test('the free provenance endpoint verifies known artifact hashes and rejects unknown hashes', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-provenance-'));
-  const bytes = Buffer.from('%PDF-1.7 Musicwire render');
+  const bytes = Buffer.from('MIDI Musicwire render');
   const artifact = {
-    name: 'score.pdf',
+    name: 'score.mid',
     sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
     bytes: bytes.length,
     storageKey: crypto.createHash('sha256').update(bytes).digest('hex'),
@@ -37,7 +37,7 @@ test('the free provenance endpoint verifies known artifact hashes and rejects un
     const submitted = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-      body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml, formats: ['midi'] }),
     });
     assert.equal(submitted.status, 202);
     const queued = await submitted.json();

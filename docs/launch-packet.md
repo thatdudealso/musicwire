@@ -4,32 +4,32 @@ Prepared 2026-08-21. This packet is for the Captain to execute in order. It does
 
 ## 1. Canonical record
 
-| Field             | Value                                                                                                                                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Product           | Musicwire                                                                                                                                                                                                          |
-| One-line tagline  | Pay-per-call MusicXML validation, MuseScore rendering, and automated QC for AI agents.                                                                                                                             |
-| Description       | Musicwire validates MusicXML, renders scores with MuseScore, and returns QC-checked audio, PDF, SVG, MIDI, PNG, or MuseScore artifacts. It uses x402 Exact USDC on Base and captures payment only after QC passes. |
-| Landing page      | https://musicwire.5432wire.com/                                                                                                                                                                                    |
-| Documentation     | https://musicwire.5432wire.com/docs                                                                                                                                                                                |
-| Health check      | https://musicwire.5432wire.com/health                                                                                                                                                                              |
-| API manifest      | https://musicwire.5432wire.com/manifest                                                                                                                                                                            |
-| x402 description  | https://musicwire.5432wire.com/.well-known/x402                                                                                                                                                                    |
-| Repository        | https://github.com/thatdudealso/musicwire                                                                                                                                                                          |
-| Support           | https://github.com/thatdudealso/musicwire/issues                                                                                                                                                                   |
-| Logo              | https://musicwire.5432wire.com/musicwire-mark.svg                                                                                                                                                                  |
-| Network           | Base mainnet, `eip155:8453`                                                                                                                                                                                        |
-| Asset             | USDC, `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`                                                                                                                                                                 |
-| Receiving address | `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f`                                                                                                                                                                       |
-| Payment provider  | CDP facilitator                                                                                                                                                                                                    |
+| Field             | Value                                                                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Product           | Musicwire                                                                                                                                                                                                    |
+| One-line tagline  | Pay-per-call MusicXML validation, MuseScore rendering, and automated QC for AI agents.                                                                                                                       |
+| Description       | Musicwire validates MusicXML, renders scores with MuseScore, and returns QC-checked MP3 audio for listening and MIDI for editing. It uses x402 Exact USDC on Base and captures payment only after QC passes. |
+| Landing page      | https://musicwire.5432wire.com/                                                                                                                                                                              |
+| Documentation     | https://musicwire.5432wire.com/docs                                                                                                                                                                          |
+| Health check      | https://musicwire.5432wire.com/health                                                                                                                                                                        |
+| API manifest      | https://musicwire.5432wire.com/manifest                                                                                                                                                                      |
+| x402 description  | https://musicwire.5432wire.com/.well-known/x402                                                                                                                                                              |
+| Repository        | https://github.com/thatdudealso/musicwire                                                                                                                                                                    |
+| Support           | https://github.com/thatdudealso/musicwire/issues                                                                                                                                                             |
+| Logo              | https://musicwire.5432wire.com/musicwire-mark.svg                                                                                                                                                            |
+| Network           | Base mainnet, `eip155:8453`                                                                                                                                                                                  |
+| Asset             | USDC, `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`                                                                                                                                                           |
+| Receiving address | `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f`                                                                                                                                                                 |
+| Payment provider  | CDP facilitator                                                                                                                                                                                              |
 
 Use this copy verbatim where a directory has a short description:
 
-> Pay-per-call MusicXML validation, MuseScore rendering, and automated QC for AI agents. Musicwire returns actionable score errors and rendered audio, PDF, SVG, MIDI, or PNG artifacts, and charges only after QC passes.
+> Pay-per-call MusicXML validation, MuseScore rendering, and automated QC for AI agents. Musicwire returns actionable score errors, MP3 audio for listening, and MIDI for editing, and charges only after QC passes.
 
 Use cases:
 
 - Validate agent-generated MusicXML before sending it to a musician or renderer.
-- Render a score to PDF, SVG, PNG, MIDI, MP3, or MuseScore format after validation.
+- Render a score to MP3 for listening or MIDI for editing after validation.
 - Require key, tempo, and duration constraints, with no charge when QC fails.
 
 Claims to retain: "validate, render, QC, and return artifacts" and "charge only after QC passes." Do not describe Musicwire as a composition model.
@@ -64,7 +64,7 @@ Before paying, inspect the route from a clean external network:
 ```sh
 curl -sS -i -X POST 'https://musicwire.5432wire.com/v1/render' \
   -H 'content-type: application/json' \
-  --data '{"musicxml":"<?xml version=\"1.0\"?><score-partwise version=\"4.0\"></score-partwise>","formats":["pdf"]}'
+  --data '{"musicxml":"<?xml version=\"1.0\"?><score-partwise version=\"4.0\"></score-partwise>","formats":["mp3","midi"]}'
 ```
 
 The command must return `402` and its decoded `Payment-Required` value must contain `extensions.bazaar`, `eip155:8453`, the Base mainnet USDC address, the receiving address above, and an amount of `250000` atomic USDC units.
@@ -82,7 +82,7 @@ npx -y awal x402 pay "$MUSICWIRE_URL/v1/render" \
   --json
 ```
 
-Record the JSON response, job ID, `receipt.tx_hash`, capture time, quoted `payTo`, and the finished PDF URL. Then check Bazaar by merchant and by route after its catalog delay. Bazaar has no separate registration form.
+Record the JSON response, job ID, `receipt.tx_hash`, capture time, quoted `payTo`, and the finished MP3 and MIDI URLs. Then check Bazaar by merchant and by route after its catalog delay. Bazaar has no separate registration form.
 
 ### 3.2 Official MCP Registry
 

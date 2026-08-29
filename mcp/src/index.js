@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { createMusicwireClient, MusicwireApiError } from './client.js';
 
-const formats = ['mscz', 'pdf', 'svg', 'png', 'midi', 'mp3'];
+const formats = ['mp3', 'midi'];
 
 const composeGuideSchema = {
   style: z.string().optional(),
@@ -52,7 +52,7 @@ server.registerTool(
   'musicwire_render',
   {
     description:
-      'Pay to submit an asynchronous MusicXML render. Poll musicwire_get_job for artifacts and QC.',
+      'Pay to submit an asynchronous MusicXML render. MP3 is for listening and MIDI is for editing. Poll musicwire_get_job for artifacts and QC.',
     inputSchema: {
       musicxml: z.string().min(1).describe('A complete UTF-8 MusicXML document.'),
       formats: z

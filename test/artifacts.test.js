@@ -26,10 +26,10 @@ test('S3 artifact storage survives replacement of the API task', async () => {
       bucket: 'musicwire-test-artifacts',
       s3Client: s3,
     });
-    const artifact = await firstTask.put('score.pdf', bytes);
+    const artifact = await firstTask.put('score.mid', bytes);
 
     assert.deepEqual(artifact, {
-      name: 'score.pdf',
+      name: 'score.mid',
       sha256: hash,
       bytes: bytes.length,
       storageKey: `artifacts/${hash}`,
@@ -108,7 +108,7 @@ test('the API delivers a signed S3 artifact by redirect, including one over 10 M
 test('an expired S3 artifact answers the documented JSON 404 before redirecting', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-expired-api-'));
   const s3 = new MemoryS3();
-  const artifact = storedArtifact('score.pdf', Buffer.from('%PDF-1.7 expired score'));
+  const artifact = storedArtifact('score.mid', Buffer.from('MIDI expired score'));
   const server = createApp({
     dataDirectory,
     artifactStorage: 's3',
@@ -124,7 +124,7 @@ test('an expired S3 artifact answers the documented JSON 404 before redirecting'
   try {
     const job = await renderAndPoll(base, 'completed');
     const response = await fetch(
-      `${base}${job.artifacts.find((item) => item.name === 'score.pdf').url}`,
+      `${base}${job.artifacts.find((item) => item.name === 'score.mid').url}`,
       { redirect: 'manual' },
     );
 
@@ -141,7 +141,7 @@ test('an unsigned or tampered artifact request never reaches S3', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-s3-authz-'));
   const s3 = new MemoryS3();
   const bytes = Buffer.from('private score bytes');
-  const artifact = storedArtifact('score.pdf', bytes);
+  const artifact = storedArtifact('score.mid', bytes);
   s3.seed('musicwire-test-artifacts', artifact.storageKey, bytes);
   const presigned = [];
   const server = createApp({
@@ -162,7 +162,7 @@ test('an unsigned or tampered artifact request never reaches S3', async () => {
   try {
     const job = await renderAndPoll(base, 'completed');
     const signedUrl = new URL(
-      `${base}${job.artifacts.find((item) => item.name === 'score.pdf').url}`,
+      `${base}${job.artifacts.find((item) => item.name === 'score.mid').url}`,
     );
 
     const unsigned = await fetch(`${signedUrl.origin}${signedUrl.pathname}`, {
@@ -225,8 +225,8 @@ test('the store reports a missing object as expired and a transient fault as una
     s3Client: s3,
   });
   try {
-    const artifact = await store.put('score.pdf', Buffer.from('%PDF-1.7 rendered score'));
-    assert.deepEqual(await store.read(artifact), Buffer.from('%PDF-1.7 rendered score'));
+    const artifact = await store.put('score.mid', Buffer.from('MIDI rendered score'));
+    assert.deepEqual(await store.read(artifact), Buffer.from('MIDI rendered score'));
 
     s3.expireEverything();
     await assert.rejects(store.read(artifact), (error) => {
@@ -249,7 +249,7 @@ test('the store reports a missing object as expired and a transient fault as una
 test('a locally stored artifact that expired answers 404 as JSON, not as its own media type', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-local-expired-'));
   const localStore = new ArtifactStore(dataDirectory, 'unused-for-writes', 30, {});
-  const artifact = await localStore.put('score.pdf', Buffer.from('%PDF-1.7 rendered score'));
+  const artifact = await localStore.put('score.mid', Buffer.from('MIDI rendered score'));
   const listening = createApp({
     dataDirectory,
     artifactStorage: 'local',
@@ -266,14 +266,14 @@ test('a locally stored artifact that expired answers 404 as JSON, not as its own
   const urlFor = (job, name) => `${base}${job.artifacts.find((item) => item.name === name).url}`;
   try {
     const job = await renderAndPoll(base, 'completed');
-    const delivered = await fetch(urlFor(job, 'score.pdf'));
+    const delivered = await fetch(urlFor(job, 'score.mid'));
     assert.equal(delivered.status, 200);
-    assert.match(delivered.headers.get('content-type'), /application\/pdf/);
+    assert.match(delivered.headers.get('content-type'), /audio\/midi/);
 
     fs.rmSync(path.join(dataDirectory, 'artifacts'), { recursive: true, force: true });
 
     // A failed binary download must not be labelled as the binary it could not deliver.
-    const expired = await fetch(urlFor(job, 'score.pdf'));
+    const expired = await fetch(urlFor(job, 'score.mid'));
     assert.equal(expired.status, 404);
     assert.match(expired.headers.get('content-type'), /application\/json/);
     assert.equal((await expired.json()).error.code, 'artifact_expired');
@@ -286,8 +286,8 @@ test('a locally stored artifact that expired answers 404 as JSON, not as its own
 test('a presign failure answers 503 as JSON rather than the artifact media type', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-presign-fail-'));
   const s3 = new MemoryS3();
-  const bytes = Buffer.from('%PDF-1.7 rendered score');
-  const artifact = storedArtifact('score.pdf', bytes);
+  const bytes = Buffer.from('MIDI rendered score');
+  const artifact = storedArtifact('score.mid', bytes);
   s3.seed('musicwire-test-artifacts', artifact.storageKey, bytes);
   const server = createApp({
     dataDirectory,
@@ -306,7 +306,7 @@ test('a presign failure answers 503 as JSON rather than the artifact media type'
   try {
     const job = await renderAndPoll(base, 'completed');
     const response = await fetch(
-      `${base}${job.artifacts.find((item) => item.name === 'score.pdf').url}`,
+      `${base}${job.artifacts.find((item) => item.name === 'score.mid').url}`,
       { redirect: 'manual' },
     );
 
@@ -366,7 +366,7 @@ async function renderAndPoll(base, terminalStatus) {
     await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-      body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml, formats: ['midi'] }),
     })
   ).json();
   for (let attempt = 0; attempt < 100; attempt += 1) {

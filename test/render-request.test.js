@@ -34,7 +34,7 @@ test('public API publishes the Phase 2 Base Sepolia prices', async () => {
     fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-      body: JSON.stringify({ musicxml: score, formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml: score, formats: ['midi'] }),
     });
   try {
     const manifest = await (await fetch(`${base}/manifest`)).json();
@@ -51,10 +51,12 @@ test('public API publishes the Phase 2 Base Sepolia prices', async () => {
       discoverable: true,
       routes: ['POST /v1/validate', 'POST /v1/render'],
     });
+    assert.deepEqual(manifest.formats.requestable, ['mp3', 'midi']);
     const paymentDescription = await (await fetch(`${base}/.well-known/x402`)).json();
     assert.equal(paymentDescription.network, 'eip155:84532');
     assert.equal(paymentDescription.capture_policy, 'only_after_qc_pass');
     assert.equal(paymentDescription.receiver.network, 'eip155:84532');
+    assert.deepEqual(paymentDescription.formats.requestable, ['mp3', 'midi']);
     const validation = await (
       await fetch(`${base}/v1/validate`, {
         method: 'POST',
@@ -91,12 +93,23 @@ test('render requires JSON and at least one output format before queuing', async
     });
     assert.equal(empty.status, 400);
     assert.equal((await empty.json()).error.code, 'invalid_formats');
+    for (const format of ['pdf', 'svg', 'png', 'mscz', 'wav']) {
+      const rejected = await fetch(`${base}/v1/render`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
+        body: JSON.stringify({ musicxml, formats: [format] }),
+      });
+      assert.equal(rejected.status, 400);
+      const body = await rejected.json();
+      assert.equal(body.error.code, 'invalid_formats');
+      assert.match(body.error.message, /mp3, midi/);
+    }
     const malformedConstraint = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
       body: JSON.stringify({
         musicxml,
-        formats: ['pdf'],
+        formats: ['midi'],
         constraints_check: { duration_seconds: 'not-a-number' },
       }),
     });
@@ -105,7 +118,7 @@ test('render requires JSON and at least one output format before queuing', async
     const nullConstraint = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-      body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: null }),
+      body: JSON.stringify({ musicxml, formats: ['midi'], constraints_check: null }),
     });
     assert.equal(nullConstraint.status, 400);
     assert.equal((await nullConstraint.json()).error.code, 'invalid_constraints');
@@ -150,7 +163,7 @@ test('render requires JSON and at least one output format before queuing', async
           soundElement,
           `${soundElement}<direction><direction-type><words>Fine</words></direction-type></direction>`,
         ),
-        formats: ['pdf'],
+        formats: ['midi'],
         constraints_check: { tempo: 90 },
       }),
     });
@@ -162,14 +175,14 @@ test('render requires JSON and at least one output format before queuing', async
     const invalidMode = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-      body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { mode: 'dorian' } }),
+      body: JSON.stringify({ musicxml, formats: ['midi'], constraints_check: { mode: 'dorian' } }),
     });
     assert.equal(invalidMode.status, 400);
     assert.equal((await invalidMode.json()).error.code, 'invalid_constraints');
     const unknownConstraint = await fetch(`${base}/v1/render`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
-      body: JSON.stringify({ musicxml, formats: ['pdf'], constraints_check: { duration: 30 } }),
+      body: JSON.stringify({ musicxml, formats: ['midi'], constraints_check: { duration: 30 } }),
     });
     assert.equal(unknownConstraint.status, 400);
     assert.equal((await unknownConstraint.json()).error.code, 'invalid_constraints');
@@ -415,6 +428,7 @@ test('render rejects requests once the pending backlog is full', async () => {
   }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  const jobIds = [];
   const request = (idempotencyKey) =>
     fetch(`${base}/v1/render`, {
       method: 'POST',
@@ -423,14 +437,17 @@ test('render rejects requests once the pending backlog is full', async () => {
         'Payment-Signature': 'test-payment',
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
-      body: JSON.stringify({ musicxml, formats: ['pdf'] }),
+      body: JSON.stringify({ musicxml, formats: ['midi'] }),
     });
   try {
     const accepted = await request('retry-under-overload');
     assert.equal(accepted.status, 202);
     const original = await accepted.json();
+    jobIds.push(original.job_id);
     await startedRender;
-    assert.equal((await request()).status, 202);
+    const queued = await request();
+    assert.equal(queued.status, 202);
+    jobIds.push((await queued.json()).job_id);
     const overloaded = await request();
     assert.equal(overloaded.status, 503);
     assert.equal((await overloaded.json()).error.code, 'render_queue_full');
@@ -439,7 +456,13 @@ test('render rejects requests once the pending backlog is full', async () => {
     assert.equal((await replay.json()).job_id, original.job_id);
   } finally {
     releaseRender();
-    await new Promise((resolve) => setImmediate(resolve));
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const jobs = await Promise.all(
+        jobIds.map(async (id) => await (await fetch(`${base}/v1/jobs/${id}`)).json()),
+      );
+      if (jobs.every((job) => job.status !== 'queued' && job.status !== 'running')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }

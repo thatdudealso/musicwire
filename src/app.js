@@ -117,6 +117,7 @@ export function createApp(overrides = {}) {
         ...manifest(config, store).payment,
         receiver: await payments.description(),
         endpoints: manifest(config, store).endpoints,
+        formats: manifest(config, store).formats,
       });
     } catch (error) {
       next(error);
@@ -336,17 +337,6 @@ export function createApp(overrides = {}) {
       });
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
-    const validation = validateMusicXml(input.musicxml);
-    if (!validation.valid)
-      return response.status(422).json({
-        status: 'failed_not_charged',
-        error: {
-          code: failureCodes.validation,
-          message:
-            'MusicXML validation failed. Use paid POST /v1/validate for line-level diagnostics.',
-        },
-        payment: { status: 'not_charged' },
-      });
     const formats = request.body.formats;
     if (
       !Array.isArray(formats) ||
@@ -359,6 +349,17 @@ export function createApp(overrides = {}) {
           code: 'invalid_formats',
           message: `formats must be a non-empty unique array drawn from: ${supportedFormats.join(', ')}.`,
         },
+      });
+    const validation = validateMusicXml(input.musicxml);
+    if (!validation.valid)
+      return response.status(422).json({
+        status: 'failed_not_charged',
+        error: {
+          code: failureCodes.validation,
+          message:
+            'MusicXML validation failed. Use paid POST /v1/validate for line-level diagnostics.',
+        },
+        payment: { status: 'not_charged' },
       });
     const constraints =
       request.body.constraints_check === undefined ? {} : request.body.constraints_check;
@@ -1077,7 +1078,6 @@ function manifest(config, store) {
     formats: {
       always: ['musicxml', 'NOTICE.txt', 'receipt.json'],
       requestable: supportedFormats,
-      page_sets: ['svg', 'png'],
     },
     qc_guarantees: [
       'parse and semantic validation',

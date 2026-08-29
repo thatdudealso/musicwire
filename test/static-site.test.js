@@ -27,6 +27,8 @@ test('landing page, docs page, and static assets are served', async () => {
     assert.match(landing.headers.get('content-type'), /text\/html/);
     const landingHtml = await landing.text();
     assert.match(landingHtml, /Make music your agent can/);
+    assert.match(landingHtml, /MP3 is for listening\. MIDI is for editing/);
+    assert.doesNotMatch(landingHtml, /PDF, SVG, PNG, MSCZ/);
     assert.match(landingHtml, /musicwire-favicon\.svg/);
 
     const docs = await fetch(`${base}/docs`);
@@ -36,6 +38,8 @@ test('landing page, docs page, and static assets are served', async () => {
     assert.match(docsHtml, /Connect, request, pay, receive, listen/);
     assert.match(docsHtml, /Solo piano in C major/);
     assert.match(docsHtml, /Violin and cello in two parts/);
+    assert.match(docsHtml, /mp3<\/code> so a human can listen and <code>midi<\/code>/);
+    assert.doesNotMatch(docsHtml, /Request PDF/);
 
     const styles = await fetch(`${base}/styles.css`);
     assert.equal(styles.status, 200);
