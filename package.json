@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "examples:generate": "node scripts/generate-showcase-examples.mjs",
     "pretest": "npm --prefix mcp install --no-audit --no-fund",
     "test": "node --test",
     "test:e2e": "MUSICWIRE_E2E=1 node --test test/e2e.test.js test/docs-examples-e2e.test.js",

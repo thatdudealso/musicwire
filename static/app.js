@@ -150,10 +150,80 @@
       });
   }
 
+  function loadMusicxmlExamples() {
+    const codeBlocks = document.querySelectorAll('[data-musicxml-src]');
+    codeBlocks.forEach((codeBlock) => {
+      fetch(codeBlock.dataset.musicxmlSrc, {
+        headers: { Accept: 'application/vnd.recordare.musicxml+xml' },
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.text();
+        })
+        .then((musicxml) => {
+          codeBlock.textContent = musicxml;
+          const copyButton = codeBlock.closest('details')?.querySelector('.copy-musicxml');
+          if (copyButton) copyButton.disabled = false;
+          const requestBlock = codeBlock
+            .closest('.showcase-card')
+            ?.querySelector('.render-request');
+          if (requestBlock)
+            requestBlock.textContent = JSON.stringify(
+              { musicxml, formats: ['mp3', 'midi'] },
+              null,
+              2,
+            );
+        })
+        .catch(() => {
+          codeBlock.textContent = 'MusicXML could not be loaded. Use the source link in this card.';
+        });
+    });
+
+    document.querySelectorAll('.copy-musicxml').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const codeBlock = button.closest('details')?.querySelector('[data-musicxml-src]');
+        if (
+          !codeBlock ||
+          button.disabled ||
+          codeBlock.textContent.startsWith('MusicXML could not') ||
+          codeBlock.textContent.startsWith('Loading MusicXML')
+        )
+          return;
+        try {
+          await navigator.clipboard.writeText(codeBlock.textContent);
+          button.textContent = 'Copied';
+          setTimeout(() => {
+            button.textContent = 'Copy MusicXML';
+          }, 1_500);
+        } catch {
+          button.textContent = 'Select the score to copy';
+        }
+      });
+    });
+
+    document.querySelectorAll('.copy-render-request').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const requestBlock = button.closest('details')?.querySelector('.render-request');
+        if (!requestBlock || requestBlock.textContent.startsWith('Loading')) return;
+        try {
+          await navigator.clipboard.writeText(requestBlock.textContent);
+          button.textContent = 'Copied';
+          setTimeout(() => {
+            button.textContent = 'Copy render request';
+          }, 1_500);
+        } catch {
+          button.textContent = 'Select the request to copy';
+        }
+      });
+    });
+  }
+
   // Initialize when DOM is ready
   function init() {
     // Add loading state
     document.body.classList.add('manifest-loading');
+
+    loadMusicxmlExamples();
 
     // Fetch manifest
     fetchManifest();
