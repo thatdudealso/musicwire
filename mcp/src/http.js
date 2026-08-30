@@ -22,8 +22,11 @@ export function createMusicwireMcpHandler(options = {}) {
       const loopbackFetch = options.loopbackFetch ?? createLoopbackFetch(request, options);
       const challenge = await unpaidPaidToolChallenge(request, loopbackFetch);
       if (challenge) return sendUpstreamResponse(response, challenge);
+      const disconnect = new AbortController();
+      response.once('close', () => disconnect.abort());
       const server = createMusicwireMcpServer({
         client: createHostedMusicwireClient(request, loopbackFetch),
+        pollSignal: disconnect.signal,
       });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
@@ -91,7 +94,7 @@ export function createLoopbackFetch(request, { loopbackPort } = {}) {
     const port = loopbackPort ?? request.socket?.server?.address()?.port;
     if (!port) return Promise.reject(new Error('Musicwire MCP could not reach the local API.'));
     const headers = Object.fromEntries(new Headers(init.headers).entries());
-    headers['x-musicwire-loopback'] = '1';
+    headers['x-musicwire-loopback'] = request.ip ?? 'unknown';
     const host = request.get('host');
     if (host) headers.host = host;
     const forwardedProto = request.get('x-forwarded-proto') ?? request.protocol;

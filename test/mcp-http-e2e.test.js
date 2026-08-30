@@ -98,18 +98,19 @@ test('hosted MCP Streamable HTTP initializes, lists tools, and quotes paid tools
   }
 });
 
-test('hosted MCP loopback re-entries do not consume the shared per-IP rate budget', async () => {
+test('hosted MCP loopback re-entries bill the originating client, not a shared bucket', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-mcp-http-rate-'));
   const api = createApp({
     dataDirectory,
     publicBaseUrl: 'https://musicwire.example',
-    requestsPerMinute: 3,
+    requestsPerMinute: 4,
   }).listen(0, '127.0.0.1');
   await once(api, 'listening');
-  const mcp = new McpHttpClient(`http://127.0.0.1:${api.address().port}`);
+  const base = `http://127.0.0.1:${api.address().port}`;
+  const mcp = new McpHttpClient(base);
 
   try {
-    for (let call = 0; call < 3; call += 1) {
+    for (let call = 0; call < 2; call += 1) {
       const guide = await mcp.callTool('musicwire_compose_guide', { style: 'waltz' });
       assert.equal(guide.status, 200);
     }
@@ -119,6 +120,74 @@ test('hosted MCP loopback re-entries do not consume the shared per-IP rate budge
     });
     assert.equal(limited.status, 429);
     assert.equal(limited.body.error.code, 'rate_limited');
+    const otherClient = await fetch(`${base}/v1/compose-guide`, {
+      headers: { accept: 'application/json', 'x-musicwire-loopback': '203.0.113.9' },
+    });
+    assert.equal(otherClient.status, 200);
+  } finally {
+    await closeServer(api);
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('aborted hosted wait_for_completion stops loopback job polling', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-mcp-http-abort-'));
+  const api = createApp({
+    dataDirectory,
+    publicBaseUrl: 'https://musicwire.example',
+    requestsPerMinute: 10_000,
+    renderer: { render: () => new Promise(() => {}) },
+  }).listen(0, '127.0.0.1');
+  await once(api, 'listening');
+  let jobPolls = 0;
+  api.on('request', (incoming) => {
+    if (incoming.url.startsWith('/v1/jobs/')) jobPolls += 1;
+  });
+  const base = `http://127.0.0.1:${api.address().port}`;
+  const mcp = new McpHttpClient(base);
+
+  try {
+    const render = await mcp.callTool(
+      'musicwire_render',
+      { musicxml, formats: ['midi'] },
+      { 'payment-signature': 'musicwire-mcp-http-abort-stub' },
+    );
+    assert.equal(render.result.status, 'queued');
+    const controller = new AbortController();
+    const polling = fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-06-18',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 99,
+        method: 'tools/call',
+        params: {
+          name: 'musicwire_get_job',
+          arguments: {
+            job_id: render.result.job_id,
+            wait_for_completion: true,
+            poll_interval_ms: 10,
+            max_wait_ms: 300_000,
+          },
+        },
+      }),
+      signal: controller.signal,
+    });
+    await sleep(150);
+    assert.ok(jobPolls > 0, 'wait_for_completion never polled the job');
+    controller.abort();
+    await polling.catch(() => {});
+    await sleep(100);
+    const afterAbort = jobPolls;
+    await sleep(300);
+    assert.ok(
+      jobPolls <= afterAbort + 1,
+      `polling continued after abort: ${jobPolls} > ${afterAbort}`,
+    );
   } finally {
     await closeServer(api);
     fs.rmSync(dataDirectory, { recursive: true, force: true });
@@ -193,6 +262,10 @@ class McpHttpClient {
 
 function once(target, event) {
   return new Promise((resolve) => target.once(event, resolve));
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function closeServer(server) {

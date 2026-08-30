@@ -909,23 +909,22 @@ function renderResponse(record, config) {
   };
 }
 
-// The hosted MCP handler re-enters this app over 127.0.0.1 for a client whose
-// POST /mcp was already limited under its own IP; the socket check keeps the
-// marker header unforgeable from outside the host.
+// The hosted MCP handler re-enters this app over 127.0.0.1 carrying the
+// originating client's limiter key, so internal calls draw from that client's
+// own per-IP budget rather than a shared loopback bucket; the socket check
+// keeps the marker header unforgeable from outside the host.
 const loopbackAddresses = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
-function isMcpLoopbackReentry(request) {
-  return (
-    request.get('x-musicwire-loopback') === '1' &&
-    loopbackAddresses.has(request.socket?.remoteAddress)
-  );
+function mcpLoopbackClientKey(request) {
+  const client = request.get('x-musicwire-loopback');
+  if (!client || !loopbackAddresses.has(request.socket?.remoteAddress)) return null;
+  return client;
 }
 
 function rateLimit(limiter, config) {
   let lastSweepAt = 0;
   return (request, response, next) => {
-    if (isMcpLoopbackReentry(request)) return next();
-    const key = request.ip ?? 'unknown';
+    const key = mcpLoopbackClientKey(request) ?? request.ip ?? 'unknown';
     const now = Date.now();
     if (now - lastSweepAt >= 60_000) {
       for (const [ip, timestamps] of limiter) {

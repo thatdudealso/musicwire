@@ -26,7 +26,7 @@ const constraintsSchema = z
 
 export const paidMusicwireToolNames = new Set(['musicwire_validate', 'musicwire_render']);
 
-export function createMusicwireMcpServer({ client }) {
+export function createMusicwireMcpServer({ client, pollSignal }) {
   const server = new McpServer({ name: packageInfo.name, version: packageInfo.version });
 
   server.registerTool(
@@ -80,14 +80,16 @@ export function createMusicwireMcpServer({ client }) {
         max_wait_ms: z.number().int().min(10).max(300_000).default(60_000),
       },
     },
-    async (input) =>
+    async (input, extra) =>
       invoke(async () => {
+        const signal = anySignal(pollSignal, extra?.signal);
         const job = await client.getJob(input.job_id);
         if (!input.wait_for_completion || !isInProgress(job.status)) return job;
         const deadline = Date.now() + input.max_wait_ms;
         let current = job;
-        while (isInProgress(current.status) && Date.now() < deadline) {
-          await wait(input.poll_interval_ms);
+        while (isInProgress(current.status) && Date.now() < deadline && !signal.aborted) {
+          await wait(input.poll_interval_ms, signal);
+          if (signal.aborted) break;
           current = await client.getJob(input.job_id);
         }
         return current;
@@ -162,6 +164,19 @@ function isInProgress(status) {
   return status === 'queued' || status === 'running';
 }
 
-function wait(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function anySignal(...signals) {
+  return AbortSignal.any(signals.filter(Boolean));
+}
+
+function wait(milliseconds, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, milliseconds);
+    signal?.addEventListener('abort', finish, { once: true });
+  });
 }
