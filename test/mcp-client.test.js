@@ -73,6 +73,21 @@ test('an unreadable manifest fails the call instead of guessing a network', asyn
   });
 });
 
+test('hosted MCP clients surface a 402 instead of auto-paying', async () => {
+  const { fetchImpl } = stubApi({ network: 'eip155:8453' });
+  const paidFetch = createPaidFetch({
+    apiBaseUrl,
+    paymentMode: 'x402',
+    privateKey: '0x'.padEnd(66, '1'),
+    payOnChallenge: false,
+    fetchImpl,
+  });
+
+  const response = await paidFetch(new URL('v1/validate', apiBaseUrl), { method: 'POST' });
+
+  assert.equal(response.status, 402);
+});
+
 test('a non-402 response is returned untouched and reads no manifest', async () => {
   const calls = [];
   const fetchImpl = async (input) => {

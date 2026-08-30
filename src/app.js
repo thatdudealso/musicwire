@@ -19,6 +19,7 @@ import {
 import { Renderer } from './renderer.js';
 import { signedRenderReceipt, verificationUrl } from './provenance.js';
 import { failureCodes } from './qc.js';
+import { attachMusicwireMcp } from '../mcp/src/http.js';
 
 export function createApp(overrides = {}) {
   const config = { ...defaultConfig, ...overrides };
@@ -489,6 +490,8 @@ export function createApp(overrides = {}) {
       next(error);
     }
   });
+
+  attachMusicwireMcp(app);
 
   app.use(async (error, request, response, _next) => {
     if (error instanceof PaymentConfigurationError)

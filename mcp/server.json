@@ -8,14 +8,20 @@
     "id": "1337252218",
     "subfolder": "mcp"
   },
-  "version": "0.1.1",
+  "version": "0.1.2",
   "websiteUrl": "https://musicwire.5432wire.com/docs",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://musicwire.5432wire.com/mcp"
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "musicwire-mcp",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

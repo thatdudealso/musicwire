@@ -1,6 +1,6 @@
 {
   "name": "musicwire-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP server for paid Musicwire MusicXML validation and rendering.",
   "mcpName": "io.github.thatdudealso/musicwire-mcp",
   "homepage": "https://musicwire.5432wire.com/",

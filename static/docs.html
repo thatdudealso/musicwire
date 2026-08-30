@@ -80,6 +80,12 @@
     }
   }
 }</code></pre>
+                <p>
+                  Hosted MCP clients such as Claude Connectors and Smithery connect over Streamable
+                  HTTP at the same domain. Musicwire does not hold a buyer wallet for that endpoint.
+                  Paid tools quote with the same x402 challenge as the HTTPS API.
+                </p>
+                <pre><code>https://musicwire.5432wire.com/mcp</code></pre>
                 <p>For plain HTTPS, read the live machine-readable manifest first:</p>
                 <pre><code>curl https://musicwire.5432wire.com/manifest</code></pre>
               </div>
@@ -739,7 +745,15 @@ curl -s -X POST https://musicwire.5432wire.com/v1/provenance/verify \
             is presented, and a rejected body never charges you.
           </p>
           <h3>For agents</h3>
-          <pre><code># 1. Probe a priced route. Any unpaid request returns the 402 challenge;
+          <pre><code># Hosted MCP: initialize and list tools are free. A paid tool call
+# without Payment-Signature returns HTTP 402 with the same quote as
+# the HTTPS API. Retry the identical MCP request after signing.
+curl -si -X POST https://musicwire.5432wire.com/mcp \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+
+# 1. Probe a priced route. Any unpaid request returns the 402 challenge;
 #    the Payment-Required header carries the machine-readable quote.
 curl -si -X POST https://musicwire.5432wire.com/v1/validate
 
@@ -809,6 +823,15 @@ npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
               <p>
                 Free. Submit <code>{ "sha256": "..." }</code> to check a file hash against
                 musicwire's signed render receipts.
+              </p>
+            </article>
+            <article>
+              <h3><code>POST /mcp</code></h3>
+              <p>
+                Streamable HTTP MCP. The same tools as <code>npx -y musicwire-mcp</code>: compose
+                guide, validate, render, job status, and provenance verify. Validate and render
+                return HTTP 402 until the caller retries with an x402
+                <code>Payment-Signature</code>.
               </p>
             </article>
             <article>

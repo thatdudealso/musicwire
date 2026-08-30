@@ -1,11 +1,26 @@
 # musicwire-mcp
 
-`musicwire-mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server for Musicwire. It gives an MCP client four tools:
+`musicwire-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io/) server for Musicwire. It gives an MCP client five tools:
 
 - `musicwire_compose_guide` - get the free MusicXML authoring guide.
 - `musicwire_validate` - pay for detailed MusicXML validation.
 - `musicwire_render` - pay to queue a MusicXML render.
 - `musicwire_get_job` - inspect a render or poll it to completion.
+- `musicwire_verify_provenance` - free check of an artifact SHA-256 against signed render receipts.
+
+Local MCP clients such as Claude Code and Cursor run this package over stdio:
+
+```sh
+npx -y musicwire-mcp
+```
+
+Hosted MCP clients such as Claude Connectors and Smithery use the public Streamable HTTP endpoint served by the Musicwire API:
+
+```
+https://musicwire.5432wire.com/mcp
+```
+
+That hosted endpoint exposes the same tools. It does not hold a buyer wallet. `musicwire_validate` and `musicwire_render` return HTTP `402 Payment Required` with the same x402 quote as `POST /v1/validate` and `POST /v1/render`. Retry the identical MCP request with `Payment-Signature`. Compose guide, job polling, and provenance verify stay free.
 
 The only requestable render outputs are MP3 for listening and MIDI for editing. Completed renders also include the source MusicXML, `NOTICE.txt`, and `receipt.json`.
 
@@ -13,13 +28,7 @@ Paid calls use x402 Exact USDC on Base. The server reads `GET /manifest` from th
 
 ## Install
 
-Run it directly from an MCP client:
-
-```sh
-npx -y musicwire-mcp
-```
-
-The package requires Node.js 22.5 or newer.
+The package requires Node.js 22.5 or newer. Run the stdio server directly from an MCP client with `npx -y musicwire-mcp`, or point a Streamable HTTP MCP client at `https://musicwire.5432wire.com/mcp`.
 
 ## Configuration
 
@@ -31,7 +40,7 @@ The package requires Node.js 22.5 or newer.
 
 The server starts and serves the free tools without a key. The key is read only when a paid call actually receives `402 Payment Required`; if it is missing at that point, the tool call fails with an error telling you to set it.
 
-`stub` mode retries challenges with a non-secret test authorization and is rejected unless `MUSICWIRE_API_URL` points at `localhost`, `127.0.0.1`, or `::1`. It is for Musicwire's explicit local stub profile only. Never use it for a remote API.
+`stub` mode retries challenges with a non-secret test authorization and is rejected unless `MUSICWIRE_API_URL` points at `localhost`, `127.0.0.1`, or `::1`. It is for Musicwire's explicit local stub profile only. Never use it for a remote API. The hosted `/mcp` endpoint never enables stub auto-pay and never holds a server-side buyer key.
 
 Fund the buyer wallet on the network the target deployment advertises: real USDC on Base mainnet for the hosted deployment, test USDC on Base Sepolia for a local one. This package never picks the network itself, so it cannot pay on a network the server did not quote, and it refuses any advertised network other than those two. Treat the private key as a secret: inject it through your client environment, do not put it in a repository or client configuration file, and rotate it if exposed.
 
@@ -96,6 +105,6 @@ The repository's `test/mcp-e2e.test.js` uses a real stdio MCP session against th
 
 ## Payment behavior
 
-For `musicwire_validate` and `musicwire_render`, the package sends the original request first. If Musicwire returns `402`, it reads the advertised payment network from `GET /manifest`, then the x402 client reads the payment requirements, signs an Exact EVM authorization with the configured buyer wallet on that network, and repeats the identical request with `Payment-Signature`. Musicwire verifies the authorization before work and captures only after quality control passes. Job polling and the compose guide are free.
+For `musicwire_validate` and `musicwire_render`, the package sends the original request first. If Musicwire returns `402`, it reads the advertised payment network from `GET /manifest`, then the x402 client reads the payment requirements, signs an Exact EVM authorization with the configured buyer wallet on that network, and repeats the identical request with `Payment-Signature`. Musicwire verifies the authorization before work and captures only after quality control passes. Job polling, the compose guide, and provenance verify are free. The hosted Streamable HTTP endpoint returns that `402` to the calling agent instead of paying.
 
 `idempotency_key` is available on the two paid tools. Reuse it when retrying a request to ensure Musicwire replays the original outcome instead of creating another payment authorization.
