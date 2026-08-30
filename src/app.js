@@ -19,6 +19,7 @@ import {
 import { Renderer } from './renderer.js';
 import { signedRenderReceipt, verificationUrl } from './provenance.js';
 import { failureCodes } from './qc.js';
+import { attachMusicwireMcp } from '../mcp/src/http.js';
 
 export function createApp(overrides = {}) {
   const config = { ...defaultConfig, ...overrides };
@@ -490,6 +491,8 @@ export function createApp(overrides = {}) {
     }
   });
 
+  attachMusicwireMcp(app);
+
   app.use(async (error, request, response, _next) => {
     if (error instanceof PaymentConfigurationError)
       return response.status(503).json({
@@ -906,10 +909,22 @@ function renderResponse(record, config) {
   };
 }
 
+// The hosted MCP handler re-enters this app over 127.0.0.1 carrying the
+// originating client's limiter key, so internal calls draw from that client's
+// own per-IP budget rather than a shared loopback bucket; the socket check
+// keeps the marker header unforgeable from outside the host.
+const loopbackAddresses = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+function mcpLoopbackClientKey(request) {
+  const client = request.get('x-musicwire-loopback');
+  if (!client || !loopbackAddresses.has(request.socket?.remoteAddress)) return null;
+  return client;
+}
+
 function rateLimit(limiter, config) {
   let lastSweepAt = 0;
   return (request, response, next) => {
-    const key = request.ip ?? 'unknown';
+    const key = mcpLoopbackClientKey(request) ?? request.ip ?? 'unknown';
     const now = Date.now();
     if (now - lastSweepAt >= 60_000) {
       for (const [ip, timestamps] of limiter) {

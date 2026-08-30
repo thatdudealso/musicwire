@@ -17,9 +17,12 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --omit=dev
+COPY mcp/package.json mcp/package-lock.json ./mcp/
+RUN npm ci --ignore-scripts --omit=dev \
+  && npm --prefix mcp ci --ignore-scripts --omit=dev
 COPY src ./src
 COPY static ./static
+COPY mcp/src ./mcp/src
 
 ENV NODE_ENV=production \
   MSCORE_BIN=/opt/musescore/AppRun \

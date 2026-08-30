@@ -44,6 +44,7 @@ test('MCP stdio server calls every Musicwire API tool using the local stub payme
       'musicwire_get_job',
       'musicwire_render',
       'musicwire_validate',
+      'musicwire_verify_provenance',
     ]);
 
     const guide = await client.callTool('musicwire_compose_guide', {
@@ -75,6 +76,11 @@ test('MCP stdio server calls every Musicwire API tool using the local stub payme
     assert.equal(job.job_id, render.job_id);
     assert.equal(job.status, 'completed');
     assert.equal(job.payment.status, 'settled');
+
+    const provenance = await client.callTool('musicwire_verify_provenance', {
+      sha256: '0'.repeat(64),
+    });
+    assert.equal(provenance.rendered_by_musicwire, false);
   } finally {
     await client.close();
     await closeServer(api);

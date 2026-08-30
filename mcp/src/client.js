@@ -20,10 +20,17 @@ export function createMusicwireClient({
   baseUrl = process.env.MUSICWIRE_API_URL ?? 'http://127.0.0.1:8787',
   paymentMode = process.env.MUSICWIRE_MCP_PAYMENT_MODE ?? 'x402',
   privateKey = process.env.MUSICWIRE_X402_PRIVATE_KEY ?? process.env.X402_PRIVATE_KEY,
+  payOnChallenge = true,
   fetchImpl = globalThis.fetch,
 } = {}) {
   const apiBaseUrl = normalizeApiBaseUrl(baseUrl);
-  const paidFetch = createPaidFetch({ apiBaseUrl, paymentMode, privateKey, fetchImpl });
+  const paidFetch = createPaidFetch({
+    apiBaseUrl,
+    paymentMode,
+    privateKey,
+    payOnChallenge,
+    fetchImpl,
+  });
   const request = async ({ method, path, body, idempotencyKey }) => {
     const headers = { accept: 'application/json' };
     if (body !== undefined) headers['content-type'] = 'application/json';
@@ -75,13 +82,27 @@ export function createMusicwireClient({
     getJob(jobId) {
       return request({ method: 'GET', path: `v1/jobs/${encodeURIComponent(jobId)}` });
     },
+    verifyProvenance({ sha256 }) {
+      return request({
+        method: 'POST',
+        path: 'v1/provenance/verify',
+        body: { sha256 },
+      });
+    },
   };
 }
 
-export function createPaidFetch({ apiBaseUrl, paymentMode, privateKey, fetchImpl }) {
+export function createPaidFetch({
+  apiBaseUrl,
+  paymentMode,
+  privateKey,
+  payOnChallenge = true,
+  fetchImpl,
+}) {
   if (paymentMode === 'stub') return createStubPaymentFetch({ apiBaseUrl, fetchImpl });
   if (paymentMode !== 'x402')
     throw new Error('MUSICWIRE_MCP_PAYMENT_MODE must be either "x402" or "stub".');
+  if (!payOnChallenge) return fetchImpl;
   let payingFetch = null;
   return async (input, init) => {
     if (payingFetch) return (await payingFetch)(input, init);
