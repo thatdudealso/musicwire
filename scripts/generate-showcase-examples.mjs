@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import prettier from 'prettier';
+
 const examplesDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../static/examples',
@@ -1091,16 +1093,18 @@ fs.mkdirSync(examplesDirectory, { recursive: true });
 for (const example of examples) {
   fs.writeFileSync(path.join(examplesDirectory, `${example.filename}.musicxml`), score(example));
 }
+const catalogPath = path.join(examplesDirectory, 'catalog.json');
 fs.writeFileSync(
-  path.join(examplesDirectory, 'catalog.json'),
-  `${JSON.stringify(
-    examples.map(({ parts, ...example }) => ({
-      ...example,
-      musicxml: `/examples/${example.filename}.musicxml`,
-      audio: `/examples/${example.filename}.mp3`,
-      instruments: parts.map((item) => item.name),
-    })),
-    null,
-    2,
-  )}\n`,
+  catalogPath,
+  await prettier.format(
+    JSON.stringify(
+      examples.map(({ parts, ...example }) => ({
+        ...example,
+        musicxml: `/examples/${example.filename}.musicxml`,
+        audio: `/examples/${example.filename}.mp3`,
+        instruments: parts.map((item) => item.name),
+      })),
+    ),
+    { ...(await prettier.resolveConfig(catalogPath)), filepath: catalogPath },
+  ),
 );
