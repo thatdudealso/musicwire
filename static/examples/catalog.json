@@ -112,6 +112,22 @@
     "instruments": ["Flute", "Clarinet in B-flat", "Bassoon", "Piano"]
   },
   {
+    "id": "ensemble-house-edm-lantern-call",
+    "order": 8,
+    "kind": "ensemble",
+    "title": "Lantern Call",
+    "filename": "08-ensemble-house-edm-lantern-call",
+    "description": "Driving house/EDM with synth bass, lead, pad, and drum kit in C minor - 46 seconds.",
+    "durationSeconds": 45.7,
+    "tempo": 126,
+    "keyFifths": -3,
+    "mode": "minor",
+    "measures": 24,
+    "musicxml": "/examples/08-ensemble-house-edm-lantern-call.musicxml",
+    "audio": "/examples/08-ensemble-house-edm-lantern-call.mp3",
+    "instruments": ["Synth Lead", "Synth Bass", "Synth Pad", "House Drum Kit"]
+  },
+  {
     "id": "ensemble-jazz-combo-after-hours",
     "order": 9,
     "kind": "ensemble",

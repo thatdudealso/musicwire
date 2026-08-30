@@ -79,8 +79,8 @@ function publishedShowcaseExamples() {
   );
   assert.equal(
     catalog.length,
-    8,
-    'The listening gallery must publish exactly eight certified tracks.',
+    9,
+    'The listening gallery must publish exactly nine showcase tracks.',
   );
   assert.equal(
     catalog.filter((example) => example.kind === 'solo').length,
@@ -89,8 +89,8 @@ function publishedShowcaseExamples() {
   );
   assert.equal(
     catalog.filter((example) => example.kind === 'ensemble').length,
-    3,
-    'The listening gallery must publish three certified ensemble tracks.',
+    4,
+    'The listening gallery must publish four ensemble tracks.',
   );
   const ensembleCombinations = catalog
     .filter((example) => example.kind === 'ensemble')
@@ -103,7 +103,7 @@ function publishedShowcaseExamples() {
   );
   assert.equal(
     new Set(ensembleCombinations).size,
-    3,
+    4,
     'Each ensemble must use a different instrument combination.',
   );
   const soloInstruments = catalog
@@ -114,7 +114,9 @@ function publishedShowcaseExamples() {
     catalog.some((example) => /synthesized choir voice/i.test(example.description)),
     'The voice showcase must be labeled as synthesized on the site.',
   );
-  assert.doesNotMatch(docs, /Lantern Call|08-ensemble-brass-lantern-call/);
+  const edmExample = catalog.find((example) => example.id === 'ensemble-house-edm-lantern-call');
+  assert.ok(edmExample, 'The gallery must include the rebuilt house/EDM Lantern Call.');
+  assert.match(edmExample.description, /house\/EDM.*synth bass.*drum kit/i);
   return catalog.map((example) => {
     const card = docs.match(
       new RegExp(

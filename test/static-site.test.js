@@ -38,8 +38,9 @@ test('landing page, docs page, and static assets are served', async () => {
     assert.match(docs.headers.get('content-type'), /text\/html/);
     const docsHtml = await docs.text();
     assert.match(docsHtml, /Connect, request, pay, receive, listen/);
-    assert.match(docsHtml, /Eight complete scores, ready to hear and reuse/);
+    assert.match(docsHtml, /Nine complete scores, ready to hear and reuse/);
     assert.match(docsHtml, /Wordless synthesized choir voice/);
+    assert.match(docsHtml, /Driving house\/EDM with synth bass, lead, pad, and drum kit/);
     assert.match(docsHtml, /aria-label="Sunroom Parade - bright happy solo piano, 50 seconds"/);
     assert.match(docsHtml, /Solo piano in C major/);
     assert.match(docsHtml, /Violin and cello in two parts/);
@@ -61,6 +62,10 @@ test('landing page, docs page, and static assets are served', async () => {
     const showcaseAudio = await fetch(`${base}/examples/01-solo-violin-moonlit-thread.mp3`);
     assert.equal(showcaseAudio.status, 200);
     assert.match(showcaseAudio.headers.get('content-type'), /^audio\/mpeg/);
+
+    const edmMusicXml = await fetch(`${base}/examples/08-ensemble-house-edm-lantern-call.musicxml`);
+    assert.equal(edmMusicXml.status, 200);
+    assert.match(await edmMusicXml.text(), /<work-title>Lantern Call<\/work-title>/);
 
     const favicon = await fetch(`${base}/musicwire-favicon.svg`);
     assert.equal(favicon.status, 200);

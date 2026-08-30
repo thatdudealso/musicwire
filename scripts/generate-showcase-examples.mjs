@@ -56,19 +56,21 @@ const renderMeasureEvents = (source, part) => {
       const duration = Number(durationText);
       if (token === 'R')
         return `<note><rest/><duration>${duration}</duration><type>${typeForDuration[duration]}</type>${duration === 3 || duration === 6 ? '<dot/>' : ''}</note>`;
-      const unpitched = token.startsWith('U');
-      const pitches = (unpitched ? token.slice(1) : token)
-        .replace(/^\[/, '')
-        .replace(/\]$/, '')
-        .split(',');
+      const pitches = token.replace(/^\[/, '').replace(/\]$/, '').split(',');
       return pitches
-        .map((pitch, index) =>
-          renderNote(pitch, duration, {
+        .map((sourcePitch, index) => {
+          const unpitched = sourcePitch.startsWith('U');
+          const unpitchedMatch = unpitched ? sourcePitch.match(/^U([A-Z]?)([A-G]\d)$/) : null;
+          assert.ok(!unpitched || unpitchedMatch, `Invalid percussion token ${sourcePitch}`);
+          const [, instrumentKey = '', pitch] = unpitchedMatch ?? [];
+          return renderNote(unpitched ? pitch : sourcePitch, duration, {
             chord: index > 0,
             unpitched,
-            instrumentId: unpitched ? part.instrumentId : undefined,
-          }),
-        )
+            instrumentId: unpitched
+              ? (part.percussionInstruments?.[instrumentKey]?.id ?? part.instrumentId)
+              : undefined,
+          });
+        })
         .join('');
     })
     .join('');
@@ -106,16 +108,31 @@ const renderPart = (part, example) => {
     .join('')}</part>`;
 };
 
+const scorePart = (part) => {
+  const percussionInstruments = part.percussionInstruments
+    ? Object.values(part.percussionInstruments)
+    : null;
+  const instruments = percussionInstruments ?? [
+    { id: part.instrumentId, name: part.instrument, program: part.program },
+  ];
+  return `<score-part id="${part.id}"><part-name>${xml(part.name)}</part-name><part-abbreviation>${xml(part.abbreviation)}</part-abbreviation>${instruments
+    .map(
+      (instrument) =>
+        `<score-instrument id="${instrument.id}"><instrument-name>${xml(instrument.name)}</instrument-name></score-instrument>`,
+    )
+    .join('')}${instruments
+    .map(
+      (instrument) =>
+        `<midi-instrument id="${instrument.id}"><midi-channel>${part.channel}</midi-channel>${instrument.unpitched ? `<midi-unpitched>${instrument.unpitched}</midi-unpitched>` : `<midi-program>${instrument.program}</midi-program>`}</midi-instrument>`,
+    )
+    .join('')}</score-part>`;
+};
+
 const score = (example) => `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">
   <work><work-title>${xml(example.title)}</work-title></work>
   <identification><creator type="composer">Musicwire showcase</creator><encoding><software>Musicwire documentation example</software></encoding></identification>
-  <part-list>${example.parts
-    .map(
-      (part) =>
-        `<score-part id="${part.id}"><part-name>${xml(part.name)}</part-name><part-abbreviation>${xml(part.abbreviation)}</part-abbreviation><score-instrument id="${part.instrumentId}"><instrument-name>${xml(part.instrument)}</instrument-name></score-instrument><midi-instrument id="${part.instrumentId}"><midi-channel>${part.channel}</midi-channel><midi-program>${part.program}</midi-program></midi-instrument></score-part>`,
-    )
-    .join('')}</part-list>
+  <part-list>${example.parts.map(scorePart).join('')}</part-list>
   ${example.parts.map((part) => renderPart(part, example)).join('\n  ')}
 </score-partwise>
 `;
@@ -667,6 +684,259 @@ const examples = [
         '[F3,A3,C4]:4 [F3,A3,C4]:4',
         '[Bb3,D4,F4]:8',
       ]),
+    ],
+  },
+  {
+    id: 'ensemble-house-edm-lantern-call',
+    order: 8,
+    kind: 'ensemble',
+    title: 'Lantern Call',
+    filename: '08-ensemble-house-edm-lantern-call',
+    description:
+      'Driving house/EDM with synth bass, lead, pad, and drum kit in C minor - 46 seconds.',
+    durationSeconds: 45.7,
+    tempo: 126,
+    keyFifths: -3,
+    mode: 'minor',
+    measures: 24,
+    parts: [
+      part(
+        'P1',
+        'Synth Lead',
+        'Lead',
+        'Synth Lead',
+        1,
+        81,
+        'treble',
+        [
+          'R:8',
+          'R:8',
+          'R:8',
+          'R:8',
+          'R:4 G5:1 Bb5:1 C6:2',
+          'G5:1 Bb5:1 C6:2 Bb5:1 G5:1 F5:2',
+          'G5:1 Bb5:1 C6:1 G5:1 F5:1 G5:1 Bb5:2',
+          'R:8',
+          'G5:1 Bb5:1 C6:1 D6:1 Eb6:1 D6:1 C6:1 Bb5:1',
+          'Bb5:1 C6:1 D6:1 Eb6:1 F6:1 Eb6:1 D6:1 C6:1',
+          'C6:1 D6:1 Eb6:1 F6:1 G6:1 F6:1 Eb6:1 D6:1',
+          'D6:1 Eb6:1 F6:1 G6:1 Ab6:1 G6:1 F6:1 Eb6:1',
+          'Eb6:1 F6:1 G6:1 Ab6:1 Bb6:1 Ab6:1 G6:1 F6:1',
+          'F6:1 G6:1 Ab6:1 Bb6:1 C7:1 Bb6:1 Ab6:1 G6:1',
+          'G6:1 Ab6:1 Bb6:1 C7:1 D7:1 C7:1 Bb6:1 Ab6:1',
+          'Ab6:1 Bb6:1 C7:1 D7:1 Eb7:1 D7:1 C7:1 Bb6:1',
+          'R:4 G5:1 Bb5:1 C6:1 D6:1',
+          'Eb6:1 F6:1 G6:1 Ab6:1 Bb6:1 C7:1 D7:1 Eb7:1',
+          'G5:1 G5:1 Bb5:1 C6:1 Eb6:1 D6:1 C6:1 Bb5:1',
+          'G5:1 G5:1 Bb5:1 C6:1 G6:1 F6:1 Eb6:1 D6:1',
+          'Eb6:1 D6:1 C6:1 Bb5:1 G5:1 Bb5:1 C6:1 Eb6:1',
+          'D6:1 C6:1 Bb5:1 G5:1 F5:1 G5:1 Bb5:1 C6:1',
+          'G5:1 G5:1 Bb5:1 C6:1 Eb6:1 D6:1 C6:1 Bb5:1',
+          'C6:4 G5:2 C6:2',
+        ],
+        {
+          directions: [
+            { words: 'intro - pad only' },
+            null,
+            null,
+            null,
+            { words: 'groove enters' },
+            null,
+            null,
+            null,
+            { words: 'build: climb every bar' },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            { words: 'hold the tension' },
+            { dynamic: 'p' },
+            null,
+            { dynamic: 'f' },
+          ],
+        },
+      ),
+      part(
+        'P2',
+        'Synth Bass',
+        'Bass',
+        'Synth Bass',
+        2,
+        39,
+        'bass',
+        [
+          'R:8',
+          'R:8',
+          'R:8',
+          'R:8',
+          'C2:1 C2:1 G2:1 C3:1 C2:1 C2:1 G2:1 Bb2:1',
+          'Ab1:1 Ab1:1 Eb2:1 Ab2:1 Ab1:1 Ab1:1 Eb2:1 G2:1',
+          'Eb2:1 Eb2:1 Bb2:1 Eb3:1 Eb2:1 Eb2:1 Bb2:1 D3:1',
+          'Bb1:1 Bb1:1 F2:1 Bb2:1 Bb1:1 Bb1:1 F2:1 Ab2:1',
+          'C2:1 C2:1 G2:1 C3:1 C2:1 C2:1 G2:1 Bb2:1',
+          'Ab1:1 Ab1:1 Eb2:1 Ab2:1 Ab1:1 Ab1:1 Eb2:1 G2:1',
+          'Eb2:1 Eb2:1 Bb2:1 Eb3:1 Eb2:1 Eb2:1 Bb2:1 D3:1',
+          'Bb1:1 Bb1:1 F2:1 Bb2:1 Bb1:1 Bb1:1 F2:1 Ab2:1',
+          'C2:1 C2:1 G2:1 C3:1 C2:1 C2:1 G2:1 Bb2:1',
+          'Ab1:1 Ab1:1 Eb2:1 Ab2:1 Ab1:1 Ab1:1 Eb2:1 G2:1',
+          'Eb2:1 Eb2:1 Bb2:1 Eb3:1 Eb2:1 Eb2:1 Bb2:1 D3:1',
+          'Bb1:1 Bb1:1 F2:1 Bb2:1 Bb1:1 Bb1:1 F2:1 Ab2:1',
+          'R:8',
+          'R:8',
+          'C2:1 C2:1 G2:1 C3:1 C2:1 C2:1 G2:1 Bb2:1',
+          'Ab1:1 Ab1:1 Eb2:1 Ab2:1 Ab1:1 Ab1:1 Eb2:1 G2:1',
+          'Eb2:1 Eb2:1 Bb2:1 Eb3:1 Eb2:1 Eb2:1 Bb2:1 D3:1',
+          'Bb1:1 Bb1:1 F2:1 Bb2:1 Bb1:1 Bb1:1 F2:1 Ab2:1',
+          'C2:1 C2:1 G2:1 C3:1 C2:1 C2:1 G2:1 Bb2:1',
+          'C2:4 G2:2 C2:2',
+        ],
+        {
+          directions: [
+            null,
+            null,
+            null,
+            null,
+            { dynamic: 'mp' },
+            null,
+            null,
+            null,
+            { dynamic: 'mf' },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            { dynamic: 'p' },
+            null,
+            { dynamic: 'f' },
+          ],
+        },
+      ),
+      part(
+        'P3',
+        'Synth Pad',
+        'Pad',
+        'Synth Pad',
+        3,
+        89,
+        'treble',
+        [
+          '[C4,Eb4,G4]:8',
+          '[Ab3,C4,Eb4]:8',
+          '[Eb4,G4,Bb4]:8',
+          '[Bb3,D4,F4]:8',
+          '[C4,Eb4,G4]:8',
+          '[Ab3,C4,Eb4]:8',
+          '[Eb4,G4,Bb4]:8',
+          '[Bb3,D4,F4]:8',
+          '[C4,Eb4,G4]:8',
+          '[Ab3,C4,Eb4]:8',
+          '[Eb4,G4,Bb4]:8',
+          '[Bb3,D4,F4]:8',
+          '[C4,Eb4,G4]:8',
+          '[Ab3,C4,Eb4]:8',
+          '[Eb4,G4,Bb4]:8',
+          '[Bb3,D4,F4]:8',
+          '[C4,Eb4,G4]:8',
+          '[Ab3,C4,Eb4]:8',
+          '[C4,Eb4,G4]:8',
+          '[Ab3,C4,Eb4]:8',
+          '[Eb4,G4,Bb4]:8',
+          '[Bb3,D4,F4]:8',
+          '[C4,Eb4,G4]:8',
+          '[C4,Eb4,G4]:8',
+        ],
+        {
+          directions: [
+            { dynamic: 'p' },
+            null,
+            null,
+            null,
+            { dynamic: 'mp' },
+            null,
+            null,
+            null,
+            { dynamic: 'mf' },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            { dynamic: 'p' },
+            null,
+            { dynamic: 'f' },
+          ],
+        },
+      ),
+      part(
+        'P4',
+        'House Drum Kit',
+        'Drs.',
+        'Acoustic Bass Drum',
+        10,
+        1,
+        'percussion',
+        [
+          'R:8',
+          'R:8',
+          'R:8',
+          'R:8',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'R:8',
+          'R:8',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+          'UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1 UKC4,UHG5:1 UHG5:1 UKC4,USC5,UHG5:1 UHG5:1',
+        ],
+        {
+          percussionInstruments: {
+            K: { id: 'P4-I1', name: 'Acoustic Bass Drum', unpitched: 36 },
+            S: { id: 'P4-I2', name: 'Acoustic Snare', unpitched: 38 },
+            H: { id: 'P4-I3', name: 'Closed Hi-Hat', unpitched: 42 },
+          },
+          directions: [
+            { words: 'intro - no drums' },
+            null,
+            null,
+            null,
+            { words: 'four on the floor' },
+            null,
+            null,
+            null,
+            { words: 'build: hats and snare' },
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            { words: 'last bar before the break' },
+            { dynamic: 'p' },
+            null,
+            { dynamic: 'ff' },
+          ],
+        },
+      ),
     ],
   },
   {
