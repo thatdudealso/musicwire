@@ -1,7 +1,6 @@
 # Musicwire showcase production briefs
 
-These briefs are the compositional contract for the nine public gallery scores. Tracks 01-07 and
-09 are captain-certified; 08 is held for the rebuilt house/EDM listen gate.
+These briefs are the compositional contract for the nine captain-certified public gallery scores.
 Each score is written as a complete 45-60 second miniature with an intro, development, and close.
 The generated source of truth is `scripts/generate-showcase-examples.mjs`; the verbatim public
 MusicXML files live in `static/examples/`.

@@ -162,6 +162,8 @@
         })
         .then((musicxml) => {
           codeBlock.textContent = musicxml;
+          const copyButton = codeBlock.closest('details')?.querySelector('.copy-musicxml');
+          if (copyButton) copyButton.disabled = false;
           const requestBlock = codeBlock
             .closest('.showcase-card')
             ?.querySelector('.render-request');
@@ -180,7 +182,13 @@
     document.querySelectorAll('.copy-musicxml').forEach((button) => {
       button.addEventListener('click', async () => {
         const codeBlock = button.closest('details')?.querySelector('[data-musicxml-src]');
-        if (!codeBlock || codeBlock.textContent.startsWith('MusicXML could not')) return;
+        if (
+          !codeBlock ||
+          button.disabled ||
+          codeBlock.textContent.startsWith('MusicXML could not') ||
+          codeBlock.textContent.startsWith('Loading MusicXML')
+        )
+          return;
         try {
           await navigator.clipboard.writeText(codeBlock.textContent);
           button.textContent = 'Copied';
