@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createApp } from '../src/app.js';
 
@@ -14,6 +15,7 @@ const mscoreBin =
 const hasCommand = (command) => spawnSync(command, ['-version'], { stdio: 'ignore' }).status === 0;
 const shouldRun =
   process.env.MUSICWIRE_E2E === '1' && mscoreBin && hasCommand('ffprobe') && hasCommand('ffmpeg');
+const showcaseAudioDirectory = process.env.MUSICWIRE_E2E_EXAMPLES_OUTPUT_DIR;
 
 test(
   'every published MusicXML example completes through the real render path',
@@ -34,11 +36,24 @@ test(
     await new Promise((resolve) => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
     try {
-      const jobs = [];
-      for (const example of publishedRenderExamples()) {
-        jobs.push(await renderAndAssertCompleted(base, example.musicxml, example.formats));
+      for (const example of publishedShowcaseExamples()) {
+        const job = await renderAndAssertCompleted(
+          base,
+          example.musicxml,
+          example.formats,
+          example.audioFilename,
+        );
+        assert.ok(
+          job.facts.scoreDurationSeconds >= 45 && job.facts.scoreDurationSeconds <= 60,
+          `${example.id} must be a 45-60 second written score, got ${job.facts.scoreDurationSeconds}s`,
+        );
+        assert.equal(job.facts.partCount, example.partCount);
       }
-      const shortStringJob = jobs.find((job) =>
+      const inlineJobs = [];
+      for (const example of publishedInlineRenderExamples()) {
+        inlineJobs.push(await renderAndAssertCompleted(base, example.musicxml, example.formats));
+      }
+      const shortStringJob = inlineJobs.find((job) =>
         job.facts.instruments.some((instrument) => /violin|violoncello|cello/i.test(instrument)),
       );
       assert.ok(shortStringJob, 'Published examples must include the short string score.');
@@ -56,7 +71,100 @@ test(
   },
 );
 
-function publishedRenderExamples() {
+function publishedShowcaseExamples() {
+  const docs = fs.readFileSync(new URL('../static/docs.html', import.meta.url), 'utf8');
+  const staticExamplesDirectory = fileURLToPath(new URL('../static/examples/', import.meta.url));
+  const catalog = JSON.parse(
+    fs.readFileSync(path.join(staticExamplesDirectory, 'catalog.json'), 'utf8'),
+  );
+  assert.equal(
+    catalog.length,
+    8,
+    'The listening gallery must publish exactly eight certified tracks.',
+  );
+  assert.equal(
+    catalog.filter((example) => example.kind === 'solo').length,
+    5,
+    'The listening gallery must publish five solo tracks.',
+  );
+  assert.equal(
+    catalog.filter((example) => example.kind === 'ensemble').length,
+    3,
+    'The listening gallery must publish three certified ensemble tracks.',
+  );
+  const ensembleCombinations = catalog
+    .filter((example) => example.kind === 'ensemble')
+    .map((example) => example.instruments.join('|'));
+  assert.ok(
+    catalog
+      .filter((example) => example.kind === 'ensemble')
+      .every((example) => example.instruments.length > 2),
+    'Every ensemble showcase must include more than two instruments.',
+  );
+  assert.equal(
+    new Set(ensembleCombinations).size,
+    3,
+    'Each ensemble must use a different instrument combination.',
+  );
+  const soloInstruments = catalog
+    .filter((example) => example.kind === 'solo')
+    .map((example) => example.instruments[0].toLowerCase());
+  assert.equal(new Set(soloInstruments).size, 5, 'Each solo must use a distinct instrument.');
+  assert.ok(
+    catalog.some((example) => /synthesized choir voice/i.test(example.description)),
+    'The voice showcase must be labeled as synthesized on the site.',
+  );
+  assert.doesNotMatch(docs, /Lantern Call|08-ensemble-brass-lantern-call/);
+  return catalog.map((example) => {
+    const card = docs.match(
+      new RegExp(
+        `<article\\b[^>]*data-showcase-example="${example.id}"[^>]*>[\\s\\S]*?<\\/article>`,
+      ),
+    )?.[0];
+    assert.ok(card, `${example.id} must have a documentation card.`);
+    assert.match(
+      card,
+      /<h4>For humans<\/h4>[\s\S]*?Production recipe:/,
+      `${example.id} must explain its production recipe for humans.`,
+    );
+    assert.match(
+      card,
+      /<h4>For agents<\/h4>[\s\S]*?Compose-guide note:[\s\S]*?class="render-request"/,
+      `${example.id} must give agents an adaptation note and exact render request.`,
+    );
+    assert.match(
+      card,
+      new RegExp(`src="${example.audio}"`),
+      `${example.id} must have an inline MP3 player.`,
+    );
+    assert.match(
+      card,
+      /<audio\b(?=[^>]*\bcontrols\b)(?=[^>]*\baria-label=)[^>]*>/,
+      `${example.id} must use an obvious native audio player with a human-readable label.`,
+    );
+    assert.ok(
+      card.includes(example.description),
+      `${example.id} must state its instruments, mood, and written length beside the player.`,
+    );
+    assert.match(
+      card,
+      new RegExp(`data-musicxml-src="${example.musicxml}"`),
+      `${example.id} must expose its full MusicXML below the player.`,
+    );
+    const musicxmlFilename = path.basename(example.musicxml);
+    return {
+      id: example.id,
+      musicxml: fs.readFileSync(path.join(staticExamplesDirectory, musicxmlFilename), 'utf8'),
+      formats: ['mp3', 'midi'],
+      partCount: example.instruments.length,
+      audioFilename: showcaseAudioDirectory
+        ? path.join(showcaseAudioDirectory, path.basename(example.audio))
+        : null,
+    };
+  });
+}
+
+function publishedInlineRenderExamples() {
   const docs = fs.readFileSync(new URL('../static/docs.html', import.meta.url), 'utf8');
   const sections = [...docs.matchAll(/<section\b[^>]*>[\s\S]*?<\/section>/gi)]
     .map((match) => match[0])
@@ -92,7 +200,7 @@ function publishedRenderExamples() {
   });
 }
 
-async function renderAndAssertCompleted(base, musicxml, formats) {
+async function renderAndAssertCompleted(base, musicxml, formats, audioFilename = null) {
   const submitted = await fetch(`${base}/v1/render`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'Payment-Signature': 'test-payment' },
@@ -107,6 +215,14 @@ async function renderAndAssertCompleted(base, musicxml, formats) {
   for (const format of formats) {
     const extension = format === 'midi' ? 'mid' : format;
     assert.ok(job.artifacts.some((artifact) => artifact.name === `score.${extension}`));
+  }
+  if (audioFilename) {
+    const audioArtifact = job.artifacts.find((artifact) => artifact.name === 'score.mp3');
+    assert.ok(audioArtifact, 'Showcase render must include an MP3.');
+    const audioResponse = await fetch(`${base}${audioArtifact.url}`);
+    assert.equal(audioResponse.status, 200);
+    fs.mkdirSync(path.dirname(audioFilename), { recursive: true });
+    fs.writeFileSync(audioFilename, Buffer.from(await audioResponse.arrayBuffer()));
   }
   return job;
 }

@@ -28,6 +28,8 @@ test('landing page, docs page, and static assets are served', async () => {
     const landingHtml = await landing.text();
     assert.match(landingHtml, /Make music your agent can/);
     assert.match(landingHtml, /MP3 is for listening\. MIDI is for editing/);
+    assert.match(landingHtml, /HEAR WHAT AGENTS CAN MAKE/);
+    assert.match(landingHtml, /Open the listening gallery/);
     assert.doesNotMatch(landingHtml, /PDF, SVG, PNG, MSCZ/);
     assert.match(landingHtml, /musicwire-favicon\.svg/);
 
@@ -36,6 +38,9 @@ test('landing page, docs page, and static assets are served', async () => {
     assert.match(docs.headers.get('content-type'), /text\/html/);
     const docsHtml = await docs.text();
     assert.match(docsHtml, /Connect, request, pay, receive, listen/);
+    assert.match(docsHtml, /Eight complete scores, ready to hear and reuse/);
+    assert.match(docsHtml, /Wordless synthesized choir voice/);
+    assert.match(docsHtml, /aria-label="Sunroom Parade - bright happy solo piano, 50 seconds"/);
     assert.match(docsHtml, /Solo piano in C major/);
     assert.match(docsHtml, /Violin and cello in two parts/);
     assert.match(docsHtml, /mp3<\/code> so a human can listen and <code>midi<\/code>/);
@@ -48,6 +53,14 @@ test('landing page, docs page, and static assets are served', async () => {
     const script = await fetch(`${base}/app.js`);
     assert.equal(script.status, 200);
     assert.match(script.headers.get('content-type'), /javascript/);
+
+    const showcaseMusicXml = await fetch(`${base}/examples/01-solo-violin-moonlit-thread.musicxml`);
+    assert.equal(showcaseMusicXml.status, 200);
+    assert.match(await showcaseMusicXml.text(), /<work-title>Moonlit Thread<\/work-title>/);
+
+    const showcaseAudio = await fetch(`${base}/examples/01-solo-violin-moonlit-thread.mp3`);
+    assert.equal(showcaseAudio.status, 200);
+    assert.match(showcaseAudio.headers.get('content-type'), /^audio\/mpeg/);
 
     const favicon = await fetch(`${base}/musicwire-favicon.svg`);
     assert.equal(favicon.status, 200);

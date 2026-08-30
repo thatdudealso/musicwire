@@ -52,9 +52,8 @@
             human listening to the result.
           </p>
           <div class="jump-links">
-            <a href="#quickstart">Start in five steps</a
-            ><a href="#single-instrument">Copy a solo example</a
-            ><a href="#ensemble">Copy an ensemble example</a>
+            <a href="#quickstart">Start in five steps</a><a href="#showcase">Hear the showcase</a
+            ><a href="#ensemble">Copy the smoke test</a>
           </div>
         </div>
       </section>
@@ -131,11 +130,316 @@
       <section class="section example-section" id="examples">
         <div class="container narrow">
           <p class="eyebrow">[ WORKED EXAMPLES ]</p>
-          <h2>Two scores you can copy and render.</h2>
+          <h2>Hear what agents can make.</h2>
           <p class="text-secondary">
-            Both examples submit a complete MusicXML document, receive a render job, then retrieve
-            playable audio. The only difference is the number of parts.
+            Eight complete miniatures show the range from a happy solo piano piece to a jazz combo.
+            Every sample below has passed musicwire's real render and audio quality checks.
           </p>
+        </div>
+      </section>
+
+      <section class="section showcase-section" id="showcase">
+        <div class="container narrow">
+          <p class="eyebrow">[ LISTENING GALLERY ]</p>
+          <h2>Eight complete scores, ready to hear and reuse.</h2>
+          <h3>For humans</h3>
+          <p class="text-secondary">
+            Press play first. Each miniature is roughly a minute of written music, with its own
+            musical shape and a self-hosted MP3. Download or open the score only if you want to see
+            how the sound was made.
+          </p>
+          <h3>For agents</h3>
+          <p class="text-secondary">
+            Expand a score to copy the exact MusicXML, then submit it verbatim with
+            <code>formats:["mp3","midi"]</code>. These are complete testable inputs, not prompts or
+            partial fragments.
+          </p>
+          <div class="showcase-grid">
+            <article class="showcase-card" data-showcase-example="solo-violin-moonlit-thread">
+              <p class="showcase-kicker">01 - solo</p>
+              <h3>Moonlit Thread</h3>
+              <audio
+                aria-label="Moonlit Thread - restless lyrical solo violin, 46 seconds"
+                controls
+                preload="metadata"
+              >
+                <source src="/examples/01-solo-violin-moonlit-thread.mp3" type="audio/mpeg" />
+              </audio>
+              <h4>For humans</h4>
+              <p>Restless, lyrical violin in D minor - 46 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> Chamber lyric at 84 BPM for solo violin. A
+                rising call opens, a higher sequential answer develops it, then the line settles
+                quietly home.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> The minor-mode rise creates tension and the
+                soft return resolves it. Keep the climb, answer, and release when adapting the tempo
+                or key.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/01-solo-violin-moonlit-thread.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+            <article class="showcase-card" data-showcase-example="solo-piano-sunroom-parade">
+              <p class="showcase-kicker">02 - solo</p>
+              <h3>Sunroom Parade</h3>
+              <audio
+                aria-label="Sunroom Parade - bright happy solo piano, 50 seconds"
+                controls
+                preload="metadata"
+              >
+                <source src="/examples/02-solo-piano-sunroom-parade.mp3" type="audio/mpeg" />
+              </audio>
+              <h4>For humans</h4>
+              <p>Bright, happy piano in C major - 50 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> Happy salon piano at 96 BPM. A buoyant C-major
+                opening becomes a higher middle strain, then a familiar cadence returns with a soft
+                smile.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> Major triads, a skip in the top voice, and a
+                lift in register make the optimism audible. Preserve that rising middle section
+                instead of looping one progression.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/02-solo-piano-sunroom-parade.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+            <article class="showcase-card" data-showcase-example="solo-guitar-cedar-lantern">
+              <p class="showcase-kicker">03 - solo</p>
+              <h3>Cedar Lantern</h3>
+              <audio
+                aria-label="Cedar Lantern - warm fingerstyle classical guitar, 46 seconds"
+                controls
+                preload="metadata"
+              >
+                <source src="/examples/03-solo-guitar-cedar-lantern.mp3" type="audio/mpeg" />
+              </audio>
+              <h4>For humans</h4>
+              <p>Warm fingerstyle classical guitar in E minor - 46 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> Reflective E-minor fingerstyle guitar at 84 BPM.
+                Open-string arpeggios introduce the harmony, the answer reaches wider, and the final
+                E is left ringing.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> Broken chords and ringing open strings fit a
+                guitar more naturally than piano blocks. Vary the harmonic path before the final
+                tonic so the ending feels earned.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/03-solo-guitar-cedar-lantern.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+            <article class="showcase-card" data-showcase-example="solo-flute-daybreak-kite">
+              <p class="showcase-kicker">04 - solo</p>
+              <h3>Daybreak Kite</h3>
+              <audio
+                aria-label="Daybreak Kite - airy playful solo flute, 49 seconds"
+                controls
+                preload="metadata"
+              >
+                <source src="/examples/04-solo-flute-daybreak-kite.mp3" type="audio/mpeg" />
+              </audio>
+              <h4>For humans</h4>
+              <p>Airy, playful flute in D major - 49 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> Buoyant D-major flute at 88 BPM. A breath
+                precedes the opening call, the melody launches higher in the middle, and descends to
+                a light landing.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> A rest and short phrases imply breath, while
+                the upper-register crest makes the title feel airborne. Retain those breathing
+                points when rewriting the melody.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/04-solo-flute-daybreak-kite.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+            <article class="showcase-card" data-showcase-example="solo-synthesized-voice-echoes">
+              <p class="showcase-kicker">05 - solo</p>
+              <h3>Echoes Without Words</h3>
+              <audio
+                aria-label="Echoes Without Words - wordless synthesized choir voice, 48 seconds"
+                controls
+                preload="metadata"
+              >
+                <source src="/examples/05-solo-synthesized-voice-echoes.mp3" type="audio/mpeg" />
+              </audio>
+              <h4>For humans</h4>
+              <p>Wordless synthesized choir voice (Ahh) in A minor - 48 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> Still choral meditation at 80 BPM for a
+                synthesized Ahh sound. Two long cells establish the idea, one crest widens it, and
+                the final A fades.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> Long legato notes make a synthesized choir
+                sound intentional rather than lyric-bearing. Keep it wordless and label the voice
+                honestly when adapting this texture.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/05-solo-synthesized-voice-echoes.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+            <article
+              class="showcase-card"
+              data-showcase-example="ensemble-string-quartet-winter-window"
+            >
+              <p class="showcase-kicker">06 - ensemble</p>
+              <h3>Winter Window</h3>
+              <audio
+                aria-label="Winter Window - intimate string quartet, 51 seconds"
+                controls
+                preload="metadata"
+              >
+                <source
+                  src="/examples/06-ensemble-string-quartet-winter-window.mp3"
+                  type="audio/mpeg"
+                />
+              </audio>
+              <h4>For humans</h4>
+              <p>Intimate string quartet in G minor - 51 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> G-minor string quartet at 76 BPM: two violins,
+                viola, and cello. A close texture supports the first motif, the center opens the
+                register, and all four settle to G.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> Give Violin I the changing line, inner strings
+                harmonic motion, and cello the floor. Distinct roles make an ensemble sound like
+                conversation rather than four copies.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/06-ensemble-string-quartet-winter-window.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+            <article
+              class="showcase-card"
+              data-showcase-example="ensemble-wind-trio-piano-bright-map"
+            >
+              <p class="showcase-kicker">07 - ensemble</p>
+              <h3>Bright Map</h3>
+              <audio
+                aria-label="Bright Map - buoyant flute, clarinet, bassoon, and piano, 46 seconds"
+                controls
+                preload="metadata"
+              >
+                <source
+                  src="/examples/07-ensemble-wind-trio-piano-bright-map.mp3"
+                  type="audio/mpeg"
+                />
+              </audio>
+              <h4>For humans</h4>
+              <p>Buoyant flute, clarinet, bassoon, and piano in B-flat major - 46 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> Neoclassical travel sketch at 84 BPM for flute,
+                clarinet, bassoon, and piano. The flute maps the route, winds color the middle, and
+                a compact tutti cadence closes.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> Keep the flute light, the bassoon low, and
+                piano harmonic rather than melodic. The contrast of high route and low foundation
+                creates the sense of motion.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/07-ensemble-wind-trio-piano-bright-map.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+            <article class="showcase-card" data-showcase-example="ensemble-jazz-combo-after-hours">
+              <p class="showcase-kicker">09 - ensemble</p>
+              <h3>After Hours Signal</h3>
+              <audio
+                aria-label="After Hours Signal - easy-swing alto sax, piano, bass, and drumset, 46 seconds"
+                controls
+                preload="metadata"
+              >
+                <source src="/examples/09-ensemble-jazz-combo-after-hours.mp3" type="audio/mpeg" />
+              </audio>
+              <h4>For humans</h4>
+              <p>Easy-swing alto sax, piano, bass, and drumset in F major - 46 seconds.</p>
+              <p class="showcase-recipe">
+                <strong>Production recipe:</strong> Relaxed F-major easy swing at 104 BPM for alto
+                sax, piano, acoustic bass, and drumset. Sax states the head, rhythm section opens it
+                up, then it cools into F.
+              </p>
+              <h4>For agents</h4>
+              <p>
+                <strong>Compose-guide note:</strong> Give sax the hook, piano compact changes, bass
+                a walking line, and drums a pulse. Independent roles make the groove readable even
+                in a short arrangement.
+              </p>
+              <details>
+                <summary>Copy the full MusicXML</summary>
+                <pre><code class="musicxml-example" data-musicxml-src="/examples/09-ensemble-jazz-combo-after-hours.musicxml">Loading MusicXML…</code></pre>
+                <button class="copy-musicxml" type="button">Copy MusicXML</button>
+              </details>
+              <details>
+                <summary>Copy the exact render request</summary>
+                <pre><code class="render-request">Loading request…</code></pre>
+                <button class="copy-render-request" type="button">Copy render request</button>
+              </details>
+            </article>
+          </div>
         </div>
       </section>
 
