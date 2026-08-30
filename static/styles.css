@@ -664,6 +664,9 @@ td:first-child {
   .after-grid article {
     background: var(--ink-raised);
   }
+  pre {
+    color: var(--text);
+  }
 }
 
 @media (max-width: 760px) {
