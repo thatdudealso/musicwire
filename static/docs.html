@@ -831,7 +831,10 @@ npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
                 Streamable HTTP MCP. The same tools as <code>npx -y musicwire-mcp</code>: compose
                 guide, validate, render, job status, and provenance verify. Validate and render
                 return HTTP 402 until the caller retries with an x402
-                <code>Payment-Signature</code>.
+                <code>Payment-Signature</code>. Poll <code>musicwire_get_job</code> with repeated
+                short calls here rather than one long <code>wait_for_completion</code> hold; the
+                gateway in front of this endpoint times out requests after roughly 29 seconds while
+                the render continues and stays pollable.
               </p>
             </article>
             <article>

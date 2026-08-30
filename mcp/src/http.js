@@ -71,6 +71,8 @@ function createHostedMusicwireClient(request, loopbackFetch) {
   const idempotencyKey = request.get('idempotency-key');
   return createMusicwireClient({
     baseUrl: 'http://musicwire.invalid/',
+    paymentMode: 'x402',
+    privateKey: null,
     payOnChallenge: false,
     fetchImpl: (input, init = {}) => {
       const headers = new Headers(init.headers);
@@ -89,6 +91,7 @@ export function createLoopbackFetch(request, { loopbackPort } = {}) {
     const port = loopbackPort ?? request.socket?.server?.address()?.port;
     if (!port) return Promise.reject(new Error('Musicwire MCP could not reach the local API.'));
     const headers = Object.fromEntries(new Headers(init.headers).entries());
+    headers['x-musicwire-loopback'] = '1';
     const host = request.get('host');
     if (host) headers.host = host;
     const forwardedProto = request.get('x-forwarded-proto') ?? request.protocol;

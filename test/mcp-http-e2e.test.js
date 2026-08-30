@@ -98,6 +98,64 @@ test('hosted MCP Streamable HTTP initializes, lists tools, and quotes paid tools
   }
 });
 
+test('hosted MCP loopback re-entries do not consume the shared per-IP rate budget', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-mcp-http-rate-'));
+  const api = createApp({
+    dataDirectory,
+    publicBaseUrl: 'https://musicwire.example',
+    requestsPerMinute: 3,
+  }).listen(0, '127.0.0.1');
+  await once(api, 'listening');
+  const mcp = new McpHttpClient(`http://127.0.0.1:${api.address().port}`);
+
+  try {
+    for (let call = 0; call < 3; call += 1) {
+      const guide = await mcp.callTool('musicwire_compose_guide', { style: 'waltz' });
+      assert.equal(guide.status, 200);
+    }
+    const limited = await mcp.request('tools/call', {
+      name: 'musicwire_compose_guide',
+      arguments: {},
+    });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.body.error.code, 'rate_limited');
+  } finally {
+    await closeServer(api);
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('hosted MCP ignores stdio payment env vars leaked onto the API service', async () => {
+  const previousMode = process.env.MUSICWIRE_MCP_PAYMENT_MODE;
+  const previousKey = process.env.MUSICWIRE_X402_PRIVATE_KEY;
+  process.env.MUSICWIRE_MCP_PAYMENT_MODE = 'stub';
+  process.env.MUSICWIRE_X402_PRIVATE_KEY = `0x${'11'.repeat(32)}`;
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-mcp-http-env-'));
+  const api = createApp({
+    dataDirectory,
+    publicBaseUrl: 'https://musicwire.example',
+  }).listen(0, '127.0.0.1');
+  await once(api, 'listening');
+  const mcp = new McpHttpClient(`http://127.0.0.1:${api.address().port}`);
+
+  try {
+    const guide = await mcp.callTool('musicwire_compose_guide', { style: 'waltz' });
+    assert.equal(guide.status, 200);
+    const unpaidValidate = await mcp.request('tools/call', {
+      name: 'musicwire_validate',
+      arguments: { musicxml },
+    });
+    assert.equal(unpaidValidate.status, 402);
+  } finally {
+    await closeServer(api);
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+    if (previousMode === undefined) delete process.env.MUSICWIRE_MCP_PAYMENT_MODE;
+    else process.env.MUSICWIRE_MCP_PAYMENT_MODE = previousMode;
+    if (previousKey === undefined) delete process.env.MUSICWIRE_X402_PRIVATE_KEY;
+    else process.env.MUSICWIRE_X402_PRIVATE_KEY = previousKey;
+  }
+});
+
 class McpHttpClient {
   constructor(base) {
     this.base = base;

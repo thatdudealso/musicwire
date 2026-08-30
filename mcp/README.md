@@ -22,6 +22,8 @@ https://musicwire.5432wire.com/mcp
 
 That hosted endpoint exposes the same tools. It does not hold a buyer wallet. `musicwire_validate` and `musicwire_render` return HTTP `402 Payment Required` with the same x402 quote as `POST /v1/validate` and `POST /v1/render`. Retry the identical MCP request with `Payment-Signature`. Compose guide, job polling, and provenance verify stay free.
 
+Over the hosted endpoint, poll `musicwire_get_job` with repeated short calls instead of one long `wait_for_completion` hold: the gateway in front of the hosted endpoint times out requests after roughly 29 seconds, while the render itself continues and stays pollable. Long `wait_for_completion` waits are fine over stdio.
+
 The only requestable render outputs are MP3 for listening and MIDI for editing. Completed renders also include the source MusicXML, `NOTICE.txt`, and `receipt.json`.
 
 Paid calls use x402 Exact USDC on Base. The server reads `GET /manifest` from the configured API and pays on the network that deployment advertises: Base mainnet (`eip155:8453`) or Base Sepolia (`eip155:84532`). It retries a `402 Payment Required` response with a signed payment automatically, and never logs or persists the private key.
