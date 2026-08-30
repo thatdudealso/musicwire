@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -129,6 +130,47 @@ test('hosted MCP loopback re-entries bill the originating client, not a shared b
     fs.rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
+
+test('a caller that is not a loopback peer cannot set its own rate limiter key', async () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-mcp-http-forge-'));
+  const socketPath = path.join(dataDirectory, 'api.sock');
+  const api = createApp({ dataDirectory, requestsPerMinute: 2 }).listen(socketPath);
+  await once(api, 'listening');
+
+  try {
+    const statuses = [];
+    for (let call = 0; call < 4; call += 1) {
+      statuses.push(await composeGuideOverSocket(socketPath, `forged-${call}`));
+    }
+    assert.deepEqual(
+      statuses,
+      [200, 200, 429, 429],
+      'rotating x-musicwire-loopback bought extra rate limit budget',
+    );
+  } finally {
+    await closeServer(api);
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+function composeGuideOverSocket(socketPath, forgedLoopbackClient) {
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      {
+        socketPath,
+        path: '/v1/compose-guide',
+        method: 'GET',
+        headers: { accept: 'application/json', 'x-musicwire-loopback': forgedLoopbackClient },
+      },
+      (response) => {
+        response.resume();
+        response.on('end', () => resolve(response.statusCode));
+      },
+    );
+    request.on('error', reject);
+    request.end();
+  });
+}
 
 test('aborted hosted wait_for_completion stops loopback job polling', async () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-mcp-http-abort-'));

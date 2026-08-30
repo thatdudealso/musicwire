@@ -181,18 +181,19 @@ Artifact URLs are signed and expire with the job retention window. A local-stora
 
 ## API contract
 
-| Endpoint                             |                      Price | Result                                                     |
-| ------------------------------------ | -------------------------: | ---------------------------------------------------------- |
-| `GET /v1/compose-guide`              |                       Free | Static, versioned BYO-LLM authoring guide.                 |
-| `POST /v1/validate`                  |                      $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`.    |
-| `POST /v1/render`                    | $0.25 solo, $0.50 ensemble | Returns `job_id` and `estimated_seconds`.                  |
-| `GET /v1/jobs/{id}`                  |                       Free | Status, QC outcome, receipt, and signed artifact URLs.     |
-| `POST /v1/provenance/verify`         |                       Free | Checks an artifact SHA-256 against signed render receipts. |
-| `POST /reviews`                      |                       Free | Creates one 1-5 review for a settled render `tx_hash`.     |
-| `GET /reviews`                       |                       Free | Paginated public reviews with their transaction anchors.   |
-| `GET /manifest`, `/.well-known/x402` |                       Free | Machine-readable service and payment requirements.         |
-| `GET /health`                        |                       Free | Renderer readiness.                                        |
-| `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.      |
+| Endpoint                             |                      Price | Result                                                                                                                               |
+| ------------------------------------ | -------------------------: | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/compose-guide`              |                       Free | Static, versioned BYO-LLM authoring guide.                                                                                           |
+| `POST /v1/validate`                  |                      $0.10 | `{valid, errors:[{line, measure, message, fix_hint}]}`.                                                                              |
+| `POST /v1/render`                    | $0.25 solo, $0.50 ensemble | Returns `job_id` and `estimated_seconds`.                                                                                            |
+| `GET /v1/jobs/{id}`                  |                       Free | Status, QC outcome, receipt, and signed artifact URLs.                                                                               |
+| `POST /v1/provenance/verify`         |                       Free | Checks an artifact SHA-256 against signed render receipts.                                                                           |
+| `POST /reviews`                      |                       Free | Creates one 1-5 review for a settled render `tx_hash`.                                                                               |
+| `GET /reviews`                       |                       Free | Paginated public reviews with their transaction anchors.                                                                             |
+| `GET /manifest`, `/.well-known/x402` |                       Free | Machine-readable service and payment requirements.                                                                                   |
+| `GET /health`                        |                       Free | Renderer readiness.                                                                                                                  |
+| `POST /mcp`                          |              Same as above | Streamable HTTP MCP with the same tools as `musicwire-mcp`; paid tools return the x402 `402` until retried with `Payment-Signature`. |
+| `GET /`, `GET /docs`                 |                       Free | Human-facing landing page and docs with live pricing.                                                                                |
 
 The configured part boundary defaults to one part. MusicXML is the source of truth and is retained with every completed render. Requestable formats are `mp3` for listening and `midi` for editing.
 

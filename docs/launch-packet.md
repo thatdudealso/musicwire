@@ -44,7 +44,7 @@ Claims to retain: "validate, render, QC, and return artifacts" and "charge only 
 - [x] Official MCP Registry metadata is prepared in [`mcp/server.json`](../mcp/server.json).
 - [x] A client configuration is prepared in [`.mcp.json`](../.mcp.json). It contains no private key.
 - [x] npm discovery metadata is prepared in [`mcp/package.json`](../mcp/package.json).
-- [ ] Publish `musicwire-mcp@0.1.0`. This is blocked by the separate captain-owned npm credential task. Do not publish this repository's private root package.
+- [ ] Publish `musicwire-mcp@0.1.2`. This is blocked by the separate captain-owned npm credential task. Do not publish this repository's private root package.
 - [ ] Capture a settled production render and retain its response body, `receipt.tx_hash`, and artifact link. The paid command is in the Bazaar section below.
 - [ ] Select an official privacy-policy URL. No privacy policy is currently published.
 - [ ] Capture three current images immediately before submission: landing-page hero, documentation quickstart, and a terminal or response view showing a successful settled purchase. Do not use the rate-limited or pre-settlement view as proof.
@@ -88,17 +88,17 @@ Record the JSON response, job ID, `receipt.tx_hash`, capture time, quoted `payTo
 
 Record:
 
-| Field            | Value                                  |
-| ---------------- | -------------------------------------- |
-| Name             | `io.github.thatdudealso/musicwire-mcp` |
-| Package          | `musicwire-mcp@0.1.0`                  |
-| Transport        | stdio via `npx -y musicwire-mcp`       |
-| Registry file    | `mcp/server.json`                      |
-| Repository ID    | `1337252218`                           |
-| API URL default  | `https://musicwire.5432wire.com`       |
-| Paid-tool secret | `MUSICWIRE_X402_PRIVATE_KEY`           |
+| Field            | Value                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| Name             | `io.github.thatdudealso/musicwire-mcp`                                                           |
+| Package          | `musicwire-mcp@0.1.2`                                                                            |
+| Transport        | stdio via `npx -y musicwire-mcp`; streamable-http remote at `https://musicwire.5432wire.com/mcp` |
+| Registry file    | `mcp/server.json`                                                                                |
+| Repository ID    | `1337252218`                                                                                     |
+| API URL default  | `https://musicwire.5432wire.com`                                                                 |
+| Paid-tool secret | `MUSICWIRE_X402_PRIVATE_KEY`                                                                     |
 
-After npm has published the exact `0.1.0` package, validate and publish from the repository checkout:
+After npm has published the exact `0.1.2` package, validate and publish from the repository checkout:
 
 ```sh
 cd mcp
@@ -151,13 +151,13 @@ The remote connector URL is `https://musicwire.5432wire.com/mcp`. The prepared r
 
 ### Glama, PulseMCP, and mcp.so
 
-Use these common fields once `musicwire-mcp@0.1.0` and the Official Registry entry are live:
+Use these common fields once `musicwire-mcp@0.1.2` and the Official Registry entry are live:
 
 | Field                   | Value                                                                                                                                     |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Name                    | Musicwire MCP                                                                                                                             |
 | GitHub URL              | `https://github.com/thatdudealso/musicwire`                                                                                               |
-| Package                 | `musicwire-mcp@0.1.0`                                                                                                                     |
+| Package                 | `musicwire-mcp@0.1.2`                                                                                                                     |
 | Registry name           | `io.github.thatdudealso/musicwire-mcp`                                                                                                    |
 | Install command         | `npx -y musicwire-mcp`                                                                                                                    |
 | Logo                    | `https://musicwire.5432wire.com/musicwire-mark.svg`                                                                                       |
@@ -224,5 +224,5 @@ Track first MCP connection, paid call, completed render, settled transaction, an
 1. **Settlement approval**: the command in section 3.1 moves 0.25 real USDC. It must not be run until the Captain approves that spend.
 2. **npm publication**: `musicwire-mcp` remains unpublished until the held npm credential task finishes.
 3. **Privacy policy**: no policy URL exists. A policy must be selected and published before remote MCP directory review, especially Claude Connectors.
-4. **Remote MCP transport**: the current server is stdio only. Do not make remote-MCP claims or listings until a real Streamable HTTP MCP endpoint is shipped.
+4. **Remote MCP transport**: shipped. The hosted Streamable HTTP endpoint is `POST /mcp` at `https://musicwire.5432wire.com/mcp`, advertised in `mcp/server.json` remotes. Remote-MCP listings may proceed once that endpoint is deployed and answering in production.
 5. **Contact email and accounts**: use Captain-owned contact details and accounts for all forms. Do not create an account solely for this packet.
