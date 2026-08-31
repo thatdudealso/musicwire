@@ -53,6 +53,10 @@ test('MCP stdio server calls every Musicwire API tool using the local stub payme
       () => client.request('prompts/get', { name: 'no-such-prompt' }),
       /Prompt no-such-prompt not found/,
     );
+    await assert.rejects(
+      () => client.request('resources/read', { uri: 'musicwire://no-such-resource' }),
+      /Resource musicwire:\/\/no-such-resource not found/,
+    );
 
     const tools = await client.request('tools/list', {});
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [

@@ -58,6 +58,11 @@ test('hosted MCP Streamable HTTP initializes, lists tools, and quotes paid tools
     const missingPrompt = await mcp.request('prompts/get', { name: 'no-such-prompt' });
     assert.equal(missingPrompt.body.error?.code, -32602);
     assert.notEqual(missingPrompt.body.error?.code, -32601);
+    const missingResource = await mcp.request('resources/read', {
+      uri: 'musicwire://no-such-resource',
+    });
+    assert.equal(missingResource.body.error?.code, -32602);
+    assert.notEqual(missingResource.body.error?.code, -32601);
 
     const cardResponse = await fetch(`${base}/.well-known/mcp/server-card.json`);
     assert.equal(cardResponse.status, 200);
