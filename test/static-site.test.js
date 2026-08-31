@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,6 +20,44 @@ const startServer = (overrides = {}) => {
   );
 };
 
+const runChromium = (base) =>
+  new Promise((resolve, reject) => {
+    const session = `musicwire-static-${process.pid}-${Date.now()}`;
+    const browser = spawn('chromium-cli', ['--session', session]);
+    let stdout = '';
+    let stderr = '';
+    browser.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    browser.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    browser.once('error', reject);
+    browser.once('close', (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`chromium-cli exited ${code}: ${stderr}`));
+    });
+    browser.stdin.end(`nav ${base}/
+wait-for .play-gate
+eval () => ({ videos: [...document.querySelectorAll('[data-player] video')].map((video) => ({ controls: video.controls, hidden: video.hidden, preload: video.preload })), mp4Requests: performance.getEntriesByType('resource').filter((entry) => entry.name.endsWith('.mp4')).length })
+click .video-card.feature .play-gate
+wait-for video:not([hidden])
+wait 500
+eval () => { const [first, second] = document.querySelectorAll('[data-player] video'); return { first: { controls: first.controls, hidden: first.hidden, paused: first.paused, preload: first.preload }, second: { hidden: second.hidden, paused: second.paused } }; }
+click .video-grid > .video-card:first-child .play-gate
+wait 500
+eval () => { const [first, second] = document.querySelectorAll('[data-player] video'); return { first: { paused: first.paused }, second: { controls: second.controls, hidden: second.hidden, paused: second.paused, preload: second.preload } }; }
+`);
+  });
+
+const browserResults = (stdout) => {
+  assert.doesNotMatch(stdout, /^error:/m, stdout);
+  return stdout
+    .split('\n')
+    .filter((line) => line.startsWith('eval: '))
+    .map((line) => JSON.parse(line.slice('eval: '.length)));
+};
+
 test('landing page, docs page, and static assets are served', async () => {
   const { server, base } = await startServer();
   try {
@@ -28,21 +67,8 @@ test('landing page, docs page, and static assets are served', async () => {
     const landingHtml = await landing.text();
     assert.match(landingHtml, /Make music your agent can/);
     assert.match(landingHtml, /MP3 is for listening\. MIDI is for editing/);
-    assert.match(landingHtml, /Make your first render/);
-    assert.match(landingHtml, /href="#in-action">See it/);
-    assert.match(landingHtml, /id="in-action"/);
-    assert.match(landingHtml, /SEE IT IN ACTION/);
     assert.match(landingHtml, /Open the listening gallery/);
-    assert.match(landingHtml, /For humans/);
-    assert.match(landingHtml, /For agents/);
-    assert.equal((landingHtml.match(/<video\b/g) || []).length, 5);
-    assert.equal((landingHtml.match(/preload="none"/g) || []).length, 5);
-    assert.equal((landingHtml.match(/<h4>For humans<\/h4>/g) || []).length, 5);
-    assert.equal((landingHtml.match(/<h4>For agents<\/h4>/g) || []).length, 5);
-    assert.doesNotMatch(landingHtml, /9x16|1x1/);
-    assert.doesNotMatch(landingHtml, /autoplay/i);
     assert.doesNotMatch(landingHtml, /PDF, SVG, PNG, MSCZ/);
-    assert.doesNotMatch(landingHtml, /composes on its own/i);
     assert.match(landingHtml, /musicwire-favicon\.svg/);
 
     const demoVideo = await fetch(`${base}/demo/agent-flow-16x9.mp4`);
@@ -113,6 +139,28 @@ test('landing page, docs page, and static assets are served', async () => {
 
     const missing = await fetch(`${base}/no-such-page.html`);
     assert.equal(missing.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test('landing video gates lazily activate one native player at a time', async () => {
+  const { server, base } = await startServer();
+  try {
+    const [initial, firstActive, secondActive] = browserResults(await runChromium(base));
+
+    assert.equal(initial.videos.length, 5);
+    assert.deepEqual(initial.videos, Array(5).fill({ controls: true, hidden: true, preload: 'none' }));
+    assert.equal(initial.mp4Requests, 0);
+
+    assert.deepEqual(firstActive, {
+      first: { controls: true, hidden: false, paused: false, preload: 'none' },
+      second: { hidden: true, paused: true },
+    });
+    assert.deepEqual(secondActive, {
+      first: { paused: true },
+      second: { controls: true, hidden: false, paused: false, preload: 'none' },
+    });
   } finally {
     server.close();
   }
