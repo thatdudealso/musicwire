@@ -41,31 +41,31 @@ The hosted MCP endpoint is `https://musicwire.5432wire.com/mcp`; it returns the 
 
 ## Demos
 
-<video src="https://github.com/thatdudealso/musicwire/raw/main/docs/demo/agent-flow-16x9.mp4" controls muted playsinline width="100%"></video>
+[▶ Play the product-flow demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/agent-flow-16x9.mp4)
 
 Human: An end-to-end look at taking a score from a request to audio you can play and a receipt you can keep.
 
 Agent: Fetch the guide, submit MusicXML for validation and rendering, then poll the resulting job for deliverables.
 
-<video src="https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/edm-festival-anthem-16x9.mp4" controls muted playsinline width="100%"></video>
+[▶ Play the EDM festival anthem demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/edm-festival-anthem-16x9.mp4)
 
 Human: A festival-scale EDM anthem rendered from a complete score.
 
 Agent: Use MusicXML with `formats: ["mp3", "midi"]` to produce an audio preview and an editable MIDI deliverable.
 
-<video src="https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/metalcore-gym-pump-16x9.mp4" controls muted playsinline width="100%"></video>
+[▶ Play the metalcore gym pump demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/metalcore-gym-pump-16x9.mp4)
 
 Human: A high-energy metalcore gym track rendered as a playable result.
 
 Agent: Submit a fully specified heavy arrangement and let Musicwire validate, render, and QC the requested outputs.
 
-<video src="https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/country-modern-drive-16x9.mp4" controls muted playsinline width="100%"></video>
+[▶ Play the modern country drive demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/country-modern-drive-16x9.mp4)
 
 Human: A modern country drive that shows the same workflow can carry a different musical character.
 
 Agent: Adapt the authoring guide to the target style, then render the completed MusicXML into listening and editing formats.
 
-<video src="https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/spanish-reggaeton-dembow-16x9.mp4" controls muted playsinline width="100%"></video>
+[▶ Play the Spanish reggaeton dembow demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/spanish-reggaeton-dembow-16x9.mp4)
 
 Human: A Spanish reggaeton dembow rendered from notation into a track you can hear.
 
