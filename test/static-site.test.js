@@ -253,27 +253,34 @@ test('landing video gates reveal native players and keep one playing', () => {
   assert.ok(first.video.pauseCalls > 0);
 });
 
-test('landing video gates lazily activate one native player at a time', { skip: !chromiumCliAvailable }, async () => {
-  const { server, base } = await startServer();
-  try {
-    const [initial, firstPlaying, secondPlaying, secondActive] = browserResults(
-      await runChromium(base),
-    );
+test(
+  'landing video gates lazily activate one native player at a time',
+  { skip: !chromiumCliAvailable },
+  async () => {
+    const { server, base } = await startServer();
+    try {
+      const [initial, firstPlaying, secondPlaying, secondActive] = browserResults(
+        await runChromium(base),
+      );
 
-    assert.equal(initial.videos.length, 5);
-    assert.deepEqual(initial.videos, Array(5).fill({ controls: true, hidden: true, preload: 'none' }));
-    assert.equal(initial.mp4Requests, 0);
+      assert.equal(initial.videos.length, 5);
+      assert.deepEqual(
+        initial.videos,
+        Array(5).fill({ controls: true, hidden: true, preload: 'none' }),
+      );
+      assert.equal(initial.mp4Requests, 0);
 
-    assert.deepEqual(firstPlaying, { playing: true });
-    assert.deepEqual(secondPlaying, { playing: true });
-    assert.deepEqual(secondActive, {
-      first: { paused: true },
-      second: { controls: true, hidden: false, paused: false, preload: 'none' },
-    });
-  } finally {
-    server.close();
-  }
-});
+      assert.deepEqual(firstPlaying, { playing: true });
+      assert.deepEqual(secondPlaying, { playing: true });
+      assert.deepEqual(secondActive, {
+        first: { paused: true },
+        second: { controls: true, hidden: false, paused: false, preload: 'none' },
+      });
+    } finally {
+      server.close();
+    }
+  },
+);
 
 test('static pages bypass the API rate limiter while API routes stay limited', async () => {
   const { server, base } = await startServer({ requestsPerMinute: 2 });
