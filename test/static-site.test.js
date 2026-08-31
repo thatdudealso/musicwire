@@ -28,10 +28,38 @@ test('landing page, docs page, and static assets are served', async () => {
     const landingHtml = await landing.text();
     assert.match(landingHtml, /Make music your agent can/);
     assert.match(landingHtml, /MP3 is for listening\. MIDI is for editing/);
-    assert.match(landingHtml, /HEAR WHAT AGENTS CAN MAKE/);
+    assert.match(landingHtml, /Make your first render/);
+    assert.match(landingHtml, /href="#in-action">See it/);
+    assert.match(landingHtml, /id="in-action"/);
+    assert.match(landingHtml, /SEE IT IN ACTION/);
     assert.match(landingHtml, /Open the listening gallery/);
+    assert.match(landingHtml, /For humans/);
+    assert.match(landingHtml, /For agents/);
+    assert.equal((landingHtml.match(/<video\b/g) || []).length, 5);
+    assert.equal((landingHtml.match(/preload="none"/g) || []).length, 5);
+    assert.equal((landingHtml.match(/<h4>For humans<\/h4>/g) || []).length, 5);
+    assert.equal((landingHtml.match(/<h4>For agents<\/h4>/g) || []).length, 5);
+    assert.doesNotMatch(landingHtml, /9x16|1x1/);
+    assert.doesNotMatch(landingHtml, /autoplay/i);
     assert.doesNotMatch(landingHtml, /PDF, SVG, PNG, MSCZ/);
+    assert.doesNotMatch(landingHtml, /composes on its own/i);
     assert.match(landingHtml, /musicwire-favicon\.svg/);
+
+    const demoVideo = await fetch(`${base}/demo/agent-flow-16x9.mp4`);
+    assert.equal(demoVideo.status, 200);
+    assert.match(demoVideo.headers.get('content-type'), /^video\/mp4/);
+    const demoPoster = await fetch(`${base}/demo/agent-flow.jpg`);
+    assert.equal(demoPoster.status, 200);
+    assert.match(demoPoster.headers.get('content-type'), /^image\/jpeg/);
+    for (const slug of [
+      'edm-festival-anthem',
+      'metalcore-gym-pump',
+      'country-modern-drive',
+      'spanish-reggaeton-dembow',
+    ]) {
+      assert.equal((await fetch(`${base}/demo/${slug}-16x9.mp4`)).status, 200);
+      assert.equal((await fetch(`${base}/demo/${slug}.jpg`)).status, 200);
+    }
 
     const docs = await fetch(`${base}/docs`);
     assert.equal(docs.status, 200);
