@@ -41,32 +41,37 @@ The hosted MCP endpoint is `https://musicwire.5432wire.com/mcp`; it returns the 
 
 ## Demos
 
-[▶ Play the product-flow demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/agent-flow-16x9.mp4)
+<!-- FM-VIDEO: agent-flow -->
+[![Product-flow demo poster](docs/demo/agent-flow-16x9.jpg)](docs/demo/agent-flow-16x9.mp4)
 
-Human: An end-to-end look at taking a score from a request to audio you can play and a receipt you can keep.
+For humans: An end-to-end look at taking a score from a request to audio you can play and a receipt you can keep.
 
-Agent: Fetch the guide, submit MusicXML for validation and rendering, then poll the resulting job for deliverables.
+For agents: Fetch the guide, submit MusicXML for validation and rendering, then poll the resulting job for deliverables.
 
-[▶ Play the EDM festival anthem demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/edm-festival-anthem-16x9.mp4)
+<!-- FM-VIDEO: edm-festival-anthem -->
+[![EDM festival anthem demo poster](docs/demo/videos/edm-festival-anthem-16x9.jpg)](docs/demo/videos/edm-festival-anthem-16x9.mp4)
 
-Human: A festival-scale EDM anthem rendered from a complete score.
+For humans: A festival-scale EDM anthem rendered from a complete score.
 
-Agent: Use MusicXML with `formats: ["mp3", "midi"]` to produce an audio preview and an editable MIDI deliverable.
+For agents: Use MusicXML with `formats: ["mp3", "midi"]` to produce an audio preview and an editable MIDI deliverable.
 
-[▶ Play the metalcore gym pump demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/metalcore-gym-pump-16x9.mp4)
+<!-- FM-VIDEO: metalcore-gym-pump -->
+[![Metalcore gym pump demo poster](docs/demo/videos/metalcore-gym-pump-16x9.jpg)](docs/demo/videos/metalcore-gym-pump-16x9.mp4)
 
-Human: A high-energy metalcore gym track rendered as a playable result.
+For humans: A high-energy metalcore gym track rendered as a playable result.
 
-Agent: Submit a fully specified heavy arrangement and let Musicwire validate, render, and QC the requested outputs.
+For agents: Submit a fully specified heavy arrangement and let Musicwire validate, render, and QC the requested outputs.
 
-[▶ Play the modern country drive demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/country-modern-drive-16x9.mp4)
+<!-- FM-VIDEO: country-modern-drive -->
+[![Modern country drive demo poster](docs/demo/videos/country-modern-drive-16x9.jpg)](docs/demo/videos/country-modern-drive-16x9.mp4)
 
-Human: A modern country drive that shows the same workflow can carry a different musical character.
+For humans: A modern country drive that shows the same workflow can carry a different musical character.
 
-Agent: Adapt the authoring guide to the target style, then render the completed MusicXML into listening and editing formats.
+For agents: Adapt the authoring guide to the target style, then render the completed MusicXML into listening and editing formats.
 
-[▶ Play the Spanish reggaeton dembow demo](https://github.com/thatdudealso/musicwire/raw/main/docs/demo/videos/spanish-reggaeton-dembow-16x9.mp4)
+<!-- FM-VIDEO: spanish-reggaeton-dembow -->
+[![Spanish reggaeton dembow demo poster](docs/demo/videos/spanish-reggaeton-dembow-16x9.jpg)](docs/demo/videos/spanish-reggaeton-dembow-16x9.mp4)
 
-Human: A Spanish reggaeton dembow rendered from notation into a track you can hear.
+For humans: A Spanish reggaeton dembow rendered from notation into a track you can hear.
 
-Agent: Use the same API contract for a rhythm-led score and keep the returned provenance receipt with the artifacts.
+For agents: Use the same API contract for a rhythm-led score and keep the returned provenance receipt with the artifacts.
