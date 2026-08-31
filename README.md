@@ -42,35 +42,40 @@ The hosted MCP endpoint is `https://musicwire.5432wire.com/mcp`; it returns the 
 ## Demos
 
 <!-- FM-VIDEO: agent-flow -->
-[![Product-flow demo poster](docs/demo/agent-flow-16x9.jpg)](docs/demo/agent-flow-16x9.mp4)
+
+<video src="https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/agent-flow-16x9.mp4" controls width="100%"></video>
 
 For humans: An end-to-end look at taking a score from a request to audio you can play and a receipt you can keep.
 
 For agents: Fetch the guide, submit MusicXML for validation and rendering, then poll the resulting job for deliverables.
 
 <!-- FM-VIDEO: edm-festival-anthem -->
-[![EDM festival anthem demo poster](docs/demo/videos/edm-festival-anthem-16x9.jpg)](docs/demo/videos/edm-festival-anthem-16x9.mp4)
+
+<video src="https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/edm-festival-anthem-16x9.mp4" controls width="100%"></video>
 
 For humans: A festival-scale EDM anthem rendered from a complete score.
 
 For agents: Use MusicXML with `formats: ["mp3", "midi"]` to produce an audio preview and an editable MIDI deliverable.
 
 <!-- FM-VIDEO: metalcore-gym-pump -->
-[![Metalcore gym pump demo poster](docs/demo/videos/metalcore-gym-pump-16x9.jpg)](docs/demo/videos/metalcore-gym-pump-16x9.mp4)
+
+<video src="https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/metalcore-gym-pump-16x9.mp4" controls width="100%"></video>
 
 For humans: A high-energy metalcore gym track rendered as a playable result.
 
 For agents: Submit a fully specified heavy arrangement and let Musicwire validate, render, and QC the requested outputs.
 
 <!-- FM-VIDEO: country-modern-drive -->
-[![Modern country drive demo poster](docs/demo/videos/country-modern-drive-16x9.jpg)](docs/demo/videos/country-modern-drive-16x9.mp4)
+
+<video src="https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/country-modern-drive-16x9.mp4" controls width="100%"></video>
 
 For humans: A modern country drive that shows the same workflow can carry a different musical character.
 
 For agents: Adapt the authoring guide to the target style, then render the completed MusicXML into listening and editing formats.
 
 <!-- FM-VIDEO: spanish-reggaeton-dembow -->
-[![Spanish reggaeton dembow demo poster](docs/demo/videos/spanish-reggaeton-dembow-16x9.jpg)](docs/demo/videos/spanish-reggaeton-dembow-16x9.mp4)
+
+<video src="https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/spanish-reggaeton-dembow-16x9.mp4" controls width="100%"></video>
 
 For humans: A Spanish reggaeton dembow rendered from notation into a track you can hear.
 
