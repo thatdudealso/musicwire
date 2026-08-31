@@ -1,6 +1,6 @@
 # Musicwire
 
-[![smithery badge](https://smithery.ai/badge/thatdudealso/musicwire)](https://smithery.ai/servers/thatdudealso/musicwire)
+[![Smithery](https://img.shields.io/badge/Smithery-View_Server-6b46c1)](https://smithery.ai/servers/thatdudealso/musicwire)
 [![x402-list](https://x402-list.com/badge/musicwire.svg)](https://x402-list.com/services/musicwire?utm_source=badge&utm_medium=referral&utm_campaign=embed)
 
 Musicwire validates MusicXML, renders it with MuseScore, runs automated QC, and returns attributed MP3 and MIDI files with signed provenance receipts. It is an API for turning a score your workflow authored into files people can hear and edit - it does not compose music or use a server-side LLM.
