@@ -129,10 +129,12 @@ h1 em {
 .brand {
   align-items: center;
   display: inline-flex;
+  flex-shrink: 0;
   font-size: 1.35rem;
   font-weight: 850;
   letter-spacing: -0.07em;
   text-decoration: none;
+  white-space: nowrap;
 }
 .brand img {
   height: 31px;
@@ -141,9 +143,11 @@ h1 em {
 }
 .nav-links {
   display: flex;
+  flex-wrap: nowrap;
   font: 0.76rem var(--mono);
   gap: 1.4rem;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 .nav-links a {
   color: var(--text-secondary);
@@ -425,17 +429,141 @@ h1 em {
 .example-heading p {
   margin-bottom: 0;
 }
-.showcase-teaser-section {
+.in-action {
   background: var(--ink-raised);
   border-bottom: 1px solid var(--border);
   border-top: 1px solid var(--border);
 }
-.showcase-teaser-section h2 {
-  max-width: 19ch;
+.in-action h2 {
+  max-width: 14ch;
 }
-.showcase-teaser-section p {
+.in-action .intro p {
   color: var(--text-secondary);
   max-width: 65ch;
+}
+.video-card.feature {
+  margin-top: 2rem;
+}
+.video-grid {
+  background: var(--border);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1px;
+}
+.video-card {
+  background: var(--ink);
+  min-width: 0;
+  padding: 1.5rem;
+}
+.video-kicker {
+  color: var(--wire);
+  font: 0.72rem var(--mono);
+  letter-spacing: 0.08em;
+  margin-bottom: 0.55rem;
+  text-transform: uppercase;
+}
+.video-card h3 {
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+}
+.player {
+  background: #050606;
+  isolation: isolate;
+  min-width: 0;
+  position: relative;
+  width: 100%;
+}
+.player-frame {
+  aspect-ratio: 16 / 9;
+  background: #050606;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+.player video,
+.player img.poster {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+.player video:not([hidden]) {
+  inset: 0;
+  position: absolute;
+}
+.play-gate {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  height: 100%;
+  padding: 0;
+  position: relative;
+  width: 100%;
+}
+.play-gate:focus-visible {
+  outline: 2px solid var(--pass);
+  outline-offset: 2px;
+}
+.play-mark {
+  align-items: center;
+  background: var(--pass);
+  color: var(--pass-ink);
+  display: inline-flex;
+  font: 700 0.72rem var(--mono);
+  gap: 0.4rem;
+  left: 50%;
+  letter-spacing: 0.04em;
+  padding: 0.62rem 0.85rem;
+  position: absolute;
+  text-transform: uppercase;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.play-mark svg {
+  display: block;
+  height: 11px;
+  width: 11px;
+}
+.duration-chip {
+  background: rgba(12, 13, 13, 0.82);
+  border: 1px solid var(--border);
+  bottom: 10px;
+  color: var(--text-secondary);
+  font: 0.64rem var(--mono);
+  padding: 0.28rem 0.4rem;
+  position: absolute;
+  right: 10px;
+}
+.caption-block {
+  margin-top: 1rem;
+  min-width: 0;
+}
+.caption-block h4 {
+  color: var(--text);
+  font: 0.72rem var(--mono);
+  letter-spacing: 0.06em;
+  margin: 0 0 0.4rem;
+  text-transform: uppercase;
+}
+.caption-block p {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  margin: 0 0 0.95rem;
+}
+.agent-copy {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  font: 0.78rem / 1.55 var(--mono);
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 0.85rem 0.95rem;
+  white-space: pre-wrap;
+}
+.gallery-link {
+  margin-top: 1.6rem;
 }
 .showcase-section {
   background: var(--ink-raised);
@@ -676,9 +804,19 @@ td:first-child {
   .nav {
     min-height: 62px;
   }
-  .nav-links {
-    gap: 0.85rem;
+  .brand {
+    font-size: 1.1rem;
   }
+  .brand img {
+    height: 26px;
+    margin-right: 7px;
+    width: 26px;
+  }
+  .nav-links {
+    gap: 0.7rem;
+  }
+  .nav-links a:nth-child(3),
+  .nav-links a:nth-child(4),
   .nav-links a:last-child {
     display: none;
   }
@@ -712,7 +850,8 @@ td:first-child {
   .after-grid {
     grid-template-columns: 1fr;
   }
-  .showcase-grid {
+  .showcase-grid,
+  .video-grid {
     grid-template-columns: 1fr;
   }
   .numbered-steps > li {

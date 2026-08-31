@@ -7,7 +7,7 @@ export default [
   js.configs.recommended,
   prettier,
   {
-    files: ['src/**/*.js', 'docs/**/*.mjs'],
+    files: ['src/**/*.js', 'scripts/**/*.mjs', 'docs/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',

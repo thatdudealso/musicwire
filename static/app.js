@@ -150,6 +150,33 @@
       });
   }
 
+  function bindInActionPlayers() {
+    const players = Array.from(document.querySelectorAll('[data-player]'));
+    if (players.length === 0) return;
+
+    const pauseOthers = (except) => {
+      players.forEach((root) => {
+        const video = root.querySelector('video');
+        if (video && video !== except) video.pause();
+      });
+    };
+
+    players.forEach((root) => {
+      const gate = root.querySelector('.play-gate');
+      const video = root.querySelector('video');
+      if (!gate || !video) return;
+      gate.addEventListener('click', () => {
+        gate.hidden = true;
+        video.hidden = false;
+        pauseOthers(video);
+        video.play().catch(() => {});
+      });
+      video.addEventListener('play', () => {
+        pauseOthers(video);
+      });
+    });
+  }
+
   function loadMusicxmlExamples() {
     const codeBlocks = document.querySelectorAll('[data-musicxml-src]');
     codeBlocks.forEach((codeBlock) => {
@@ -224,6 +251,7 @@
     document.body.classList.add('manifest-loading');
 
     loadMusicxmlExamples();
+    bindInActionPlayers();
 
     // Fetch manifest
     fetchManifest();

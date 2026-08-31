@@ -35,8 +35,8 @@
             ><img src="/musicwire-mark.svg" alt="" /><span>musicwire</span></a
           >
           <div class="nav-links">
-            <a href="/docs#showcase">Hear examples</a><a href="/docs">Docs</a
-            ><a href="#pricing">Pricing</a
+            <a href="#in-action">See it</a><a href="/docs#showcase">Hear examples</a
+            ><a href="/docs">Docs</a><a href="#pricing">Pricing</a
             ><a href="https://github.com/thatdudealso/musicwire" target="_blank" rel="noreferrer"
               >GitHub</a
             >
@@ -84,22 +84,254 @@
         </div>
       </section>
 
-      <section class="section section-tight showcase-teaser-section">
-        <div class="container narrow">
-          <p class="eyebrow">[ HEAR WHAT AGENTS CAN MAKE ]</p>
-          <h2>Press play before you write a prompt.</h2>
-          <p>
-            Nine self-hosted, full-length examples make the result tangible: solo violin, a happy
-            piano piece, guitar, flute, synthesized choir voice, a house/EDM drop, and four distinct
-            ensembles.
+      <section class="section section-tight in-action" id="in-action">
+        <div class="container">
+          <div class="intro">
+            <p class="eyebrow">[ SEE IT IN ACTION ]</p>
+            <h2>Watch the render, then steal the recipe.</h2>
+            <p>
+              Five self-hosted 16:9 films. The first is the product loop. The next four are finished
+              genre cuts - festival EDM, metalcore, modern country, and Spanish dembow - each paid,
+              quality-checked, and played.
+            </p>
+          </div>
+
+          <article class="video-card feature">
+            <p class="video-kicker">01 - product demo</p>
+            <h3>Pier Light - brief to MP3</h3>
+            <div class="player" data-player>
+              <div class="player-frame">
+                <button class="play-gate" type="button" aria-label="Play Pier Light product demo">
+                  <img
+                    class="poster"
+                    src="/demo/agent-flow.jpg"
+                    width="1920"
+                    height="1080"
+                    alt="Terminal film of a Musicwire solo-piano render completing and playing Pier Light."
+                  />
+                  <span class="play-mark"
+                    ><svg viewBox="0 0 12 12" aria-hidden="true">
+                      <path fill="currentColor" d="M2.2 1.2v9.6L11 6z" /></svg
+                    >Play</span
+                  >
+                  <span class="duration-chip">57s</span>
+                </button>
+                <video
+                  controls
+                  playsinline
+                  preload="none"
+                  poster="/demo/agent-flow.jpg"
+                  hidden
+                  aria-label="Pier Light product demo, 57 seconds"
+                >
+                  <source src="/demo/agent-flow-16x9.mp4" type="video/mp4" />
+                </video>
+              </div>
+            </div>
+            <div class="caption-block">
+              <h4>For humans</h4>
+              <p>
+                An agent writes a 16-bar piano piece, pays to check it, pays to render it, and plays
+                the MP3. That is the whole Musicwire loop in one take.
+              </p>
+              <h4>For agents</h4>
+              <pre class="agent-copy">
+solo piano · style=piano · key=C major · tempo=96 · 16 bars 4/4
+validate $0.10 then render formats:["mp3"] (solo $0.25)
+poll until qc passed · GET the MP3</pre>
+            </div>
+          </article>
+
+          <div class="video-grid">
+            <article class="video-card">
+              <p class="video-kicker">02 - festival EDM</p>
+              <h3>Skyline Surge</h3>
+              <div class="player" data-player>
+                <div class="player-frame">
+                  <button class="play-gate" type="button" aria-label="Play Skyline Surge">
+                    <img
+                      class="poster"
+                      src="/demo/edm-festival-anthem.jpg"
+                      width="1920"
+                      height="1080"
+                      alt="Terminal film of Skyline Surge, a festival EDM ensemble render, reaching Play."
+                    />
+                    <span class="play-mark"
+                      ><svg viewBox="0 0 12 12" aria-hidden="true">
+                        <path fill="currentColor" d="M2.2 1.2v9.6L11 6z" /></svg
+                      >Play</span
+                    >
+                    <span class="duration-chip">48s</span>
+                  </button>
+                  <video
+                    controls
+                    playsinline
+                    preload="none"
+                    poster="/demo/edm-festival-anthem.jpg"
+                    hidden
+                    aria-label="Skyline Surge, 48 seconds"
+                  >
+                    <source src="/demo/edm-festival-anthem-16x9.mp4" type="video/mp4" />
+                  </video>
+                </div>
+              </div>
+              <div class="caption-block">
+                <h4>For humans</h4>
+                <p>
+                  A festival anthem: pads open the room, four-on-the-floor arrives, a snare roll
+                  builds, then the drop hits.
+                </p>
+                <h4>For agents</h4>
+                <pre class="agent-copy">
+ensemble · style=festival-EDM · key=F minor · tempo=128 · 24 bars
+parts: GM82 lead, GM39 bass, GM89 pad, unpitched house kit
+render formats:["mp3","midi"] (ensemble $0.50)</pre>
+              </div>
+            </article>
+
+            <article class="video-card">
+              <p class="video-kicker">03 - metalcore</p>
+              <h3>Forge Current</h3>
+              <div class="player" data-player>
+                <div class="player-frame">
+                  <button class="play-gate" type="button" aria-label="Play Forge Current">
+                    <img
+                      class="poster"
+                      src="/demo/metalcore-gym-pump.jpg"
+                      width="1920"
+                      height="1080"
+                      alt="Terminal film of Forge Current, a metalcore gym-pump ensemble render."
+                    />
+                    <span class="play-mark"
+                      ><svg viewBox="0 0 12 12" aria-hidden="true">
+                        <path fill="currentColor" d="M2.2 1.2v9.6L11 6z" /></svg
+                      >Play</span
+                    >
+                    <span class="duration-chip">54s</span>
+                  </button>
+                  <video
+                    controls
+                    playsinline
+                    preload="none"
+                    poster="/demo/metalcore-gym-pump.jpg"
+                    hidden
+                    aria-label="Forge Current, 54 seconds"
+                  >
+                    <source src="/demo/metalcore-gym-pump-16x9.mp4" type="video/mp4" />
+                  </video>
+                </div>
+              </div>
+              <div class="caption-block">
+                <h4>For humans</h4>
+                <p>
+                  Gym-pump metalcore: muted chugs, a melodic chorus, a beat of silence, then a
+                  half-time breakdown that stays at 150 BPM.
+                </p>
+                <h4>For agents</h4>
+                <pre class="agent-copy">
+ensemble · style=metalcore-gym-pump · key=D minor · tempo=150 · 32 bars
+parts: GM31 distortion, GM30 overdrive, GM35 pick bass, unpitched kit
+breakdown keeps tempo, halves subdivision · ensemble $0.50</pre>
+              </div>
+            </article>
+
+            <article class="video-card">
+              <p class="video-kicker">04 - modern country</p>
+              <h3>Cedar Mile</h3>
+              <div class="player" data-player>
+                <div class="player-frame">
+                  <button class="play-gate" type="button" aria-label="Play Cedar Mile">
+                    <img
+                      class="poster"
+                      src="/demo/country-modern-drive.jpg"
+                      width="1920"
+                      height="1080"
+                      alt="Terminal film of Cedar Mile, a modern country ensemble render."
+                    />
+                    <span class="play-mark"
+                      ><svg viewBox="0 0 12 12" aria-hidden="true">
+                        <path fill="currentColor" d="M2.2 1.2v9.6L11 6z" /></svg
+                      >Play</span
+                    >
+                    <span class="duration-chip">56s</span>
+                  </button>
+                  <video
+                    controls
+                    playsinline
+                    preload="none"
+                    poster="/demo/country-modern-drive.jpg"
+                    hidden
+                    aria-label="Cedar Mile, 56 seconds"
+                  >
+                    <source src="/demo/country-modern-drive-16x9.mp4" type="video/mp4" />
+                  </video>
+                </div>
+              </div>
+              <div class="caption-block">
+                <h4>For humans</h4>
+                <p>
+                  A driving Nashville cut: acoustic backbone, Tele-class lead, punchy backbeat. No
+                  808s, no trap hats.
+                </p>
+                <h4>For agents</h4>
+                <pre class="agent-copy">
+ensemble · style=modern-country · key=G major · tempo=108 · 24 bars
+parts: GM26 steel acoustic, GM30 Tele-class lead, GM34 finger bass, unpitched kit
+kick 1+3 / snare 2+4 · no 808 · ensemble $0.50</pre>
+              </div>
+            </article>
+
+            <article class="video-card">
+              <p class="video-kicker">05 - Spanish dembow</p>
+              <h3>Noche Baja</h3>
+              <div class="player" data-player>
+                <div class="player-frame">
+                  <button class="play-gate" type="button" aria-label="Play Noche Baja">
+                    <img
+                      class="poster"
+                      src="/demo/spanish-reggaeton-dembow.jpg"
+                      width="1920"
+                      height="1080"
+                      alt="Terminal film of Noche Baja, a Spanish reggaeton dembow ensemble render."
+                    />
+                    <span class="play-mark"
+                      ><svg viewBox="0 0 12 12" aria-hidden="true">
+                        <path fill="currentColor" d="M2.2 1.2v9.6L11 6z" /></svg
+                      >Play</span
+                    >
+                    <span class="duration-chip">53s</span>
+                  </button>
+                  <video
+                    controls
+                    playsinline
+                    preload="none"
+                    poster="/demo/spanish-reggaeton-dembow.jpg"
+                    hidden
+                    aria-label="Noche Baja, 53 seconds"
+                  >
+                    <source src="/demo/spanish-reggaeton-dembow-16x9.mp4" type="video/mp4" />
+                  </video>
+                </div>
+              </div>
+              <div class="caption-block">
+                <h4>For humans</h4>
+                <p>
+                  Spanish-market dembow: a minor-key synth hook over kick-and-snare dembow, not
+                  four-on-the-floor house.
+                </p>
+                <h4>For agents</h4>
+                <pre class="agent-copy">
+ensemble · style=spanish-reggaeton-dembow · key=D minor · tempo=96 · 20 bars
+parts: GM82 lead, GM39 bass, GM89 pad, unpitched dembow kit
+not house 4/4 · not Dominican dembow 115-130 · ensemble $0.50</pre>
+              </div>
+            </article>
+          </div>
+          <p class="gallery-link">
+            <a class="text-link" href="/docs#showcase"
+              >Open the listening gallery <span aria-hidden="true">→</span></a
+            >
           </p>
-          <p class="text-secondary">
-            For agents: every track in the gallery includes the production recipe, the reason it
-            works, and copy-pasteable MusicXML for a complete render request.
-          </p>
-          <a class="text-link" href="/docs#showcase"
-            >Open the listening gallery <span aria-hidden="true">→</span></a
-          >
         </div>
       </section>
 
