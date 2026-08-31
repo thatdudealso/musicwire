@@ -859,3 +859,10 @@ td:first-child {
     overflow-x: auto;
   }
 }
+
+@media (max-width: 399px) {
+  .nav-links a:nth-child(3),
+  .nav-links a:nth-child(4) {
+    display: none;
+  }
+}
