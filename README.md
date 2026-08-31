@@ -41,31 +41,31 @@ The hosted MCP endpoint is `https://musicwire.5432wire.com/mcp`; it returns the 
 
 ## Demos
 
-[![Musicwire agent flow demo poster](docs/demo/posters/agent-flow-poster.jpg)](https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/agent-flow-16x9.mp4)
+https://github.com/user-attachments/assets/3c4ff883-fd01-4fce-95b9-532e2e1a25b1
 
 For humans: An end-to-end look at taking a score from a request to audio you can play and a receipt you can keep.
 
 For agents: Fetch the guide, submit MusicXML for validation and rendering, then poll the resulting job for deliverables.
 
-[![EDM festival anthem demo poster](docs/demo/posters/edm-festival-anthem-poster.jpg)](https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/edm-festival-anthem-16x9.mp4)
+https://github.com/user-attachments/assets/b63cac9d-b6b6-4c5c-b14d-17ebade2dbdf
 
 For humans: A festival-scale EDM anthem rendered from a complete score.
 
 For agents: Use MusicXML with `formats: ["mp3", "midi"]` to produce an audio preview and an editable MIDI deliverable.
 
-[![Metalcore gym pump demo poster](docs/demo/posters/metalcore-gym-pump-poster.jpg)](https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/metalcore-gym-pump-16x9.mp4)
+https://github.com/user-attachments/assets/003dba17-f5fa-49dd-8842-8c3fc31dda44
 
 For humans: A high-energy metalcore gym track rendered as a playable result.
 
 For agents: Submit a fully specified heavy arrangement and let Musicwire validate, render, and QC the requested outputs.
 
-[![Modern country drive demo poster](docs/demo/posters/country-modern-drive-poster.jpg)](https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/country-modern-drive-16x9.mp4)
+https://github.com/user-attachments/assets/b1780656-6ab6-40a2-8737-e2bf87bf1875
 
 For humans: A modern country drive that shows the same workflow can carry a different musical character.
 
 For agents: Adapt the authoring guide to the target style, then render the completed MusicXML into listening and editing formats.
 
-[![Spanish reggaeton dembow demo poster](docs/demo/posters/spanish-reggaeton-dembow-poster.jpg)](https://raw.githubusercontent.com/thatdudealso/musicwire/main/docs/demo/videos/spanish-reggaeton-dembow-16x9.mp4)
+https://github.com/user-attachments/assets/31a40aab-a97e-48ce-8c4d-2466e50fa492
 
 For humans: A Spanish reggaeton dembow rendered from notation into a track you can hear.
 
