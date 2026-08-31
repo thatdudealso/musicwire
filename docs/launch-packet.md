@@ -52,7 +52,7 @@ Do not disclose infrastructure internals (buckets, containers, internal hosts) i
 | Repo homepage + topics                          | **done**                                              | Homepage set. Topics: `mcp`, `musescore`, `musicxml`, `x402`, `usdc`, `base`, `ai-agents`, `agent-payments`, `api`, `music-generation`.                                                                               |
 | CDP Bazaar                                      | **reachable via x402 discovery**                      | No separate registration form. Manifest has `payment.discovery.bazaar.discoverable: true`.                                                                                                                            |
 | agent402.tools                                  | **listed**                                            | `POST /api/index/register` with origin `https://musicwire.5432wire.com` returned `listed=true`, `toolCount=1`, `networks=["eip155:8453"]`, `routable=true`, `health=1`.                                               |
-| x402-list.com (hyphen)                          | **submitted, pending**                                | `POST /api/v1/submit` HTTP 201, `submission_id=637f83bd-4164-4479-9ab5-f6bd281831d4`. Category `Content` (directory has no Media). Not yet in `/api/v1/services?q=musicwire`. Custom domain, no $1 fee.               |
+| x402-list.com (hyphen)                          | **approved**                                          | Musicwire's listing was approved on 2026-08-31.                                                                                                                                                                      |
 | mcp.directory                                   | **submitted, pending review**                         | `POST https://mcp.directory/api/submit-server` HTTP 200 `{ok:true}`. They claim publish within 24h. Description max 100 chars. Email for claim if auto-discovered: the form says email them (obfuscated on the page). |
 | mcp.so free queue                               | **submitted**                                         | Paid $39 submit skipped. Free path is a comment on `chatmcp/mcpso` issue #1: https://github.com/chatmcp/mcpso/issues/1#issuecomment-5472062662                                                                        |
 | Cline Marketplace                               | **submitted**                                         | https://github.com/cline/mcp-marketplace/issues/2368 . Did not falsely claim Cline IDE testing. Label `server-submission` could not be applied (not visible to this token).                                           |
@@ -75,7 +75,7 @@ Do not disclose infrastructure internals (buckets, containers, internal hosts) i
 Free, non-account-gated submissions only.
 
 1. **agent402.tools** - origin registered, `listed=true`.
-2. **x402-list.com** - submission accepted, pending probe (`submission_id=637f83bd-4164-4479-9ab5-f6bd281831d4`). Body used contact `ashishyocool@gmail.com`, url `https://musicwire.5432wire.com`, endpoints `/v1/validate` and `/v1/render`.
+2. **x402-list.com** - Musicwire's listing was approved on 2026-08-31.
 3. **mcp.directory** - `POST /api/submit-server` with GitHub URL, npm `musicwire-mcp`, 86-char description, email `ashishyocool@gmail.com`. Response: `{"ok":true,"message":"Server submitted for review!"}`.
 4. **mcp.so** - comment on https://github.com/chatmcp/mcpso/issues/1#issuecomment-5472062662 .
 5. **Cline Marketplace** - https://github.com/cline/mcp-marketplace/issues/2368 .
@@ -389,7 +389,7 @@ Do **not** open or edit `xpaysh/awesome-x402` PR #1304.
 
 ## 9. Dead end
 
-**x402list.com** (no hyphen) is a parked domain, not a directory. Skip it. The real list is **x402-list.com** (with hyphen), already submitted.
+**x402list.com** (no hyphen) is a parked domain, not a directory. Skip it. Musicwire's **x402-list.com** (with hyphen) listing was approved on 2026-08-31.
 
 ## 10. Captain-owned remaining gates
 
