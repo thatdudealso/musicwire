@@ -20,6 +20,7 @@ import { Renderer } from './renderer.js';
 import { signedRenderReceipt, verificationUrl } from './provenance.js';
 import { failureCodes } from './qc.js';
 import { attachMusicwireMcp } from '../mcp/src/http.js';
+import { musicwireMcpServerCard } from '../mcp/src/server.js';
 
 export function createApp(overrides = {}) {
   const config = { ...defaultConfig, ...overrides };
@@ -80,6 +81,15 @@ export function createApp(overrides = {}) {
 
   app.get('/', (_request, response) => sendStaticPage(response, 'index.html'));
   app.get('/docs', (_request, response) => sendStaticPage(response, 'docs.html'));
+  app.get('/.well-known/mcp/server-card.json', (_request, response) => {
+    response.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Cache-Control': 'public, max-age=3600',
+    });
+    response.json(musicwireMcpServerCard());
+  });
   app.use(express.static(staticDir, { index: false }));
 
   app.use(rateLimit(limiter, config));

@@ -40,6 +40,42 @@ test('hosted MCP Streamable HTTP initializes, lists tools, and quotes paid tools
     assert.equal(initialize.status, 200);
     assert.equal(initialize.body.result.protocolVersion, '2025-06-18');
     assert.equal(initialize.body.result.serverInfo.name, 'musicwire-mcp');
+    assert.equal(initialize.body.result.serverInfo.version, '0.1.3');
+    assert.equal(initialize.body.result.serverInfo.title, 'Musicwire');
+    assert.match(initialize.body.result.serverInfo.description, /MusicXML/);
+    assert.deepEqual(initialize.body.result.capabilities.resources, {});
+    assert.deepEqual(initialize.body.result.capabilities.prompts, {});
+    assert.match(initialize.body.result.instructions, /no session config/i);
+
+    const resources = await mcp.request('resources/list', {});
+    assert.equal(resources.status, 200);
+    assert.equal(resources.body.error, undefined);
+    assert.deepEqual(resources.body.result.resources, []);
+    const prompts = await mcp.request('prompts/list', {});
+    assert.equal(prompts.status, 200);
+    assert.equal(prompts.body.error, undefined);
+    assert.deepEqual(prompts.body.result.prompts, []);
+    const missingPrompt = await mcp.request('prompts/get', { name: 'no-such-prompt' });
+    assert.equal(missingPrompt.body.error?.code, -32602);
+    assert.notEqual(missingPrompt.body.error?.code, -32601);
+
+    const cardResponse = await fetch(`${base}/.well-known/mcp/server-card.json`);
+    assert.equal(cardResponse.status, 200);
+    assert.equal(cardResponse.headers.get('access-control-allow-origin'), '*');
+    const card = await cardResponse.json();
+    assert.equal(card.serverInfo.name, 'musicwire-mcp');
+    assert.equal(card.configSchema.type, 'object');
+    assert.deepEqual(card.configSchema.properties, {});
+    assert.equal(card.configSchema.additionalProperties, false);
+    assert.deepEqual(card.resources, []);
+    assert.deepEqual(card.prompts, []);
+    assert.deepEqual(card.tools.map((tool) => tool.name).sort(), [
+      'musicwire_compose_guide',
+      'musicwire_get_job',
+      'musicwire_render',
+      'musicwire_validate',
+      'musicwire_verify_provenance',
+    ]);
 
     const tools = await mcp.request('tools/list', {});
     assert.equal(tools.status, 200);
@@ -50,6 +86,10 @@ test('hosted MCP Streamable HTTP initializes, lists tools, and quotes paid tools
       'musicwire_validate',
       'musicwire_verify_provenance',
     ]);
+    const validateTool = tools.body.result.tools.find((tool) => tool.name === 'musicwire_validate');
+    assert.equal(validateTool.annotations.readOnlyHint, false);
+    assert.equal(validateTool.annotations.destructiveHint, false);
+    assert.match(validateTool.description, /Payment-Signature/);
 
     const guide = await mcp.callTool('musicwire_compose_guide', { style: 'waltz' });
     assert.equal(guide.status, 200);

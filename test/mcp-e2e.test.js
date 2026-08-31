@@ -33,11 +33,27 @@ test('MCP stdio server calls every Musicwire API tool using the local stub payme
   });
 
   try {
-    await client.request('initialize', {
+    const initialized = await client.request('initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: { name: 'musicwire-mcp-e2e', version: '1.0.0' },
     });
+    assert.equal(initialized.serverInfo.name, 'musicwire-mcp');
+    assert.equal(initialized.serverInfo.version, '0.1.3');
+    assert.equal(initialized.serverInfo.title, 'Musicwire');
+    assert.match(initialized.serverInfo.description, /MusicXML/);
+    assert.equal(initialized.serverInfo.websiteUrl, 'https://musicwire.5432wire.com/docs');
+    assert.deepEqual(initialized.capabilities.resources, {});
+    assert.deepEqual(initialized.capabilities.prompts, {});
+    assert.match(initialized.instructions, /tools only/i);
+    assert.deepEqual((await client.request('resources/list', {})).resources, []);
+    assert.deepEqual((await client.request('resources/templates/list', {})).resourceTemplates, []);
+    assert.deepEqual((await client.request('prompts/list', {})).prompts, []);
+    await assert.rejects(
+      () => client.request('prompts/get', { name: 'no-such-prompt' }),
+      /Prompt no-such-prompt not found/,
+    );
+
     const tools = await client.request('tools/list', {});
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
       'musicwire_compose_guide',
@@ -46,6 +62,14 @@ test('MCP stdio server calls every Musicwire API tool using the local stub payme
       'musicwire_validate',
       'musicwire_verify_provenance',
     ]);
+    const byName = Object.fromEntries(tools.tools.map((tool) => [tool.name, tool]));
+    assert.equal(byName.musicwire_compose_guide.annotations.readOnlyHint, true);
+    assert.equal(byName.musicwire_get_job.annotations.readOnlyHint, true);
+    assert.equal(byName.musicwire_verify_provenance.annotations.readOnlyHint, true);
+    assert.equal(byName.musicwire_validate.annotations.readOnlyHint, false);
+    assert.equal(byName.musicwire_render.annotations.destructiveHint, false);
+    assert.equal(byName.musicwire_render.annotations.openWorldHint, false);
+    assert.match(byName.musicwire_validate.description, /Payment-Signature/);
 
     const guide = await client.callTool('musicwire_compose_guide', {
       style: 'waltz',
