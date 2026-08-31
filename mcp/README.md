@@ -14,13 +14,13 @@ Local MCP clients such as Claude Code and Cursor run this package over stdio:
 npx -y musicwire-mcp
 ```
 
-Hosted MCP clients such as Claude Connectors and Smithery use the public Streamable HTTP endpoint served by the Musicwire API:
+Hosted MCP clients such as Claude Connectors and [Smithery](https://smithery.ai/servers/thatdudealso/musicwire) use the public Streamable HTTP endpoint served by the Musicwire API:
 
 ```
 https://musicwire.5432wire.com/mcp
 ```
 
-That hosted endpoint exposes the same tools. It does not hold a buyer wallet. `musicwire_validate` and `musicwire_render` return HTTP `402 Payment Required` with the same x402 quote as `POST /v1/validate` and `POST /v1/render`. Retry the identical MCP request with `Payment-Signature`. Compose guide, job polling, and provenance verify stay free.
+That hosted endpoint exposes the same tools and needs no Smithery session config (the listed config schema is an empty object). It does not hold a buyer wallet. `musicwire_validate` and `musicwire_render` return HTTP `402 Payment Required` with the same x402 quote as `POST /v1/validate` and `POST /v1/render`. Retry the identical MCP request with `Payment-Signature`. Compose guide, job polling, and provenance verify stay free.
 
 Over the hosted endpoint, poll `musicwire_get_job` with repeated short calls instead of one long `wait_for_completion` hold: the gateway in front of the hosted endpoint times out requests after roughly 29 seconds, while the render itself continues and stays pollable. Long `wait_for_completion` waits are fine over stdio.
 
@@ -40,7 +40,7 @@ The package requires Node.js 22.5 or newer. Run the stdio server directly from a
 | `MUSICWIRE_X402_PRIVATE_KEY` | For paid x402 calls | Throwaway buyer private key, funded on the network the target deployment advertises. `X402_PRIVATE_KEY` is also accepted for compatibility. |
 | `MUSICWIRE_MCP_PAYMENT_MODE` | No                  | `x402` (default), or the test-only `stub` mode for a loopback API.                                                                          |
 
-The server starts and serves the free tools without a key. The key is read only when a paid call actually receives `402 Payment Required`; if it is missing at that point, the tool call fails with an error telling you to set it.
+The server starts and serves the free tools without a key. The key is read only when a paid call actually receives `402 Payment Required`; if it is missing at that point, the tool call fails with an error telling you to set it. Smithery's hosted listing does not collect these variables: declare no session fields, then pay each `musicwire_validate` / `musicwire_render` call with `Payment-Signature`.
 
 `stub` mode retries challenges with a non-secret test authorization and is rejected unless `MUSICWIRE_API_URL` points at `localhost`, `127.0.0.1`, or `::1`. It is for Musicwire's explicit local stub profile only. Never use it for a remote API. The hosted `/mcp` endpoint never enables stub auto-pay and never holds a server-side buyer key.
 

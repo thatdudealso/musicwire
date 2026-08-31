@@ -1,5 +1,7 @@
 # Musicwire
 
+[![smithery badge](https://smithery.ai/badge/thatdudealso/musicwire)](https://smithery.ai/servers/thatdudealso/musicwire)
+
 Musicwire is a deterministic MusicXML validation, MuseScore rendering, automated QC, and attribution API for agents. It does not compose music or invoke a server-side LLM. MCP clients such as Claude Code and Cursor can use the API through the `musicwire-mcp` stdio server in `mcp/`. Hosted MCP clients use Streamable HTTP at `POST /mcp` on the same service. See `mcp/README.md` for install, configuration, and payment behavior.
 
 ## Agent quickstart

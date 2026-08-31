@@ -1,0 +1,12 @@
+# Smithery lists the hosted Streamable HTTP endpoint (thatdudealso/musicwire).
+# Session configuration is intentionally empty: paid tools use x402 Payment-Signature,
+# not Smithery form fields. See mcp/src/server.js musicwireMcpConfigSchema.
+startCommand:
+  type: http
+  configSchema:
+    type: object
+    title: Musicwire MCP session config
+    description: No user configuration. Connect to POST https://musicwire.5432wire.com/mcp.
+    properties: {}
+    additionalProperties: false
+  exampleConfig: {}
