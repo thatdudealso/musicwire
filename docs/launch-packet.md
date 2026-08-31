@@ -1,6 +1,6 @@
 # Musicwire listing and registry launch packet
 
-Truth pass 2026-08-30. This packet records what is live, what this worker submitted, and the exact remaining captain-owned steps. It does not authorize invented accounts, paid placements, or the open `xpaysh/awesome-x402` PR #1304.
+Truth pass 2026-08-31, rebased onto main after PR #21 (Smithery MCP metadata), PR #23/#24 (x402-list badge + approval), and PR #25 (agent-flow demos). This packet records what is live, what this worker submitted, and the exact remaining captain-owned steps. It does not authorize invented accounts, paid placements, or the open `xpaysh/awesome-x402` PR #1304.
 
 Canonical one-line (use verbatim):
 
@@ -23,7 +23,7 @@ Do not describe Musicwire as a composition model. Formats are MP3 and MIDI only.
 | API manifest           | https://musicwire.5432wire.com/manifest                                                                 |
 | x402 description       | https://musicwire.5432wire.com/.well-known/x402                                                         |
 | Hosted MCP             | `POST https://musicwire.5432wire.com/mcp` (Streamable HTTP; `initialize` returns `musicwire-mcp` 0.1.2) |
-| stdio MCP              | `npx -y musicwire-mcp` (`musicwire-mcp@0.1.1`)                                                          |
+| stdio MCP              | `npx -y musicwire-mcp` (`musicwire-mcp@0.1.1` on npm; source is 0.1.3)                                  |
 | Official MCP Registry  | `io.github.thatdudealso/musicwire-mcp` (active since 2026-08-24)                                        |
 | Repository             | https://github.com/thatdudealso/musicwire                                                               |
 | Support                | https://github.com/thatdudealso/musicwire/issues                                                        |
@@ -35,95 +35,106 @@ Do not describe Musicwire as a composition model. Formats are MP3 and MIDI only.
 | Payment                | x402 Exact USDC via CDP facilitator; capture only after QC passes                                       |
 | Pricing                | validate $0.10; render $0.25 solo / $0.50 ensemble                                                      |
 | Provenance             | `POST /v1/provenance/verify` (free)                                                                     |
-| Privacy policy         | **missing** (`GET /privacy` is 404)                                                                     |
+| Privacy policy         | **missing** (`GET /privacy` is 404 as of 2026-08-31)                                                    |
 
-Live verify (2026-08-30): the hosted Streamable HTTP endpoint at `POST https://musicwire.5432wire.com/mcp` is live in production (`initialize` HTTP 200, server `musicwire-mcp` 0.1.2). Docs gallery present with inline players. npm stdio package remains `musicwire-mcp@0.1.1` with `mcpName` set. Official Registry status `active`. Remote listings (Smithery, Claude Connectors, IDE connectors) must use that `/mcp` URL, not the site root. The hosted endpoint does not hold a buyer wallet; paid tools still settle x402 Exact USDC on Base inside the tool call.
+Live verify (2026-08-31): hosted Streamable HTTP `POST https://musicwire.5432wire.com/mcp` returns HTTP 200 `initialize` with server `musicwire-mcp` 0.1.2. Health 200, renderer ready. Docs gallery live. npm stdio package remains `musicwire-mcp@0.1.1`. Official Registry status `active`, version 0.1.1, stdio package only (no `remotes[]` for the hosted URL). Remote listings must use `https://musicwire.5432wire.com/mcp`, not the site root and not Smithery's proxy host `https://musicwire--thatdudealso.run.tools`. The hosted endpoint does not hold a buyer wallet; paid tools still settle x402 Exact USDC on Base inside the tool call.
+
+Source (PR #21, merged) now serves `GET /.well-known/mcp/server-card.json`, empty `resources`/`prompts` catalogs, tool `title` plus `readOnlyHint`/`destructiveHint`, and an empty Smithery `configSchema` (`musicwireMcpConfigSchema`, repo-root `smithery.yaml`). Confirm production has picked that deploy up before Smithery republish or Claude Connectors submit.
 
 Do not disclose infrastructure internals (buckets, containers, internal hosts) in any listing.
 
 ## 2. Status at a glance
 
-| Target                                          | Status                                                | Notes                                                                                                                                                                                                                 |
-| ----------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| npm `musicwire-mcp`                             | **live**                                              | 0.1.1 remains published. The source package is prepared as 0.1.3; a captain must publish it.                                                                                                                          |
-| Official MCP Registry                           | **live**                                              | `io.github.thatdudealso/musicwire-mcp` 0.1.1, published 2026-08-24. Re-publish 0.1.3 through OIDC workflow 341643876 after the npm publish.                                                                           |
-| Hosted MCP `/mcp`                               | **live**                                              | `POST https://musicwire.5432wire.com/mcp` (Streamable HTTP) is live in production. Use this URL for Smithery, Claude Connectors, and any remote-connector listing. Do not enter the site root as an MCP URL.          |
-| 9-track docs gallery                            | **live**                                              | https://musicwire.5432wire.com/docs                                                                                                                                                                                   |
-| Repo homepage + topics                          | **done**                                              | Homepage set. Topics: `mcp`, `musescore`, `musicxml`, `x402`, `usdc`, `base`, `ai-agents`, `agent-payments`, `api`, `music-generation`.                                                                               |
-| CDP Bazaar                                      | **reachable via x402 discovery**                      | No separate registration form. Manifest has `payment.discovery.bazaar.discoverable: true`.                                                                                                                            |
-| agent402.tools                                  | **listed**                                            | `POST /api/index/register` with origin `https://musicwire.5432wire.com` returned `listed=true`, `toolCount=1`, `networks=["eip155:8453"]`, `routable=true`, `health=1`.                                               |
-| x402-list.com (hyphen)                          | **approved**                                          | Musicwire's listing was approved on 2026-08-31.                                                                                                                                                                       |
-| mcp.directory                                   | **submitted, pending review**                         | `POST https://mcp.directory/api/submit-server` HTTP 200 `{ok:true}`. They claim publish within 24h. Description max 100 chars. Email for claim if auto-discovered: the form says email them (obfuscated on the page). |
-| mcp.so free queue                               | **submitted**                                         | Paid $39 submit skipped. Free path is a comment on `chatmcp/mcpso` issue #1: https://github.com/chatmcp/mcpso/issues/1#issuecomment-5472062662                                                                        |
-| Cline Marketplace                               | **submitted**                                         | https://github.com/cline/mcp-marketplace/issues/2368 . Did not falsely claim Cline IDE testing. Label `server-submission` could not be applied (not visible to this token).                                           |
-| PulseMCP                                        | **blocked on their pause + ingest lag**               | `/submit` still says submissions paused until mid-August (checked 2026-08-30). They ingest Official Registry daily and process weekly. Email `hello@pulsemcp.com`. Not listed yet. No public write API.               |
-| Smithery                                        | **blocked on captain account**                        | Immediate priority. Deploy the hosted MCP metadata, then re-publish the URL with its explicit empty config schema. See section 4.                                                                                     |
-| Claude Connectors Directory                     | **blocked on captain account + product gaps**         | Immediate priority after Smithery. See section 5. Several hard blockers besides login.                                                                                                                                |
-| x402all / axon402                               | **blocked on captain account; register API not live** | See section 6.                                                                                                                                                                                                        |
-| Glama                                           | **claim-needed, account-gated**                       | Prior work reported auto-index. Named URLs `@thatdudealso/musicwire` and `thatdudealso/musicwire` 404 as of 2026-08-30. Add Connector / claim require sign-in. Do not redo.                                           |
-| GitHub MCP Registry / VS Code `@mcp`            | **not automatic**                                     | Official Registry is upstream data. The GitHub MCP Registry that VS Code Copilot `@mcp` reads is a curated subset. After Official Registry, email `partnerships@github.com` to request inclusion.                     |
-| cursor.directory plugins                        | **blocked on GitHub/Google sign-in**                  | https://cursor.directory/plugins/new                                                                                                                                                                                  |
-| Goose extensions directory                      | **consumes PulseMCP**                                 | No separate public listing PR. Users add stdio or Streamable HTTP themselves.                                                                                                                                         |
-| Continue Hub                                    | **account-gated**                                     | Users can still add YAML locally.                                                                                                                                                                                     |
-| Windsurf marketplace                            | **no free public API/PR found**                       | Users add `mcp_config.json`. Often also via Smithery once published.                                                                                                                                                  |
-| OpenAI Codex plugin portal / ChatGPT connectors | **account-gated**                                     | Users add `~/.codex/config.toml`. Privacy policy required for directory review.                                                                                                                                       |
-| `xpaysh/awesome-x402` PR #1304                  | **do not touch**                                      | Separate captain decision.                                                                                                                                                                                            |
-| x402list.com (no hyphen)                        | **dead end**                                          | Parked domain, not a directory. Skip.                                                                                                                                                                                 |
+| Target                               | Status                                                   | Notes                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| npm `musicwire-mcp`                  | **live**                                                 | 0.1.1 remains published. Source package is prepared as 0.1.3 (PR #21). A captain must publish it. Hosted `initialize` already reports 0.1.2.                                                                                                                                                                                                                         |
+| Official MCP Registry                | **live**                                                 | `io.github.thatdudealso/musicwire-mcp` 0.1.1, published 2026-08-24, `status=active`. Search `https://registry.modelcontextprotocol.io/v0.1/servers?search=musicwire` returns this record. Re-publish 0.1.3 through OIDC after the npm publish. Record is stdio-only; hosted remote is not in `remotes[]`.                                                            |
+| Hosted MCP `/mcp`                    | **live**                                                 | `POST https://musicwire.5432wire.com/mcp`. This listing pass observed 5 tools without annotations and `GET /.well-known/mcp/server-card.json` 404 on production. PR #21 merged those metadata fixes into source; confirm production before republish.                                                                                                                |
+| 9-track docs gallery                 | **live**                                                 | https://musicwire.5432wire.com/docs                                                                                                                                                                                                                                                                                                                                  |
+| Repo homepage + topics               | **done**                                                 | Homepage `https://musicwire.5432wire.com`. Topics: `mcp`, `musescore`, `musicxml`, `x402`, `usdc`, `base`, `ai-agents`, `agent-payments`, `api`, `music-generation`. README has Smithery and x402-list badges.                                                                                                                                                       |
+| CDP Bazaar                           | **discoverable flag live; catalog hit not proven**       | Manifest `payment.discovery.bazaar.discoverable: true` with routes `POST /v1/validate` and `POST /v1/render`. Public `https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources` first 50 items did not include musicwire/5432wire. Indexing is async after settlement.                                                                                      |
+| agent402.tools                       | **listed**                                               | `GET https://agent402.tools/api/index?seller=musicwire.5432wire.com`: `health=1`, `routable=true`, `toolCount=1`, pay-to `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f` on `eip155:8453`.                                                                                                                                                                              |
+| x402-list.com (hyphen)               | **approved**                                             | Listing https://x402-list.com/services/musicwire approved 2026-08-31 (PR #24; README badge live). Prior submission_id `637f83bd-4164-4479-9ab5-f6bd281831d4`.                                                                                                                                                                                                        |
+| mcp.directory                        | **submitted, not yet searchable**                        | Prior `POST /api/submit-server` `{ok:true}`. Homepage HTML on 2026-08-31 does not contain `musicwire`.                                                                                                                                                                                                                                                               |
+| mcp.so free queue                    | **submitted; search Cloudflare-gated**                   | Comment still live: https://github.com/chatmcp/mcpso/issues/1#issuecomment-5472062662 . Public search is a Turnstile wall. Paid $39 skipped.                                                                                                                                                                                                                         |
+| Cline Marketplace                    | **submitted, open**                                      | https://github.com/cline/mcp-marketplace/issues/2368 still `open`.                                                                                                                                                                                                                                                                                                   |
+| PulseMCP                             | **still missing**                                        | `https://api.pulsemcp.com/v0beta/servers?query=musicwire` -> `total_count=0`. Browser `/servers?q=musicwire` is Access Denied; contact `hello@pulsemcp.com`. Email packet in section 6.                                                                                                                                                                              |
+| Smithery                             | **listed, score 45/100; republish blocked on auth**      | Live URL https://smithery.ai/servers/thatdudealso/musicwire . Public page: score **45/100**, "No description", 5 tools, published 2026-08-31. Registry `configSchema` is already `{}`. Connection URL is Smithery proxy `https://musicwire--thatdudealso.run.tools`, not the first-party `/mcp`. CLI `npx -y smithery@latest auth whoami` = no token. See section 4. |
+| Claude Connectors Directory          | **blocked on captain Team/Enterprise + product gaps**    | Portal https://claude.ai/admin-settings/directory/submissions/new . Privacy policy 404 and production tool annotations (until PR #21 is deployed) are hard blockers. Crypto-transfer policy remains a likely rejection. Custom connector URL still works. See section 5.                                                                                             |
+| x402all / axon402                    | **form visible; register API not live**                  | Browser submit on 2026-08-31 returned "Not yet wired. ... `/api/register` ... not live yet." `POST /api/register` still 404. Captain path: AXON dashboard when their register route is live. See section 6.                                                                                                                                                          |
+| Glama                                | **not indexed; claim-needed**                            | Named URLs `@thatdudealso/musicwire` and `thatdudealso/musicwire` 404. Search `"musicwire" matching MCP servers` returned an empty page (`hasNextPage=false`). Add Connector / claim require sign-in.                                                                                                                                                                |
+| GitHub MCP Registry / VS Code `@mcp` | **not automatic**                                        | Official Registry is upstream. Curated GitHub MCP Registry still wants email to `partnerships@github.com`. Packet in section 8.                                                                                                                                                                                                                                      |
+| cursor.directory plugins             | **blocked on GitHub/Google sign-in + Vercel checkpoint** | https://cursor.directory/plugins/new is a Vercel Security Checkpoint from this worker.                                                                                                                                                                                                                                                                               |
+| Goose extensions directory           | **consumes PulseMCP**                                    | No separate public listing PR. Users add stdio or Streamable HTTP themselves until PulseMCP lists it.                                                                                                                                                                                                                                                                |
+| Continue Hub                         | **account-gated**                                        | `hub.continue.dev` did not resolve from this worker. Users can still add YAML locally.                                                                                                                                                                                                                                                                               |
+| Windsurf marketplace                 | **no free public API/PR found**                          | Users add `mcp_config.json`. Smithery is the highest-leverage Windsurf discovery path.                                                                                                                                                                                                                                                                               |
+| OpenAI Codex / ChatGPT plugins       | **account-gated**                                        | ChatGPT Plugins https://chatgpt.com/plugins (developer mode). Directory/plugin submission wants a public HTTPS `/mcp` URL and reviewed metadata. Privacy policy is a hard blocker for review. Users can add `~/.codex/config.toml` today.                                                                                                                            |
+| punkpeye/awesome-mcp-servers         | **PR opened this pass**                                  | https://github.com/punkpeye/awesome-mcp-servers/pull/13262                                                                                                                                                                                                                                                                                                           |
+| wong2/awesome-mcp-servers            | **fork ready; PR permission denied**                     | Upstream `has_pull_requests=false` / collaborators-only. Branch: https://github.com/thatdudealso/awesome-mcp-servers-1/tree/add-musicwire                                                                                                                                                                                                                            |
+| `xpaysh/awesome-x402` PR #1304       | **do not touch**                                         | Separate captain decision.                                                                                                                                                                                                                                                                                                                                           |
+| x402list.com (no hyphen)             | **dead end**                                             | Parked domain, not a directory. Skip.                                                                                                                                                                                                                                                                                                                                |
 
-## 3. What this pass executed
+## 3. What this 2026-08-31 pass executed
 
-Free, non-account-gated submissions only.
+Re-verified live listings, then did every worker-doable submission. Registry posting later in this same task was stopped by captain order; this packet keeps those earlier submissions.
 
-1. **agent402.tools** - origin registered, `listed=true`.
-2. **x402-list.com** - Musicwire's listing was approved on 2026-08-31.
-3. **mcp.directory** - `POST /api/submit-server` with GitHub URL, npm `musicwire-mcp`, 86-char description, email `ashishyocool@gmail.com`. Response: `{"ok":true,"message":"Server submitted for review!"}`.
-4. **mcp.so** - comment on https://github.com/chatmcp/mcpso/issues/1#issuecomment-5472062662 .
-5. **Cline Marketplace** - https://github.com/cline/mcp-marketplace/issues/2368 .
+1. **Re-verify** - hosted MCP initialize 200 / `musicwire-mcp` 0.1.2; Official Registry active; GitHub topics present; Smithery listing 200 with score 45/100; agent402 seller record healthy; PulseMCP API empty; Glama named URLs 404; CDP public catalog first page no musicwire hit; privacy `/privacy` 404. x402-list is now **approved** (later main PRs #23/#24).
+2. **Smithery CLI** - `npx -y smithery@latest auth whoami` = no token. Did not invent an account. Did not republish. Command ready in section 4.
+3. **x402all HTML form** - filled origin `https://musicwire.5432wire.com/v1/render`, contact `ashishyocool@gmail.com`, wallet `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f`, notes with validate sibling + pricing. Submit response: **"Not yet wired"** because `POST /api/register` is not live.
+4. **punkpeye/awesome-mcp-servers** - opened https://github.com/punkpeye/awesome-mcp-servers/pull/13262 (Art & Culture, agent title suffix per their CONTRIBUTING).
+5. **wong2/awesome-mcp-servers** - forked to `thatdudealso/awesome-mcp-servers-1`, committed Community Servers line on `add-musicwire`. `gh-axi pr create` failed: `thatdudealso does not have the correct permissions to execute CreatePullRequest`.
+6. **mcp.so search** - Cloudflare Turnstile in this worker browser; free-queue comment already posted, not redone.
+7. **PulseMCP / Glama / cursor.directory / Claude portal / Continue Hub / ChatGPT plugins** - not signed in; packets below. No invented accounts.
 
-Not executed (account, paid, policy, or missing live API): Smithery, Claude Connectors, PulseMCP write, mcp.so $39, x402all `/api/register` (404), cursor.directory, Glama claim, Continue Hub, Codex plugin portal, GitHub MCP Registry partnership email.
+Not executed (account, paid, policy, missing live API, or out of scope): Smithery republish, Claude Connectors submit, PulseMCP email send, mcp.so $39, GitHub MCP Registry email send, cursor.directory publish, Glama claim, Continue Hub publish, Codex/ChatGPT directory submit, npm publish, `xpaysh/awesome-x402` PR #1304.
 
 ## 4. Smithery (captain, immediate)
 
-Mechanism: account-gated URL publish. No free anonymous API. CLI v4.11.1 `mcp publish` prompts for an API key from https://smithery.ai/account/api-keys . `smithery.ai/new` redirects to WorkOS login.
+Listing already exists: https://smithery.ai/servers/thatdudealso/musicwire
 
-### 4.1 Browser (recommended)
+Recorded public quality score on 2026-08-31: **45/100**. Visible issues on the public page: empty description ("No description"), connection through Smithery proxy `https://musicwire--thatdudealso.run.tools`. Registry already has empty `configSchema: {}`. Source now has tool annotations and `GET /.well-known/mcp/server-card.json` (PR #21); confirm that deploy is live in production before republishing.
 
-1. Sign in at https://smithery.ai (WorkOS). Use the captain-owned identity.
-2. Open https://smithery.ai/new .
-3. Enter the public HTTPS MCP URL:
+`npx -y smithery@latest` (CLI v1.2.0) `auth whoami` from this worker: **No token found**. Isolated Chrome showed a Login link; the operator Chrome DevTools port was not available.
 
-   `https://musicwire.5432wire.com/mcp`
-
-4. Complete the publishing flow. Suggested qualified name: `thatdudealso/musicwire`.
-5. Smithery scans unauthenticated Streamable HTTP automatically (User-Agent `SmitheryBot/1.0`). Musicwire `/mcp` currently answers `initialize` without OAuth, so the scan should complete without a test profile.
-6. After publish, open the server **Settings → Verification** if you want official-vendor verification.
-
-### 4.2 CLI (same account)
+### 4.1 Captain login + republish (required to raise the score)
 
 ```sh
-# Create a key at https://smithery.ai/account/api-keys then:
-export SMITHERY_API_KEY='...'
-npx -y @smithery/cli mcp publish "https://musicwire.5432wire.com/mcp" -n thatdudealso/musicwire --config-schema '{"type":"object","properties":{},"additionalProperties":false}'
+npx -y smithery@latest auth login
+# then:
+npx -y smithery@latest mcp publish "https://musicwire.5432wire.com/mcp" \
+  -n thatdudealso/musicwire \
+  --config-schema '{"type":"object","properties":{},"additionalProperties":false}'
 ```
 
-Do not publish `https://musicwire.5432wire.com` (site root) as an MCP URL. Do not wait for an MCPB bundle unless you want a local-stdio Smithery listing as well; the hosted URL is the one that matches the live endpoint.
+Confirm after publish:
 
-The source serves `/.well-known/mcp/server-card.json` with the same metadata and empty resources/prompts catalogs as the MCP server. Deploy it before re-publishing. If a scan still returns 403, inspect the deployment's handling of Smithery's `User-Agent: SmitheryBot/1.0` before changing access controls.
+- Listing URL remains https://smithery.ai/servers/thatdudealso/musicwire
+- Connection shows `https://musicwire.5432wire.com/mcp` (or a proxy in front of it), never the site root
+- Description is the canonical longer description
+- Score is recorded from the public page (`N/100` next to the title)
 
-## 5. Claude Connectors Directory (captain, immediate after Smithery)
+Browser path if CLI is awkward: sign in at https://smithery.ai (WorkOS) -> https://smithery.ai/new -> URL `https://musicwire.5432wire.com/mcp` -> qualified name `thatdudealso/musicwire`. After publish, Settings -> Verification for official-vendor verification.
+
+Do not wait for an MCPB bundle. Do not publish `https://musicwire.5432wire.com` (site root) as an MCP URL.
+
+If the scan returns 403, inspect the deployment's handling of Smithery's `User-Agent: SmitheryBot/1.0` before changing access controls. The source already serves `/.well-known/mcp/server-card.json`.
+
+## 5. Claude Connectors Directory (captain, after Smithery)
 
 Mechanism: Team/Enterprise org portal. Not a public API. Desktop MCPB uses a separate Google form.
+
+Docs (current 2026-08-31): https://claude.com/docs/connectors/building/submission
 
 ### 5.1 Access
 
 - Portal: https://claude.ai/admin-settings/directory/submissions/new
 - Dashboard: https://claude.ai/admin-settings/directory/submissions
-- Docs: https://claude.com/docs/connectors/building/submission
 - Review criteria: https://claude.com/docs/connectors/building/review-criteria
 - Escalation: mcp-review@anthropic.com
 - Requires a **Team or Enterprise** Claude organization. Individual/Pro/Max cannot submit to the directory. On Team, only Owners. On Enterprise, Owners or a custom role with Directory or Libraries permission.
 - Desktop MCPB form (local bundle, not the hosted URL): https://clau.de/desktop-extention-submission
-- Skills are not a standalone submission type.
+
+This worker was not signed in. Do not invent a Team org.
 
 ### 5.2 Copy-ready portal fields
 
@@ -140,7 +151,7 @@ Have these ready before opening the portal. Progress saves in-browser only.
 | Description (max 2000)  | Canonical longer description in section 1                                                                                                                                                                                                                                              |
 | Categories              | Media / Developer tools (pick 1-5 from the portal list)                                                                                                                                                                                                                                |
 | Documentation URL       | https://musicwire.5432wire.com/docs                                                                                                                                                                                                                                                    |
-| Privacy policy URL      | **blocker** - `GET /privacy` is 404. Missing policy is immediate rejection.                                                                                                                                                                                                            |
+| Privacy policy URL      | **hard blocker** - `GET /privacy` is 404. Missing policy is immediate rejection.                                                                                                                                                                                                       |
 | Support                 | https://github.com/thatdudealso/musicwire/issues and ashishyocool@gmail.com                                                                                                                                                                                                            |
 | Icon                    | https://musicwire.5432wire.com/musicwire-mark.svg                                                                                                                                                                                                                                      |
 | Slug                    | `musicwire` (permanent once published)                                                                                                                                                                                                                                                 |
@@ -156,46 +167,70 @@ Portal steps in order: Introduction, Connection, Tools, Listing, Use cases, Comp
 
 Submit only after these are true, or expect rejection:
 
-1. **Privacy policy URL.** Required. Publish an HTTPS policy covering collection, use, storage, third-party sharing, retention, and contact, then put it at a stable URL (today `/privacy` 404s).
-2. **Tool annotations.** Directory rules require every tool to have a `title` plus `readOnlyHint` or `destructiveHint`. The source now supplies those annotations for every tool; deploy and confirm the hosted `tools/list` response before submitting.
-3. **Financial / crypto policy.** Review criteria currently list "Transfer money, cryptocurrency, or other financial assets" as an unsupported use case. Musicwire's paid tools capture USDC via x402. The compliance step also has a financial-transactions acknowledgment. Treat this as a likely policy rejection even with a perfect form. Custom connectors (user-added URL) still work without a directory listing.
-4. **AI media generation.** The same unsupported list bans generating audio _via AI models_. Musicwire renders with MuseScore, not an AI model, and should be described that way. Do not call it AI music generation in the portal.
+1. **Privacy policy URL.** Required. Publish an HTTPS policy covering collection, use, storage, third-party sharing, retention, and contact, then put it at a stable URL (today `/privacy` 404s). Adding a privacy policy is a captain decision (`AGENTS.md`).
+2. **Tool annotations.** Directory rules require every tool to have a `title` plus `readOnlyHint` or `destructiveHint`. Source now supplies those annotations for every tool (PR #21). Confirm the hosted `tools/list` response before submitting; this listing pass still saw production without them.
+3. **Financial / crypto policy.** Review criteria currently list "Transfer money, cryptocurrency, or other financial assets" as an unsupported use case. Musicwire's paid tools capture USDC via x402. Treat this as a likely policy rejection even with a perfect form. Custom connectors (user-added URL) still work without a directory listing.
+4. **AI media generation.** The same unsupported list bans generating audio _via AI models_. Musicwire renders with MuseScore, not an AI model. Do not call it AI music generation in the portal.
 5. **Test credentials.** Required "fully populated account." For an unauthenticated public MCP, document that no login exists and that paid calls spend real USDC.
 
 Users can still add Musicwire as a **custom connector** today: Customize > Connectors > Add custom connector > URL `https://musicwire.5432wire.com/mcp`. Free/Pro/Max can add custom connectors; Team/Enterprise Owners add org-level ones.
 
-## 6. PulseMCP, mcp.so paid, x402all
+## 6. PulseMCP, mcp.so, x402all
 
-### PulseMCP
+### PulseMCP (email if still missing - it is)
 
-- Submit page: https://www.pulsemcp.com/submit
-- Current copy (2026-08-30): submissions and listing changes paused until mid-August. The pause text is still up after that date.
-- Intended mechanism even when not paused: publish to Official MCP Registry (already done). They ingest daily and process weekly. Manual adjustments: email hello@pulsemcp.com with registry name `io.github.thatdudealso/musicwire-mcp`, GitHub URL, npm `musicwire-mcp`, hosted URL `https://musicwire.5432wire.com/mcp`.
-- v0beta API is sunsetting (random 410s). Partner v0.1 API needs `X-API-Key`.
-- Goose's extensions directory loads from PulseMCP. Listing there is how Goose users discover Musicwire without a custom extension.
+- Search API 2026-08-31: `https://api.pulsemcp.com/v0beta/servers?query=musicwire` -> `{servers:[], total_count:0}`
+- Submit / search pages: Access Denied from this worker; copy tells crawlers to email hello@pulsemcp.com
+- They ingest Official Registry daily and process weekly. Goose's directory loads from PulseMCP.
+
+Captain: send this exact mail (do not invent a mailbox; use ashishyocool@gmail.com):
+
+```text
+To: hello@pulsemcp.com
+Subject: Please ingest io.github.thatdudealso/musicwire-mcp
+
+Musicwire is already active on the Official MCP Registry as
+io.github.thatdudealso/musicwire-mcp (published 2026-08-24).
+PulseMCP search still returns zero servers for "musicwire".
+
+Please ingest or list:
+
+- Registry name: io.github.thatdudealso/musicwire-mcp
+- GitHub: https://github.com/thatdudealso/musicwire
+- npm: musicwire-mcp
+- Hosted Streamable HTTP: https://musicwire.5432wire.com/mcp
+- Docs: https://musicwire.5432wire.com/docs
+- One-liner: Pay-per-call MusicXML validation, MuseScore rendering, and automated QC for AI agents.
+
+Thank you.
+```
 
 ### mcp.so
 
 - https://mcp.so/submit is a **$39 paid** listing. Skip.
-- Free path used: GitHub issue https://github.com/chatmcp/mcpso/issues/1 comment https://github.com/chatmcp/mcpso/issues/1#issuecomment-5472062662
-- Recheck mcp.so search in a few days. If they ignore the issue, do not buy placement unless the captain chooses to.
+- Free path already used: https://github.com/chatmcp/mcpso/issues/1#issuecomment-5472062662
+- Recheck search in a signed-in human browser (Turnstile). If they ignore the issue, do not buy placement unless the captain chooses to.
 
-### x402all (x402all.com) / AXON (axon402.com)
+### x402all / AXON
 
-- Catalog is public. Musicwire is not in it.
-- Home page still links "Register your origin" to https://x402all.com/register , but that route **404s** as of 2026-08-30. `POST /api/register` is also 404. Footer JSON contract is not live.
-- Captain path: create an AXON account at https://axon402.com/dashboard (SPA console, account-gated). Do not invent credentials.
-- When a live seller form exists, use:
+- HTML form at https://x402all.com/register is visible and fillable.
+- This worker submitted the filled form on 2026-08-31. On-page status: **"Not yet wired. Your entry would have been posted to /api/register, but that route is not live yet."**
+- `POST https://x402all.com/api/register` is 404. The page itself says the JSON contract comes online in a future milestone.
+- Musicwire is not in the public catalog HTML.
+- Captain path: create an AXON account at https://axon402.com/dashboard (SPA console, account-gated). Do not invent credentials. Retry the HTML form only after `/api/register` returns non-404.
 
-| Field            | Value                                                                                                                      |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Origin / website | https://musicwire.5432wire.com                                                                                             |
-| Contact email    | ashishyocool@gmail.com                                                                                                     |
-| Wallet           | `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f`                                                                               |
-| Network / asset  | Base `eip155:8453`, USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`                                                      |
-| Protected routes | `POST /v1/validate`, `POST /v1/render`                                                                                     |
-| Category         | Media                                                                                                                      |
-| Notes            | x402 Exact USDC through CDP. Validation $0.10. Render $0.25 one part / $0.50 multiple parts. Capture only after QC passes. |
+When a live seller form exists, use:
+
+| Field                    | Value                                                                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Origin / website         | https://musicwire.5432wire.com                                                                                                                                            |
+| 402 endpoint (this form) | https://musicwire.5432wire.com/v1/render                                                                                                                                  |
+| Contact email            | ashishyocool@gmail.com                                                                                                                                                    |
+| Wallet                   | `0x2855fB60E630d6A9Ebe0beAE1E1d6392F630F86f`                                                                                                                              |
+| Network / asset          | Base `eip155:8453`, USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`                                                                                                     |
+| Protected routes         | `POST /v1/validate`, `POST /v1/render`                                                                                                                                    |
+| Category                 | Media                                                                                                                                                                     |
+| Notes                    | x402 Exact USDC through CDP. Validation $0.10. Render $0.25 one part / $0.50 multiple parts. Capture only after QC passes. Hosted MCP: https://musicwire.5432wire.com/mcp |
 
 ## 7. Coding-agent ecosystems
 
@@ -205,7 +240,7 @@ Dual-audience snippets below: one human line, then exact config. Never put `MUSI
 
 ### VS Code / GitHub Copilot
 
-Human: In Extensions search `@mcp musicwire`. If it is missing, the GitHub MCP Registry has not ingested this Official Registry entry yet; add it manually or email partnerships@github.com.
+Human: In Extensions search `@mcp musicwire`. If it is missing, the GitHub MCP Registry has not ingested this Official Registry entry yet; add it manually or email partnerships@github.com (section 8).
 
 Agent / manual `.vscode/mcp.json` (or user MCP settings):
 
@@ -239,7 +274,7 @@ stdio alternative:
 
 ### Cursor
 
-Human: Settings > MCP > add Musicwire. Listing on cursor.directory requires GitHub or Google sign-in at https://cursor.directory/plugins/new . Cursor Marketplace is also account-gated.
+Human: Settings > MCP > add Musicwire. Listing on cursor.directory requires GitHub or Google sign-in at https://cursor.directory/plugins/new (Vercel checkpoint from this worker). Cursor Marketplace is also account-gated.
 
 Project file `.cursor/mcp.json`:
 
@@ -285,7 +320,7 @@ Human: Add Musicwire to the project's `.mcp.json` (already in this repo for stdi
 
 ### Cline
 
-Human: Marketplace submission is issue #2368. Until it is listed, add a remote or stdio server in Cline MCP settings.
+Human: Marketplace submission is issue #2368 (still open). Until it is listed, add a remote or stdio server in Cline MCP settings.
 
 Remote: `https://musicwire.5432wire.com/mcp`. stdio command: `npx -y musicwire-mcp` with `MUSICWIRE_API_URL=https://musicwire.5432wire.com`.
 
@@ -321,7 +356,7 @@ Docs live at https://goose-docs.ai/docs/getting-started/using-extensions (the ol
 
 ### Continue
 
-Human: Continue Hub is account-gated. Add a local block instead.
+Human: Continue Hub is account-gated (`hub.continue.dev` did not resolve here). Add a local block instead.
 
 `.continue/mcpServers/musicwire.yaml`:
 
@@ -341,9 +376,11 @@ stdio variant: `command: npx`, `args: ["-y", "musicwire-mcp"]`, `env.MUSICWIRE_A
 
 Human: no separate free directory found. Add the server in Windsurf MCP settings (typically `~/.codeium/windsurf/mcp_config.json`), same JSON shape as Cursor `mcpServers`. Publishing on Smithery is the highest-leverage Windsurf discovery path.
 
-### OpenAI Codex
+### OpenAI Codex / ChatGPT plugins
 
-Human: Codex does not install from the Official MCP Registry automatically. Add a table in `~/.codex/config.toml`. Plugin / ChatGPT connector directories are account-gated and want a privacy policy.
+Human: Codex does not install from the Official MCP Registry automatically. Add a table in `~/.codex/config.toml`. ChatGPT developer-mode custom MCP: Settings > Security and login > Developer mode, then https://chatgpt.com/plugins plus button, connection = public HTTPS URL **including `/mcp`**.
+
+Directory / plugin review (https://developers.openai.com/plugins/deploy/submission and https://developers.openai.com/apps-sdk/deploy/connect-chatgpt): account-gated. Hosted URL must be `https://musicwire.5432wire.com/mcp`, never the site root. A public privacy policy is a hard blocker for directory review (`GET /privacy` is 404). Tool annotations are expected; source has them after PR #21, production must match.
 
 Remote:
 
@@ -367,43 +404,55 @@ Then `codex mcp list`. Do not mix `command` and `url` in the same table.
 
 ## 8. Other reputable free directories
 
-Executed if free API/PR; otherwise listed for the captain.
+| Directory                                              | Mechanism                                                | This-pass result                                                                                                     |
+| ------------------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| MCP Central                                            | Mirrors Official MCP Registry daily. No extra submit.    | Wait for sync. Already published upstream.                                                                           |
+| GitHub MCP Registry (`github.com/mcp`, VS Code `@mcp`) | Email `partnerships@github.com` after Official Registry. | Packet below. Not automatic.                                                                                         |
+| punkpeye/awesome-mcp-servers                           | Free GitHub PR.                                          | **Opened:** https://github.com/punkpeye/awesome-mcp-servers/pull/13262                                               |
+| wong2/awesome-mcp-servers                              | Free GitHub PR in theory.                                | Upstream disables public PRs. Branch ready: https://github.com/thatdudealso/awesome-mcp-servers-1/tree/add-musicwire |
+| appcypher/awesome-mcp-servers                          | Free GitHub PR, smaller list.                            | Optional follow-on. Not filed this pass.                                                                             |
+| LobeHub Marketplace                                    | Account-gated publish.                                   | Skip until captain signs in.                                                                                         |
+| AllMCPs                                                | Free submit tool plus paid boost/Stripe.                 | Skip paid boost.                                                                                                     |
+| mcpservers.org                                         | Browser form.                                            | Not executed; prefer Official Registry + PulseMCP.                                                                   |
 
-| Directory                     | Mechanism                                                | Recommendation                                                                                           |
-| ----------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| MCP Central                   | Mirrors Official MCP Registry daily. No extra submit.    | Wait for sync. Already published upstream.                                                               |
-| GitHub MCP Registry           | Email `partnerships@github.com` after Official Registry. | Captain should send a short request with registry name, npm, GitHub, hosted URL. Unlocks VS Code `@mcp`. |
-| punkpeye/awesome-mcp-servers  | Free GitHub PR. Reputable.                               | **Recommend.** Copy-ready line below. Not filed here (external fork; keep this PR to the packet).        |
-| appcypher/awesome-mcp-servers | Free GitHub PR, smaller list.                            | Optional follow-on.                                                                                      |
-| LobeHub Marketplace           | Account-gated publish.                                   | Skip until captain signs in.                                                                             |
-| AllMCPs                       | Free submit tool plus paid boost/Stripe.                 | Skip paid boost. Free submit is optional and less well-known.                                            |
-| mcpservers.org                | Browser form.                                            | Not executed; reputation mixed. Prefer Official Registry + PulseMCP.                                     |
+GitHub MCP Registry captain email (send from ashishyocool@gmail.com; do not invent a mailbox):
 
-Recommended awesome-mcp-servers entry (music / audio / media category, follow their current CONTRIBUTING):
+```text
+To: partnerships@github.com
+Subject: Request inclusion of io.github.thatdudealso/musicwire-mcp in the GitHub MCP Registry
 
-```md
-- [Musicwire](https://github.com/thatdudealso/musicwire) - Paid MusicXML validation, MuseScore rendering, and automated QC for AI agents; payment is captured only after QC passes.
+Please consider Musicwire for the curated GitHub MCP Registry / VS Code @mcp gallery.
+
+- Official MCP Registry (active): io.github.thatdudealso/musicwire-mcp
+- npm: musicwire-mcp
+- GitHub: https://github.com/thatdudealso/musicwire
+- Hosted Streamable HTTP: https://musicwire.5432wire.com/mcp
+- Docs: https://musicwire.5432wire.com/docs
+- One-liner: Pay-per-call MusicXML validation, MuseScore rendering, and automated QC for AI agents.
+
+It is already published to the open Official MCP Registry (2026-08-24). Thank you.
 ```
 
 Do **not** open or edit `xpaysh/awesome-x402` PR #1304.
 
 ## 9. Dead end
 
-**x402list.com** (no hyphen) is a parked domain, not a directory. Skip it. Musicwire's **x402-list.com** (with hyphen) listing was approved on 2026-08-31.
+**x402list.com** (no hyphen) is a parked domain, not a directory. Skip it. Musicwire's **x402-list.com** (with hyphen) listing was approved on 2026-08-31: https://x402-list.com/services/musicwire
 
 ## 10. Captain-owned remaining gates
 
-1. **Smithery account** - deploy the hosted MCP metadata, then sign in and re-publish `https://musicwire.5432wire.com/mcp` as `thatdudealso/musicwire` with the explicit empty config schema (section 4). Highest remaining discovery leverage.
-2. **npm `musicwire-mcp@0.1.3`** - stdio npm is still 0.1.1. The repository package is prepared as 0.1.3. Publishing 0.1.3 is blocked on the captain-owned npm credential task. Do not publish this repository's private root package. Re-publish Official Registry only after that npm version exists.
-3. **Privacy policy** - publish before Claude Connectors, Codex/ChatGPT connector directories, and any review that requires one.
+1. **Smithery auth + republish** - `npx -y smithery@latest auth login`, then publish `https://musicwire.5432wire.com/mcp` as `thatdudealso/musicwire` with the empty configSchema (section 4). Highest remaining discovery leverage. Current public score **45/100**. Confirm PR #21 metadata is live in production first.
+2. **npm `musicwire-mcp@0.1.3`** - stdio npm is still 0.1.1. Source is 0.1.3 after PR #21. Hosted `initialize` already reports 0.1.2. Publishing is blocked on the captain-owned npm credential. Do not publish this repository's private root package. Re-publish Official Registry only after that npm version exists. Adding a hosted `remotes[]` entry is the same publish.
+3. **Privacy policy** - publish before Claude Connectors, Codex/ChatGPT connector directories, and any review that requires one. Captain decision, not a maintenance change.
 4. **Claude Connectors** - Team/Enterprise org + policy/annotation work (section 5). Expect possible crypto-transfer rejection; custom connector URL still works.
-5. **PulseMCP** - wait for pause to lift and weekly ingest, or email hello@pulsemcp.com (section 6). Unblocks Goose directory.
-6. **AXON / x402all** - captain account at https://axon402.com/dashboard once their register route is live (section 6).
-7. **GitHub MCP Registry** - email partnerships@github.com (section 8).
+5. **PulseMCP** - send the hello@pulsemcp.com packet (section 6). Unblocks Goose directory.
+6. **AXON / x402all** - wait for `POST /api/register` or captain account at https://axon402.com/dashboard (section 6). HTML form is a stub.
+7. **GitHub MCP Registry** - send partnerships@github.com (section 8). Unlocks VS Code `@mcp`.
 8. **cursor.directory** - sign in with GitHub or Google at https://cursor.directory/plugins/new .
-9. **Glama claim** - sign in and claim if/when the auto-index appears.
-10. **Cline issue #2368** - if they require a 400x400 PNG attachment, drag-drop a raster of `/musicwire-mark.svg`. This worker could not upload binary to a gist from this environment.
-11. **awesome-mcp-servers PR** - optional, copy-ready in section 8.
-12. **Do not touch** awesome-x402 PR #1304.
+9. **Glama claim** - sign in and claim if/when the auto-index appears. Not indexed on 2026-08-31.
+10. **Cline issue #2368** - if they require a 400x400 PNG attachment, drag-drop a raster of `/musicwire-mark.svg`.
+11. **wong2 awesome list** - only if they enable public PRs; branch is already on `thatdudealso/awesome-mcp-servers-1`.
+12. **Confirm production deploy of PR #21** (server-card, tool annotations, empty catalogs) before Smithery republish or Claude Connectors submit.
+13. **Do not touch** awesome-x402 PR #1304. Skip x402list.com (no hyphen). Skip mcp.so $39.
 
-Recheck signals: PulseMCP search, mcp.so search, mcp.directory search, x402-list.com `/api/v1/services?q=musicwire`, Smithery search for `musicwire`, VS Code `@mcp musicwire`.
+Recheck signals: Smithery page score next to https://smithery.ai/servers/thatdudealso/musicwire , PulseMCP search, mcp.so search, mcp.directory search, x402-list.com `/api/v1/services?q=musicwire`, VS Code `@mcp musicwire`, Glama `@thatdudealso/musicwire`.
