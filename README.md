@@ -13,7 +13,7 @@ Bring MusicXML from your notation or agent workflow, then receive a listenable M
 
 ### For agents
 
-The hosted API is `https://musicwire.5432wire.com`. Fetch the free authoring guide, validate a complete score, then pay and submit the render. Before spending, read [`/manifest`](https://musicwire.5432wire.com/manifest) and [`/.well-known/x402`](https://musicwire.5432wire.com/.well-known/x402) for live price, USDC-on-Base wallet requirement, output license, `max_generation_seconds`, refund rule, and `retry_policy`. Send the same `Idempotency-Key` to retry a paid call without a second charge; a different payload with that key returns 409 and is not charged. Fund the buyer wallet with USDC on the network named in the service's x402 quote before the paid request.
+The hosted API is `https://musicwire.5432wire.com`. Fetch the free authoring guide, validate a complete score, then pay and submit the render. Before spending, read [`/manifest`](https://musicwire.5432wire.com/manifest) and [`/.well-known/x402`](https://musicwire.5432wire.com/.well-known/x402) for live price, USDC-on-Base wallet requirement, output license, `max_generation_seconds`, refund rule, and `retry_policy`. Send the same `Idempotency-Key` to retry a paid call with the same payer and payload without a second charge; a different payload with that key for the same payer returns 409 and is not charged. Fund the buyer wallet with USDC on the network named in the service's x402 quote before the paid request.
 
 ```sh
 export MUSICWIRE_URL='https://musicwire.5432wire.com'
