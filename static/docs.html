@@ -871,6 +871,13 @@ npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
                 <td>The render did not pass. Read its error. Payment is not captured.</td>
               </tr>
               <tr>
+                <td><code>409</code></td>
+                <td>
+                  The <code>Idempotency-Key</code> was already used with a different payload. Retry
+                  the original body or pick a new key. No payment is charged.
+                </td>
+              </tr>
+              <tr>
                 <td><code>429</code></td>
                 <td>Slow down and retry after one minute.</td>
               </tr>
@@ -878,8 +885,10 @@ npx -y awal x402 pay https://musicwire.5432wire.com/v1/validate \
           </table>
           <p class="text-secondary">
             Use an <code>Idempotency-Key</code> on paid requests. Reusing it with the same verified
-            payer and identical request context safely returns the original outcome instead of
-            creating another charge.
+            payer and identical payload returns the original outcome and does not create another
+            charge or job. Read <code>retry_policy</code>, <code>max_generation_seconds</code>,
+            <code>pay_with</code>, and <code>refund_policy</code> from <code>/manifest</code> or
+            <code>/.well-known/x402</code> before paying.
           </p>
         </div>
       </section>

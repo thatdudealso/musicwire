@@ -109,4 +109,4 @@ The repository's `test/mcp-e2e.test.js` uses a real stdio MCP session against th
 
 For `musicwire_validate` and `musicwire_render`, the package sends the original request first. If Musicwire returns `402`, it reads the advertised payment network from `GET /manifest`, then the x402 client reads the payment requirements, signs an Exact EVM authorization with the configured buyer wallet on that network, and repeats the identical request with `Payment-Signature`. Musicwire verifies the authorization before work and captures only after quality control passes. Job polling, the compose guide, and provenance verify are free. The hosted Streamable HTTP endpoint returns that `402` to the calling agent instead of paying.
 
-`idempotency_key` is available on the two paid tools. Reuse it when retrying a request to ensure Musicwire replays the original outcome instead of creating another payment authorization.
+`idempotency_key` is available on the two paid tools. Reuse it when retrying a request to ensure Musicwire replays the original outcome instead of creating another payment authorization. Reusing it with a different payload returns HTTP 409 and does not charge.

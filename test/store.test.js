@@ -142,6 +142,60 @@ test('payment proof outlives the idempotency window and is never swept', () => {
   }
 });
 
+test('render idempotency bindings conflict when the same key is reused with a different payload', () => {
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-store-conflict-'));
+  try {
+    const store = new JobStore(dataDirectory);
+    store.create(job('55555555-5555-4555-8555-555555555555'), renderIdentity('shared-key'));
+    assert.equal(
+      store.hasConflictingRenderIdentity({
+        idempotencyKey: 'shared-key',
+        payerIdentity: 'payer-a',
+        requestContext: 'render-context-b',
+      }),
+      true,
+    );
+    assert.equal(store.hasConflictingRenderIdentity(renderIdentity('shared-key')), false);
+    assert.equal(
+      store.hasConflictingRenderIdentity({
+        idempotencyKey: 'shared-key',
+        payerIdentity: 'payer-b',
+        requestContext: 'render-context-b',
+      }),
+      false,
+    );
+
+    store.saveValidateResult({
+      id: '66666666-6666-4666-8666-666666666666',
+      idempotencyKey: 'validate-key',
+      payerIdentity: 'payer-a',
+      requestContext: 'validate-context-a',
+      httpStatus: 200,
+      body: { valid: true },
+      payment: { status: 'settled' },
+      createdAt: new Date().toISOString(),
+    });
+    assert.equal(
+      store.hasConflictingValidateIdentity({
+        idempotencyKey: 'validate-key',
+        payerIdentity: 'payer-a',
+        requestContext: 'validate-context-b',
+      }),
+      true,
+    );
+    assert.equal(
+      store.hasConflictingValidateIdentity({
+        idempotencyKey: 'validate-key',
+        payerIdentity: 'payer-a',
+        requestContext: 'validate-context-a',
+      }),
+      false,
+    );
+  } finally {
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 test('legacy idempotency and validation records migrate atomically', () => {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'musicwire-store-migration-'));
   try {

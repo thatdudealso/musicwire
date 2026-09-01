@@ -57,6 +57,13 @@ test('public API publishes the Phase 2 Base Sepolia prices', async () => {
     assert.equal(paymentDescription.capture_policy, 'only_after_qc_pass');
     assert.equal(paymentDescription.receiver.network, 'eip155:84532');
     assert.deepEqual(paymentDescription.formats.requestable, ['mp3', 'midi']);
+    assert.equal(manifest.max_generation_seconds, 60);
+    assert.equal(paymentDescription.max_generation_seconds, 60);
+    assert.equal(manifest.retry_policy.idempotency_key.header, 'Idempotency-Key');
+    assert.equal(paymentDescription.retry_policy.conflict.status, 409);
+    assert.equal(manifest.pay_with.asset, 'USDC');
+    assert.equal(paymentDescription.refund_policy.failed, 'failed_not_charged');
+    assert.deepEqual(paymentDescription.license_terms, manifest.license_terms);
     const validation = await (
       await fetch(`${base}/v1/validate`, {
         method: 'POST',

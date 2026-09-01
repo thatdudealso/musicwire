@@ -98,8 +98,14 @@ export class PaymentService {
     this.gateway = gateway;
   }
 
-  async authorize({ request, endpoint, priceUsd, outputSchema }) {
-    return this.gateway.authorize({ request, endpoint, priceUsd, outputSchema });
+  async authorize({ request, endpoint, priceUsd, outputSchema, quoteExtras }) {
+    return this.gateway.authorize({
+      request,
+      endpoint,
+      priceUsd,
+      outputSchema,
+      quoteExtras,
+    });
   }
 
   async createPendingCharge({ jobId, authorization }) {
@@ -264,7 +270,7 @@ export class CdpX402Gateway {
     this.serverPromise = null;
   }
 
-  async authorize({ request, endpoint, priceUsd, outputSchema }) {
+  async authorize({ request, endpoint, priceUsd, outputSchema, quoteExtras }) {
     const { paymentRequired, requirements } = await this.#quote({
       request,
       endpoint,
@@ -272,7 +278,10 @@ export class CdpX402Gateway {
     });
     const paymentSignature = request.get('payment-signature');
     if (!paymentSignature)
-      return { authorized: false, challenge: challenge(paymentRequired, priceUsd, outputSchema) };
+      return {
+        authorized: false,
+        challenge: challenge(paymentRequired, priceUsd, outputSchema, undefined, quoteExtras),
+      };
     const server = await this.#server();
     let paymentPayload;
     try {
@@ -290,6 +299,7 @@ export class CdpX402Gateway {
           priceUsd,
           outputSchema,
           'Payment does not match this quote.',
+          quoteExtras,
         ),
       };
     const authorizationFingerprint = paymentAuthorizationFingerprint(
@@ -304,6 +314,7 @@ export class CdpX402Gateway {
           priceUsd,
           outputSchema,
           'Payment authorization is missing a valid payer and nonce.',
+          quoteExtras,
         ),
       };
     let verification;
@@ -343,6 +354,7 @@ export class CdpX402Gateway {
           verification.invalidMessage ??
             verification.invalidReason ??
             'Payment verification failed.',
+          quoteExtras,
         ),
       };
     }
@@ -621,7 +633,7 @@ export class StubPaymentGateway {
     this.config = config;
   }
 
-  async authorize({ request, endpoint, priceUsd, outputSchema }) {
+  async authorize({ request, endpoint, priceUsd, outputSchema, quoteExtras }) {
     const paymentSignature = request.get('payment-signature');
     if (!paymentSignature)
       return {
@@ -630,6 +642,8 @@ export class StubPaymentGateway {
           stubPaymentRequired({ endpoint, priceUsd, network: this.config.x402Network }),
           priceUsd,
           outputSchema,
+          undefined,
+          quoteExtras,
         ),
       };
     const requirements = stubRequirements(priceUsd, this.config.x402Network);
@@ -681,7 +695,7 @@ export class StubPaymentGateway {
   }
 }
 
-function challenge(paymentRequired, priceUsd, outputSchema, error) {
+function challenge(paymentRequired, priceUsd, outputSchema, error, quoteExtras = {}) {
   const required = error ? { ...paymentRequired, error } : paymentRequired;
   return {
     headers: {
@@ -695,6 +709,7 @@ function challenge(paymentRequired, priceUsd, outputSchema, error) {
         price_usd: priceUsd,
         settlement: 'after_qc_pass',
         output_schema: outputSchema,
+        ...quoteExtras,
       },
     },
   };

@@ -304,7 +304,7 @@ class RecordingGateway {
     this.events = events;
   }
 
-  async authorize({ request, endpoint, priceUsd, outputSchema }) {
+  async authorize({ request, endpoint, priceUsd, outputSchema, quoteExtras }) {
     const requirements = {
       scheme: 'exact',
       network: 'eip155:84532',
@@ -334,6 +334,7 @@ class RecordingGateway {
               price_usd: priceUsd,
               settlement: 'after_qc_pass',
               output_schema: outputSchema,
+              ...quoteExtras,
             },
           },
         },
@@ -372,6 +373,7 @@ class RecordingGateway {
               price_usd: priceUsd,
               settlement: 'after_qc_pass',
               output_schema: outputSchema,
+              ...quoteExtras,
             },
           },
         },
@@ -554,11 +556,12 @@ test('render idempotency isolates payer and request context after payment author
     await waitForJob(base, otherPayerBody.job_id);
 
     const differentContext = await renderRequest(base, 'payer-a-replay', 'shared-render-key');
-    assert.equal(differentContext.status, 202);
+    assert.equal(differentContext.status, 409);
     const differentContextBody = await differentContext.json();
-    assert.notEqual(differentContextBody.job_id, firstBody.job_id);
-    await waitForJob(base, differentContextBody.job_id);
-    assert.equal(events.filter((event) => event === 'settle').length, 3);
+    assert.equal(differentContextBody.error.code, 'idempotency_key_conflict');
+    assert.equal(differentContextBody.payment.status, 'not_charged');
+    assert.equal('job_id' in differentContextBody, false);
+    assert.equal(events.filter((event) => event === 'settle').length, 2);
   } finally {
     await close();
   }
@@ -738,9 +741,95 @@ test('discovery probes without a payment receive the 402 challenge before payloa
         const body = await response.json();
         assert.equal(body.quote.price_usd, priceUsd, `${path} with ${label}`);
         assert.equal(body.quote.settlement, 'after_qc_pass', `${path} with ${label}`);
+        if (path === '/v1/render')
+          assert.equal(body.quote.max_generation_seconds, 60, `${path} with ${label}`);
+        else assert.equal(body.quote.max_generation_seconds, undefined, `${path} with ${label}`);
       }
     }
     assert.deepEqual(events, []);
+  } finally {
+    await close();
+  }
+});
+
+test('pre-spend descriptors expose timeout, retry, wallet, refund, price, and license from live config', async () => {
+  const { base, close } = await startServer({
+    events: [],
+    maxRenderSeconds: 90,
+    idempotencyWindowHours: 12,
+    validatePriceUsd: '0.10',
+    renderSoloPriceUsd: '0.25',
+    renderMultiPriceUsd: '0.50',
+  });
+  try {
+    const manifest = await (await fetch(`${base}/manifest`)).json();
+    const x402 = await (await fetch(`${base}/.well-known/x402`)).json();
+    const ttlSeconds = 12 * 3_600;
+    const retryPolicy = {
+      idempotency_key: {
+        header: 'Idempotency-Key',
+        required: false,
+        ttl_seconds: ttlSeconds,
+      },
+      safe_retry: 'send_same_idempotency_key_and_payload',
+      replay: 'same_result_no_second_charge_or_job',
+      conflict: {
+        on: 'same_key_different_payload',
+        status: 409,
+        charged: false,
+      },
+      failed: 'failed_not_charged',
+    };
+    const payWith = {
+      network: 'eip155:84532',
+      network_label: 'Base Sepolia',
+      asset: 'USDC',
+      scheme: 'exact',
+      wallet: 'An EVM wallet funded with USDC on the advertised Base network.',
+    };
+    const refundPolicy = {
+      refunds: 'not_applicable',
+      capture_policy: 'only_after_qc_pass',
+      failed: 'failed_not_charged',
+      explanation:
+        'You are not charged unless QC passes, so refunds are not needed. failed_not_charged covers validation and QC failures.',
+    };
+
+    assert.equal(manifest.max_generation_seconds, 90);
+    assert.equal(manifest.endpoints.render.max_generation_seconds, 90);
+    assert.equal(manifest.payment.max_generation_seconds, 90);
+    assert.deepEqual(manifest.retry_policy, retryPolicy);
+    assert.deepEqual(manifest.payment.retry_policy, retryPolicy);
+    assert.deepEqual(manifest.pay_with, payWith);
+    assert.deepEqual(manifest.payment.pay_with, payWith);
+    assert.deepEqual(manifest.refund_policy, refundPolicy);
+    assert.deepEqual(manifest.payment.refund_policy, refundPolicy);
+    assert.equal(manifest.endpoints.validate.price_usd, '0.10');
+    assert.deepEqual(manifest.endpoints.render.price_usd, {
+      solo: '0.25',
+      multi_instrument: '0.50',
+      part_boundary: 1,
+    });
+    assert.equal(manifest.license_terms.customer_owns_composition, true);
+    assert.equal(manifest.license_terms.commercial_audio_use_with_notice, true);
+    assert.equal(manifest.license_terms.copyright_sold, false);
+
+    assert.equal(x402.max_generation_seconds, 90);
+    assert.equal(x402.endpoints.render.max_generation_seconds, 90);
+    assert.deepEqual(x402.retry_policy, retryPolicy);
+    assert.deepEqual(x402.pay_with, payWith);
+    assert.deepEqual(x402.refund_policy, refundPolicy);
+    assert.deepEqual(x402.license_terms, manifest.license_terms);
+    assert.equal(x402.endpoints.validate.price_usd, '0.10');
+    assert.equal(x402.capture_policy, 'only_after_qc_pass');
+
+    const renderQuote = await fetch(`${base}/v1/render`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(renderQuote.status, 402);
+    assert.equal((await renderQuote.json()).quote.max_generation_seconds, 90);
   } finally {
     await close();
   }
@@ -1044,6 +1133,75 @@ test('the public job response never exposes the signed payment authorization', a
   }
 });
 
+test('render replays the same paid job for an idempotency key without a second charge or job', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    renderer: {
+      render: async () => {
+        events.push('render');
+        return {
+          ok: true,
+          artifacts: [],
+          receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+        };
+      },
+    },
+  });
+  try {
+    const first = await renderRequest(base, 'paid-render-once', 'render-once', ['midi']);
+    assert.equal(first.status, 202);
+    const firstBody = await first.json();
+    const completed = await waitForJob(base, firstBody.job_id);
+    assert.equal(completed.status, 'completed');
+
+    const replay = await renderRequest(base, 'paid-render-once-again', 'render-once', ['midi']);
+    assert.equal(replay.status, 202);
+    const replayBody = await replay.json();
+    assert.equal(replayBody.job_id, firstBody.job_id);
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+    assert.equal(events.filter((event) => event === 'render').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('reusing a render idempotency key with a different payload returns 409 and does not charge', async () => {
+  const events = [];
+  const { base, close } = await startServer({
+    events,
+    renderer: {
+      render: async () => {
+        events.push('render');
+        return {
+          ok: true,
+          artifacts: [],
+          receipt: { rendered_by: 'Musicwire', renderer: { version: 'test' } },
+        };
+      },
+    },
+  });
+  try {
+    const first = await renderRequest(base, 'paid-render-conflict', 'render-conflict', ['midi']);
+    assert.equal(first.status, 202);
+    const firstBody = await first.json();
+    await waitForJob(base, firstBody.job_id);
+
+    const conflict = await renderRequest(base, 'paid-render-conflict-b', 'render-conflict', [
+      'mp3',
+    ]);
+    assert.equal(conflict.status, 409);
+    const body = await conflict.json();
+    assert.equal(body.error.code, 'idempotency_key_conflict');
+    assert.equal(body.payment.status, 'not_charged');
+    assert.equal('job_id' in body, false);
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+    assert.equal(events.filter((event) => event === 'render').length, 1);
+  } finally {
+    await close();
+  }
+});
+
 test('validate replays the same paid outcome for an idempotency key without a second charge', async () => {
   const events = [];
   const { base, close } = await startServer({ events });
@@ -1066,6 +1224,45 @@ test('validate replays the same paid outcome for an idempotency key without a se
     assert.equal(replay.status, 200);
     assert.deepEqual(await replay.json(), firstBody);
     assert.ok(replay.headers.get('payment-response'));
+    assert.equal(events.filter((event) => event === 'settle').length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test('reusing a validate idempotency key with a different payload returns 409 and does not charge', async () => {
+  const events = [];
+  const { base, close } = await startServer({ events });
+  try {
+    const first = await fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Payment-Signature': 'paid-validate-conflict',
+        'Idempotency-Key': 'validate-conflict',
+      },
+      body: JSON.stringify({ musicxml }),
+    });
+    assert.equal(first.status, 200);
+
+    const conflict = await fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'Payment-Signature': 'paid-validate-conflict-b',
+        'Idempotency-Key': 'validate-conflict',
+      },
+      body: JSON.stringify({
+        musicxml: musicxml.replace(
+          '<work-title>Musicwire Test Waltz</work-title>',
+          '<work-title>Different Score</work-title>',
+        ),
+      }),
+    });
+    assert.equal(conflict.status, 409);
+    const body = await conflict.json();
+    assert.equal(body.error.code, 'idempotency_key_conflict');
+    assert.equal(body.payment.status, 'not_charged');
     assert.equal(events.filter((event) => event === 'settle').length, 1);
   } finally {
     await close();
@@ -1107,8 +1304,11 @@ test('validate scopes idempotency results to the payer and MusicXML request cont
         '<work-title>Different Score</work-title>',
       ),
     );
-    assert.equal(otherContext.status, 200);
-    assert.equal(events.filter((event) => event === 'settle').length, 3);
+    assert.equal(otherContext.status, 409);
+    const otherContextBody = await otherContext.json();
+    assert.equal(otherContextBody.error.code, 'idempotency_key_conflict');
+    assert.equal(otherContextBody.payment.status, 'not_charged');
+    assert.equal(events.filter((event) => event === 'settle').length, 2);
   } finally {
     await close();
   }
