@@ -48,7 +48,9 @@ const scorePartFacts = (xml) => {
 };
 
 const parsedScore = (xml) =>
-  new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(xml)['score-partwise'];
+  new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(xml)[
+    'score-partwise'
+  ];
 
 const measure = (score, partId, number) =>
   asArray(score.part)
@@ -144,7 +146,11 @@ describe('genre gallery candidates', () => {
           const drop = measure(parsed, 'P4', number);
           assert.deepEqual(percussionSteps(drop, 'P4-I1'), [1, 10], 'DnB kick steps');
           assert.deepEqual(percussionSteps(drop, 'P4-I2'), [3, 5, 11, 13], 'DnB snare steps');
-          assert.deepEqual(percussionVelocities(drop, 'P4-I2'), [48, 96, 48, 96], 'DnB ghost velocity');
+          assert.deepEqual(
+            percussionVelocities(drop, 'P4-I2'),
+            [48, 96, 48, 96],
+            'DnB ghost velocity',
+          );
         }
     }
   });

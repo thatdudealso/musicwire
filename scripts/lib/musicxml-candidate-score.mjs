@@ -80,7 +80,10 @@ const renderMeasureEvents = (source, part, divisions) => {
           assert.ok(!unpitched || unpitchedMatch, `Invalid percussion token ${sourcePitch}`);
           const [, instrumentKey = '', pitch, velocityText] = unpitchedMatch ?? [];
           const velocity = velocityText === undefined ? undefined : Number(velocityText);
-          assert.ok(velocity === undefined || (velocity >= 1 && velocity <= 127), `Invalid velocity ${sourcePitch}`);
+          assert.ok(
+            velocity === undefined || (velocity >= 1 && velocity <= 127),
+            `Invalid velocity ${sourcePitch}`,
+          );
           return renderNote(unpitched ? pitch : sourcePitch, duration, divisions, {
             chord: index > 0,
             unpitched,

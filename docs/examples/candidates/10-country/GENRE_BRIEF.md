@@ -10,12 +10,12 @@ Sources (accessed 2026-09-01):
 
 ## Instrumentation
 
-| Part                   | MusicXML / GM             | Role                                          |
-| ---------------------- | ------------------------- | --------------------------------------------- |
-| Acoustic Guitar        | GM 26 steel-string        | Strummed backbone.                            |
+| Part                    | MusicXML / GM             | Role                                          |
+| ----------------------- | ------------------------- | --------------------------------------------- |
+| Acoustic Guitar         | GM 26 steel-string        | Strummed backbone.                            |
 | Electric Guitar (clean) | GM 28 Tele-style lead     | Short slide-like 8th figures and chorus hook. |
-| Electric Bass (finger) | GM 34                     | Root on 1, fifth on 3; walks into chorus.     |
-| Drum Kit               | kick 36, snare 38, hat 42 | Kick 1+3, snare 2+4, hats 8ths. No 808.       |
+| Electric Bass (finger)  | GM 34                     | Root on 1, fifth on 3; walks into chorus.     |
+| Drum Kit                | kick 36, snare 38, hat 42 | Kick 1+3, snare 2+4, hats 8ths. No 808.       |
 
 ## Tempo, key, length
 
