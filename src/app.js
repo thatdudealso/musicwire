@@ -124,11 +124,17 @@ export function createApp(overrides = {}) {
   app.get('/manifest', (_request, response) => response.json(manifest(config, store)));
   app.get('/.well-known/x402', async (_request, response, next) => {
     try {
+      const described = manifest(config, store);
       response.json({
-        ...manifest(config, store).payment,
+        ...described.payment,
         receiver: await payments.description(),
-        endpoints: manifest(config, store).endpoints,
-        formats: manifest(config, store).formats,
+        endpoints: described.endpoints,
+        formats: described.formats,
+        license_terms: described.license_terms,
+        max_generation_seconds: described.max_generation_seconds,
+        retry_policy: described.retry_policy,
+        pay_with: described.pay_with,
+        refund_policy: described.refund_policy,
       });
     } catch (error) {
       next(error);
@@ -216,15 +222,16 @@ export function createApp(overrides = {}) {
   // x402 discovery: a request without a payment must always receive the 402
   // challenge, even when its body would fail validation, so buyer tooling and
   // directory probes can read price, network, asset, and payTo before paying.
+  const authorizePayment = (request, endpoint, priceUsd) =>
+    payments.authorize({
+      request,
+      endpoint,
+      priceUsd,
+      outputSchema: paymentOutputSchema(endpoint),
+      quoteExtras: paymentQuoteExtras(endpoint, config),
+    });
   const paymentChallenge = async (request, endpoint, priceUsd) =>
-    (
-      await payments.authorize({
-        request,
-        endpoint,
-        priceUsd,
-        outputSchema: paymentOutputSchema(endpoint),
-      })
-    ).challenge;
+    (await authorizePayment(request, endpoint, priceUsd)).challenge;
 
   app.post('/v1/validate', async (request, response) => {
     if (!paymentSignaturePresented(request))
@@ -235,12 +242,7 @@ export function createApp(overrides = {}) {
     const input = extractInput(request, config);
     if (input.error) return response.status(input.status).json(input.error);
     const idempotencyKey = request.get('Idempotency-Key');
-    const authorization = await payments.authorize({
-      request,
-      endpoint: 'validate',
-      priceUsd: config.validatePriceUsd,
-      outputSchema: paymentOutputSchema('validate'),
-    });
+    const authorization = await authorizePayment(request, 'validate', config.validatePriceUsd);
     const replayIdentity = authorizationReplayIdentity(
       authorization,
       input.musicxml,
@@ -249,8 +251,14 @@ export function createApp(overrides = {}) {
     );
     const replay = replayIdentity && store.getValidateResultByIdentity(replayIdentity);
     if (replay) return sendValidateResult(response, payments, replay);
+    if (replayIdentity && store.hasConflictingValidateIdentity(replayIdentity))
+      return response.status(409).json(idempotencyKeyConflict().body);
     if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
     const execute = async () => {
+      const replayed = replayIdentity && store.getValidateResultByIdentity(replayIdentity);
+      if (replayed) return replayed;
+      if (replayIdentity && store.hasConflictingValidateIdentity(replayIdentity))
+        return idempotencyKeyConflict();
       if (
         !claimPaymentAuthorization(
           store,
@@ -276,7 +284,7 @@ export function createApp(overrides = {}) {
         );
         const body = validationBody(validation, payment, { status: 'failed_not_charged' });
         if (!idempotencyKey) return { id: null, httpStatus: 422, body, payment };
-        return store.saveValidateResult({
+        const failed = store.saveValidateResult({
           id: crypto.randomUUID(),
           idempotencyKey,
           ...replayIdentity,
@@ -285,6 +293,7 @@ export function createApp(overrides = {}) {
           payment,
           createdAt: new Date().toISOString(),
         });
+        return failed.conflict ? idempotencyKeyConflict() : failed;
       }
       const intent = payments.settlementIntent(authorization.payment);
       const record = store.saveValidateResult({
@@ -296,6 +305,10 @@ export function createApp(overrides = {}) {
         payment: intent,
         createdAt: new Date().toISOString(),
       });
+      if (record.conflict) {
+        await payments.cancelNotCharged(authorization.payment, 'idempotency_key_conflict');
+        return idempotencyKeyConflict();
+      }
       const settlement = await payments.settleAfterQc(intent);
       if (settlement.outcome === 'failed') {
         return store.updateValidateResult(record.id, {
@@ -409,12 +422,7 @@ export function createApp(overrides = {}) {
     let reservationReleased = true;
     let pendingPayment = null;
     try {
-      const authorization = await payments.authorize({
-        request,
-        endpoint: 'render',
-        priceUsd,
-        outputSchema: paymentOutputSchema('render'),
-      });
+      const authorization = await authorizePayment(request, 'render', priceUsd);
       const replayIdentity = authorizationReplayIdentity(
         authorization,
         input.musicxml,
@@ -425,6 +433,8 @@ export function createApp(overrides = {}) {
       );
       const existing = replayIdentity && store.getByRenderIdentity(replayIdentity);
       if (existing) return response.status(202).json(renderResponse(existing, config));
+      if (replayIdentity && store.hasConflictingRenderIdentity(replayIdentity))
+        return response.status(409).json(idempotencyKeyConflict().body);
       if (!authorization.authorized) return sendPaymentChallenge(response, authorization.challenge);
       pendingPayment = authorization.payment;
       if (!queue.reserve())
@@ -457,6 +467,12 @@ export function createApp(overrides = {}) {
       };
       job.payment.job_id = job.id;
       const record = store.create(job, replayIdentity);
+      if (record.conflict) {
+        await payments.cancelNotCharged(pendingPayment, 'idempotency_key_conflict');
+        queue.release();
+        reservationReleased = true;
+        return response.status(409).json(idempotencyKeyConflict().body);
+      }
       if (record.id === job.id) queue.enqueue(record.id);
       else {
         await payments.cancelNotCharged(pendingPayment, 'idempotent_request_replayed');
@@ -894,6 +910,21 @@ function paymentAuthorizationReused() {
   };
 }
 
+function idempotencyKeyConflict() {
+  return {
+    httpStatus: 409,
+    body: {
+      error: {
+        code: 'idempotency_key_conflict',
+        message:
+          'This Idempotency-Key was already used with a different request payload. Retry with the original payload or a new key. No payment was charged.',
+      },
+      payment: { status: 'not_charged' },
+    },
+    payment: { status: 'not_charged' },
+  };
+}
+
 function sendValidateResult(response, payments, result) {
   setSettlementHeader(response, payments, result.payment);
   return response.status(result.httpStatus).json(result.body);
@@ -1040,6 +1071,7 @@ async function commandReady(binary, args, executable = binary) {
 
 function manifest(config, store) {
   const reviewStats = store.reviewStats();
+  const spend = preSpend(config);
   return {
     name: 'Musicwire',
     version: 'v1',
@@ -1075,7 +1107,15 @@ function manifest(config, store) {
         validate: paymentOutputSchema('validate'),
         render: paymentOutputSchema('render'),
       },
+      max_generation_seconds: spend.maxGenerationSeconds,
+      pay_with: spend.payWith,
+      refund_policy: spend.refundPolicy,
+      retry_policy: spend.retryPolicy,
     },
+    max_generation_seconds: spend.maxGenerationSeconds,
+    pay_with: spend.payWith,
+    refund_policy: spend.refundPolicy,
+    retry_policy: spend.retryPolicy,
     endpoints: {
       compose_guide: { method: 'GET', path: '/v1/compose-guide', price_usd: '0.00' },
       validate: { method: 'POST', path: '/v1/validate', price_usd: config.validatePriceUsd },
@@ -1087,6 +1127,7 @@ function manifest(config, store) {
           multi_instrument: config.renderMultiPriceUsd,
           part_boundary: config.multiInstrumentPartBoundary,
         },
+        max_generation_seconds: spend.maxGenerationSeconds,
       },
       jobs: { method: 'GET', path: '/v1/jobs/{id}', price_usd: '0.00' },
       provenance_verify: {
@@ -1121,13 +1162,7 @@ function manifest(config, store) {
           : 'content-addressed sha256 local storage',
       access: 'signed token URLs',
     },
-    license_terms: {
-      customer_owns_composition: true,
-      commercial_audio_use_with_notice: true,
-      rendered_by: 'Musicwire',
-      copyright_sold: false,
-      soundfont: 'MS Basic only',
-    },
+    license_terms: spend.licenseTerms,
     abuse_terms: [
       'MusicXML bytes or strings only, no client filesystem paths.',
       'External entities, DOCTYPE declarations, compressed uploads, plugins, and custom soundfonts are disabled. The renderer performs no intentional network operations; strict egress control is a deploy-phase follow-up.',
@@ -1179,6 +1214,53 @@ function canonicalRequest(value) {
         .map((key) => [key, canonicalRequest(value[key])]),
     );
   return value;
+}
+
+function paymentQuoteExtras(endpoint, config) {
+  return endpoint === 'render' ? { max_generation_seconds: config.maxRenderSeconds } : {};
+}
+
+function preSpend(config) {
+  const maxGenerationSeconds = config.maxRenderSeconds;
+  return {
+    maxGenerationSeconds,
+    retryPolicy: {
+      idempotency_key: {
+        header: 'Idempotency-Key',
+        required: false,
+        ttl_seconds: Math.max(1, config.idempotencyWindowHours) * 3_600,
+      },
+      safe_retry: 'send_same_idempotency_key_and_payload',
+      replay: 'same_result_no_second_charge_or_job',
+      conflict: {
+        on: 'same_key_different_payload',
+        status: 409,
+        charged: false,
+      },
+      failed: 'failed_not_charged',
+    },
+    payWith: {
+      network: config.x402Network,
+      network_label: x402NetworkLabel(config.x402Network),
+      asset: 'USDC',
+      scheme: 'exact',
+      wallet: 'An EVM wallet funded with USDC on the advertised Base network.',
+    },
+    refundPolicy: {
+      refunds: 'not_applicable',
+      capture_policy: 'only_after_qc_pass',
+      failed: 'failed_not_charged',
+      explanation:
+        'You are not charged unless QC passes, so refunds are not needed. failed_not_charged covers validation and QC failures.',
+    },
+    licenseTerms: {
+      customer_owns_composition: true,
+      commercial_audio_use_with_notice: true,
+      rendered_by: 'Musicwire',
+      copyright_sold: false,
+      soundfont: 'MS Basic only',
+    },
+  };
 }
 
 function paymentOutputSchema(endpoint) {

@@ -90,41 +90,59 @@ export class JobStore {
   }
 
   create(job, replayIdentity = null) {
-    const existing = replayIdentity && this.getByRenderIdentity(replayIdentity);
-    if (existing) return existing;
-    this.db
-      .prepare(
-        `INSERT INTO jobs (id,state,input_xml,formats_json,constraints_json,facts_json,price_usd,payment_json,render_receipt_id,created_at,updated_at,expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        job.id,
-        'queued',
-        job.inputXml,
-        JSON.stringify(job.formats),
-        JSON.stringify(job.constraints),
-        JSON.stringify(job.facts),
-        job.priceUsd,
-        JSON.stringify(job.payment),
-        job.renderReceiptId ?? job.id,
-        job.createdAt,
-        job.createdAt,
-        job.expiresAt,
-      );
-    if (replayIdentity)
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const existing = replayIdentity && this.getByRenderIdentity(replayIdentity);
+      if (existing) {
+        this.db.exec('COMMIT');
+        return existing;
+      }
+      if (replayIdentity && this.hasConflictingRenderIdentity(replayIdentity)) {
+        this.db.exec('ROLLBACK');
+        return { conflict: true };
+      }
       this.db
         .prepare(
-          `INSERT INTO idempotency_keys
-           (key,payer_identity,request_context,job_id,created_at) VALUES (?,?,?,?,?)`,
+          `INSERT INTO jobs (id,state,input_xml,formats_json,constraints_json,facts_json,price_usd,payment_json,render_receipt_id,created_at,updated_at,expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
-          replayIdentity.idempotencyKey,
-          replayIdentity.payerIdentity,
-          replayIdentity.requestContext,
           job.id,
+          'queued',
+          job.inputXml,
+          JSON.stringify(job.formats),
+          JSON.stringify(job.constraints),
+          JSON.stringify(job.facts),
+          job.priceUsd,
+          JSON.stringify(job.payment),
+          job.renderReceiptId ?? job.id,
           job.createdAt,
+          job.createdAt,
+          job.expiresAt,
         );
-    return this.get(job.id);
+      if (replayIdentity)
+        this.db
+          .prepare(
+            `INSERT INTO idempotency_keys
+           (key,payer_identity,request_context,job_id,created_at) VALUES (?,?,?,?,?)`,
+          )
+          .run(
+            replayIdentity.idempotencyKey,
+            replayIdentity.payerIdentity,
+            replayIdentity.requestContext,
+            job.id,
+            job.createdAt,
+          );
+      this.db.exec('COMMIT');
+      return this.get(job.id);
+    } catch (error) {
+      try {
+        this.db.exec('ROLLBACK');
+      } catch {
+        // The transaction never opened, so there is nothing to roll back.
+      }
+      throw error;
+    }
   }
 
   getByRenderIdentity({ idempotencyKey, payerIdentity, requestContext }) {
@@ -137,6 +155,41 @@ export class JobStore {
       )
       .get(idempotencyKey, payerIdentity, requestContext);
     return existing ? this.get(existing.job_id) : null;
+  }
+
+  hasConflictingRenderIdentity(identity) {
+    return hasConflictingBinding(
+      this.getRenderIdempotencyBinding(identity),
+      identity?.requestContext,
+    );
+  }
+
+  getRenderIdempotencyBinding({ idempotencyKey, payerIdentity } = {}) {
+    if (!idempotencyKey || !payerIdentity) return null;
+    this.expireIdempotencyKeys();
+    return this.db
+      .prepare(
+        `SELECT request_context FROM idempotency_keys
+         WHERE key = ? AND payer_identity = ?`,
+      )
+      .get(idempotencyKey, payerIdentity);
+  }
+
+  hasConflictingValidateIdentity(identity) {
+    return hasConflictingBinding(
+      this.getValidateIdempotencyBinding(identity),
+      identity?.requestContext,
+    );
+  }
+
+  getValidateIdempotencyBinding({ idempotencyKey, payerIdentity } = {}) {
+    if (!idempotencyKey || !payerIdentity) return null;
+    return this.db
+      .prepare(
+        `SELECT request_context FROM validate_results
+         WHERE idempotency_key = ? AND payer_identity = ?`,
+      )
+      .get(idempotencyKey, payerIdentity);
   }
 
   claimPaymentAuthorization({ fingerprint, endpoint, idempotencyKey, createdAt }) {
@@ -169,23 +222,51 @@ export class JobStore {
     payment,
     createdAt,
   }) {
-    this.db
-      .prepare(
-        `INSERT INTO validate_results
+    const identity =
+      idempotencyKey && payerIdentity && requestContext
+        ? { idempotencyKey, payerIdentity, requestContext }
+        : null;
+    if (identity) this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (identity) {
+        const replayed = this.getValidateResultByIdentity(identity);
+        if (replayed) {
+          this.db.exec('COMMIT');
+          return replayed;
+        }
+        if (this.hasConflictingValidateIdentity(identity)) {
+          this.db.exec('ROLLBACK');
+          return { conflict: true };
+        }
+      }
+      this.db
+        .prepare(
+          `INSERT INTO validate_results
          (id,idempotency_key,payer_identity,request_context,http_status,body_json,payment_json,created_at)
          VALUES (?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        id,
-        idempotencyKey ?? null,
-        payerIdentity,
-        requestContext,
-        httpStatus,
-        JSON.stringify(body),
-        JSON.stringify(payment),
-        createdAt,
-      );
-    return this.getValidateResultById(id);
+        )
+        .run(
+          id,
+          idempotencyKey ?? null,
+          payerIdentity,
+          requestContext,
+          httpStatus,
+          JSON.stringify(body),
+          JSON.stringify(payment),
+          createdAt,
+        );
+      if (identity) this.db.exec('COMMIT');
+      return this.getValidateResultById(id);
+    } catch (error) {
+      if (identity) {
+        try {
+          this.db.exec('ROLLBACK');
+        } catch {
+          // The transaction never opened, so there is nothing to roll back.
+        }
+      }
+      throw error;
+    }
   }
 
   getValidateResultById(id) {
@@ -452,6 +533,10 @@ export class JobStore {
       throw error;
     }
   }
+}
+
+function hasConflictingBinding(binding, requestContext) {
+  return Boolean(binding && requestContext && binding.request_context !== requestContext);
 }
 
 function decodeValidateResult(row) {

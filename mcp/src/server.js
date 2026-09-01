@@ -118,7 +118,7 @@ const idempotencyKeyInput = z
   .max(255)
   .optional()
   .describe(
-    'Reuse when retrying the same paid request so Musicwire replays the original outcome instead of authorizing another payment.',
+    'Reuse when retrying the same paid request so Musicwire replays the original outcome instead of authorizing another payment. A different payload with the same key returns 409 and is not charged.',
   );
 
 const musicwireTools = [
