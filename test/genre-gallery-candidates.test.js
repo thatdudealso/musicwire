@@ -66,6 +66,15 @@ const pitchedNotes = (measure) =>
 const hasClosedHat = (measure) =>
   asArray(measure.note).some((note) => note.instrument?.['@_id'] === 'P4-I3');
 
+const percussionSteps = (measure, instrumentId) => {
+  let offset = 0;
+  return asArray(measure.note).flatMap((note) => {
+    const steps = note.instrument?.['@_id'] === instrumentId ? [offset + 1] : [];
+    if (!Object.hasOwn(note, 'chord')) offset += Number(note.duration);
+    return steps;
+  });
+};
+
 describe('genre gallery candidates', () => {
   it('keeps fourteen locally valid 2.5-3 minute scores off the live gallery', () => {
     const slugs = fs
@@ -120,6 +129,12 @@ describe('genre gallery candidates', () => {
         assert.ok(hasClosedHat(measure(parsed, 'P4', 9)), 'R&B verse needs offbeat hats');
         assert.ok(hasClosedHat(measure(parsed, 'P4', 25)), 'R&B prechorus needs hats');
       }
+      if (slug === '13-drum-and-bass')
+        for (const number of [33, 65]) {
+          const drop = measure(parsed, 'P4', number);
+          assert.deepEqual(percussionSteps(drop, 'P4-I1'), [1, 10], 'DnB kick steps');
+          assert.deepEqual(percussionSteps(drop, 'P4-I2'), [3, 5, 11, 13], 'DnB snare steps');
+        }
     }
   });
 });
