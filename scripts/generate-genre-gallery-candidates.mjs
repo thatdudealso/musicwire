@@ -235,7 +235,8 @@ const metalOpen = [
   '[D2,A2,D3]:8 [D2,A2,D3]:8',
   '[C2,G2,C3]:8 [C2,G2,C3]:8',
 ];
-const metalHarmony = ['G4:4 B4:4 E5:8', 'B4:4 D5:4 G5:8', 'A4:4 D5:4 F#5:8', 'G4:4 C5:4 E5:8'];
+const metalHarmonyLow = ['G4:4 B4:4 E5:8', 'B4:4 D5:4 G5:8', 'A4:4 D5:4 F#5:8', 'G4:4 C5:4 E5:8'];
+const metalHarmonyHigh = ['B4:4 D5:4 G5:8', 'D5:4 F5:4 B5:8', 'C5:4 F5:4 A5:8', 'B4:4 E5:4 G5:8'];
 const metalKit =
   'UKC4,UHG5:2 UKC4:1 UKC4:1 USC5,UHG5:2 UKC4:1 UKC4:1 UKC4,UHG5:2 UKC4:1 UKC4:1 USC5,UHG5:2 UKC4:1 UKC4:1';
 const metalCrash =
@@ -314,7 +315,8 @@ const rnbPad = [
   '[Db4,F4,Ab4,C5]:16',
 ];
 const rnbBass = ['Bb1:8 F2:8', 'Gb1:8 Db2:8', 'Ab1:8 Eb2:8', 'Db2:8 Ab1:8'];
-const rnbVerseKit = 'UKC4:8 USC5:8';
+const rnbVerseKit = 'UKC4:6 UHG5:2 USC5:6 UHG5:2';
+const rnbPrechorusKit = 'UKC4:2 UHG5:2 UHG5:2 UHG5:2 USC5:2 UHG5:2 UHG5:2 UHG5:2';
 const rnbChorusKit = 'UKC4,UHG5:2 UHG5:2 USC5,UHG5:2 UHG5:2 UKC4,UHG5:2 UHG5:2 USC5,UHG5:2 UOA5:2';
 
 const waveLead = [
@@ -874,11 +876,18 @@ const metal = (() => {
     { count: 16, bars: metalOpen, words: 'refrain two', dynamic: 'ff' },
     { count: 16, bars: metalGallops, words: 'outro gallop' },
   ]);
-  const harmony = assemble([
+  const harmonyLow = assemble([
     { count: 48, bars: [R] },
-    { count: 16, bars: metalHarmony, words: 'twin thirds' },
+    { count: 16, bars: metalHarmonyLow, words: 'twin thirds' },
     { count: 16, bars: [R] },
-    { count: 16, bars: metalHarmony, words: 'twin thirds return' },
+    { count: 16, bars: metalHarmonyLow, words: 'twin thirds return' },
+    { count: 16, bars: [R] },
+  ]);
+  const harmonyHigh = assemble([
+    { count: 48, bars: [R] },
+    { count: 16, bars: metalHarmonyHigh, words: 'twin thirds' },
+    { count: 16, bars: [R] },
+    { count: 16, bars: metalHarmonyHigh, words: 'twin thirds return' },
     { count: 16, bars: [R] },
   ]);
   const bass = assemble([{ count: 112, bars: metalBassGallops }]);
@@ -892,7 +901,7 @@ const metal = (() => {
     { count: 15, bars: [metalKit] },
     { count: 16, bars: [metalKit] },
   ]);
-  return { rhythm, harmony, bass, drums };
+  return { rhythm, harmonyLow, harmonyHigh, bass, drums };
 })();
 
 candidates.push({
@@ -926,20 +935,31 @@ candidates.push({
       2,
       30,
       'treble',
-      metal.harmony.measures,
-      { directions: metal.harmony.directions },
+      metal.harmonyLow.measures,
+      { directions: metal.harmonyLow.directions },
     ),
     part(
       'P3',
+      'Overdriven Guitar',
+      'Gtr.3',
+      'Overdriven Guitar',
+      3,
+      30,
+      'treble',
+      metal.harmonyHigh.measures,
+      { directions: metal.harmonyHigh.directions },
+    ),
+    part(
+      'P4',
       'Electric Bass (pick)',
       'Bass',
       'Electric Bass (pick)',
-      3,
+      4,
       35,
       'bass',
       metal.bass.measures,
     ),
-    kitPart('P4', metal.drums.measures, metal.drums.directions),
+    kitPart('P5', metal.drums.measures, metal.drums.directions),
   ],
 });
 
@@ -1120,11 +1140,11 @@ candidates.push({
     ),
     part(
       'P2',
-      'Overdriven Guitar',
+      'Electric Guitar (clean)',
       'Tele',
-      'Overdriven Guitar',
+      'Electric Guitar (clean)',
       2,
-      30,
+      28,
       'treble',
       country.lead.measures,
       { directions: country.lead.directions },
@@ -1165,7 +1185,7 @@ const rnb = (() => {
   const drums = assemble([
     { count: 8, bars: [R], words: 'no kick' },
     { count: 16, bars: [rnbVerseKit], words: 'kick 1 / snare 3' },
-    { count: 8, bars: [rnbVerseKit], words: 'prechorus' },
+    { count: 8, bars: [rnbPrechorusKit], words: 'prechorus hats' },
     { count: 16, bars: [rnbChorusKit], words: 'chorus kit' },
     { count: 8, bars: [rnbVerseKit] },
     { count: 8, bars: [rnbChorusKit] },

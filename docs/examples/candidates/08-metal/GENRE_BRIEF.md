@@ -16,7 +16,8 @@ Sources (accessed 2026-09-01):
 | Part                 | MusicXML / GM                       | Role                                                |
 | -------------------- | ----------------------------------- | --------------------------------------------------- |
 | Distortion Guitar    | GM 31                               | Palm-muted gallop riffs.                            |
-| Overdriven Guitar    | GM 30                               | Twin-harmony thirds on the chorus/lead refrain.     |
+| Overdriven Guitar 1  | GM 30                               | Lower voice of the twin-harmony thirds.              |
+| Overdriven Guitar 2  | GM 30                               | Upper voice of the twin-harmony thirds.              |
 | Electric Bass (pick) | GM 35                               | Gallops in unison with guitar roots.                |
 | Drum Kit             | kick 36, snare 38, hat 42, crash 49 | Snare 2+4; kick follows gallop (downbeats + 16ths). |
 

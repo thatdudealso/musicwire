@@ -4,7 +4,7 @@
 - Tempo: 96 BPM, major, key fifths 3
 - Measures: 68
 - Written duration: 170.0s (2.83 min)
-- Instruments: Acoustic Guitar, Acoustic Guitar (steel), Overdriven Guitar, Electric Bass (finger), Drum Kit, Acoustic Bass Drum, Acoustic Snare, Closed Hi-Hat, Open Hi-Hat, Crash Cymbal 1, Ride Cymbal 1
+- Instruments: Acoustic Guitar, Acoustic Guitar (steel), Electric Guitar (clean), Electric Bass (finger), Drum Kit, Acoustic Bass Drum, Acoustic Snare, Closed Hi-Hat, Open Hi-Hat, Crash Cymbal 1, Ride Cymbal 1
 - Structure: see GENRE_BRIEF.md arrangement arc
 
 ## Self-evaluation
