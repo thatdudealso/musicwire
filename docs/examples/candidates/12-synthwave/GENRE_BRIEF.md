@@ -14,7 +14,7 @@ Sources (accessed 2026-09-01):
 | Part        | MusicXML / GM                      | Role                                 |
 | ----------- | ---------------------------------- | ------------------------------------ |
 | Synth Lead  | GM 82 saw                          | Bright analog topline.               |
-| Synth Brass | GM 62                              | 80s stab chords on the chorus.       |
+| Synth Brass | GM 63                              | 80s stab chords on the chorus.       |
 | Synth Bass  | GM 39                              | Eighth-note root sequence.           |
 | Synth Pad   | GM 90 warm                         | Atmosphere from bar 1.               |
 | Drum Kit    | kick 36, snare 38, hat 42, open 46 | Analog four-on-the-floor, 16th hats. |

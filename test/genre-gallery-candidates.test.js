@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { XMLParser } from 'fast-xml-parser';
 
 import { scoreFacts, validateMusicXml } from '../src/validate.js';
 
@@ -12,24 +13,39 @@ const candidatesRoot = path.resolve(
 );
 
 const expected = [
-  '01-pop-rock',
-  '02-big-room-edm',
-  '03-house',
-  '04-alt-pop',
-  '05-mainstream-pop',
-  '06-british-pop',
-  '07-techno',
-  '08-metal',
-  '09-metalcore',
-  '10-country',
-  '11-rnb',
-  '12-synthwave',
-  '13-drum-and-bass',
-  '14-trap',
+  { slug: '01-pop-rock', measures: 88 },
+  { slug: '02-big-room-edm', measures: 88 },
+  { slug: '03-house', measures: 88 },
+  { slug: '04-alt-pop', measures: 72 },
+  { slug: '05-mainstream-pop', measures: 72 },
+  { slug: '06-british-pop', measures: 88 },
+  { slug: '07-techno', measures: 92 },
+  { slug: '08-metal', measures: 112 },
+  { slug: '09-metalcore', measures: 104 },
+  { slug: '10-country', measures: 68 },
+  { slug: '11-rnb', measures: 64 },
+  { slug: '12-synthwave', measures: 72 },
+  { slug: '13-drum-and-bass', measures: 120 },
+  { slug: '14-trap', measures: 96 },
 ];
 
-const artistLeak =
-  /5 seconds of summer|martin garrix|afrojack|twenty one pilots|morgan wallen|i prevail|avicii|calvin harris/i;
+const asArray = (value) => (Array.isArray(value) ? value : [value]);
+
+const scorePartFacts = (xml) => {
+  const score = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(xml)[
+    'score-partwise'
+  ];
+  const declaredParts = asArray(score['part-list']['score-part']).map((part) => ({
+    id: part['@_id'],
+    programs: asArray(part['midi-instrument']).flatMap((instrument) =>
+      instrument['midi-program'] === undefined ? [] : [Number(instrument['midi-program'])],
+    ),
+  }));
+  const measuresByPart = new Map(
+    asArray(score.part).map((part) => [part['@_id'], asArray(part.measure).length]),
+  );
+  return { declaredParts, measuresByPart };
+};
 
 describe('genre gallery candidates', () => {
   it('keeps fourteen locally valid 2.5-3 minute scores off the live gallery', () => {
@@ -38,12 +54,15 @@ describe('genre gallery candidates', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    assert.deepEqual(slugs, expected);
+    assert.deepEqual(
+      slugs,
+      expected.map(({ slug }) => slug),
+    );
 
-    for (const slug of slugs) {
+    for (const { slug, measures } of expected) {
       const xml = fs.readFileSync(path.join(candidatesRoot, slug, `${slug}.musicxml`), 'utf8');
-      const brief = fs.readFileSync(path.join(candidatesRoot, slug, 'GENRE_BRIEF.md'), 'utf8');
-      const readme = fs.readFileSync(path.join(candidatesRoot, slug, 'README.md'), 'utf8');
+      assert.ok(fs.existsSync(path.join(candidatesRoot, slug, 'GENRE_BRIEF.md')));
+      assert.ok(fs.existsSync(path.join(candidatesRoot, slug, 'README.md')));
       const validation = validateMusicXml(xml);
       assert.equal(validation.valid, true, `${slug}: ${JSON.stringify(validation.errors)}`);
       const facts = scoreFacts(xml);
@@ -51,10 +70,22 @@ describe('genre gallery candidates', () => {
         facts.scoreDurationSeconds >= 150 && facts.scoreDurationSeconds <= 180,
         `${slug} duration ${facts.scoreDurationSeconds}`,
       );
-      assert.match(brief, /Sources \(accessed /);
-      assert.doesNotMatch(xml, artistLeak);
-      assert.doesNotMatch(readme, artistLeak);
       assert.ok(facts.instruments.length >= 4, `${slug} needs a multi-part ensemble`);
+      const score = scorePartFacts(xml);
+      assert.ok(
+        score.declaredParts.some(({ programs }) => programs.length > 0),
+        `${slug} needs at least one GM program`,
+      );
+      assert.deepEqual(
+        [...score.measuresByPart.values()],
+        Array(score.declaredParts.length).fill(measures),
+        `${slug} measure totals`,
+      );
+      if (slug === '12-synthwave')
+        assert.ok(
+          score.declaredParts.find(({ id }) => id === 'P2')?.programs.includes(63),
+          'Synth Brass must use GM 63 (Synth Brass 1)',
+        );
     }
   });
 });

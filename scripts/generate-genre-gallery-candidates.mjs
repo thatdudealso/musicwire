@@ -1244,7 +1244,7 @@ candidates.push({
     part('P1', 'Synth Lead', 'Lead', 'Synth Lead', 1, 82, 'treble', wave.lead.measures, {
       directions: wave.lead.directions,
     }),
-    part('P2', 'Synth Brass', 'Brass', 'Synth Brass 1', 2, 62, 'treble', wave.brass.measures, {
+    part('P2', 'Synth Brass', 'Brass', 'Synth Brass 1', 2, 63, 'treble', wave.brass.measures, {
       directions: wave.brass.directions,
     }),
     part('P3', 'Synth Bass', 'Bass', 'Synth Bass', 3, 39, 'bass', wave.bass.measures, {
