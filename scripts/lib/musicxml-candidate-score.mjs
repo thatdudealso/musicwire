@@ -41,7 +41,7 @@ const renderNote = (
   pitch,
   duration,
   divisions,
-  { chord = false, instrumentId, unpitched = false } = {},
+  { chord = false, instrumentId, unpitched = false, velocity } = {},
 ) => {
   const types = typeForDuration[divisions];
   assert.ok(types?.[duration], `Unsupported duration ${duration} at divisions=${divisions}`);
@@ -52,7 +52,7 @@ const renderNote = (
         return `<unpitched><display-step>${match[1]}</display-step><display-octave>${match[2]}</display-octave></unpitched>`;
       })()
     : parsePitch(pitch);
-  return `<note>${chord ? '<chord/>' : ''}${body}${instrumentId ? `<instrument id="${instrumentId}"/>` : ''}<duration>${duration}</duration><type>${types[duration]}</type>${dottedDurations.has(duration) ? '<dot/>' : ''}</note>`;
+  return `<note>${chord ? '<chord/>' : ''}${body}${instrumentId ? `<instrument id="${instrumentId}"/>` : ''}<duration>${duration}</duration><type>${types[duration]}</type>${dottedDurations.has(duration) ? '<dot/>' : ''}${velocity === undefined ? '' : `<play><other-play type="midi-velocity">${velocity}</other-play></play>`}</note>`;
 };
 
 const renderMeasureEvents = (source, part, divisions) => {
@@ -74,15 +74,20 @@ const renderMeasureEvents = (source, part, divisions) => {
       return pitches
         .map((sourcePitch, index) => {
           const unpitched = sourcePitch.startsWith('U');
-          const unpitchedMatch = unpitched ? sourcePitch.match(/^U([A-Z]?)([A-G]\d)$/) : null;
+          const unpitchedMatch = unpitched
+            ? sourcePitch.match(/^U([A-Z]?)([A-G]\d)(?:@(\d+))?$/)
+            : null;
           assert.ok(!unpitched || unpitchedMatch, `Invalid percussion token ${sourcePitch}`);
-          const [, instrumentKey = '', pitch] = unpitchedMatch ?? [];
+          const [, instrumentKey = '', pitch, velocityText] = unpitchedMatch ?? [];
+          const velocity = velocityText === undefined ? undefined : Number(velocityText);
+          assert.ok(velocity === undefined || (velocity >= 1 && velocity <= 127), `Invalid velocity ${sourcePitch}`);
           return renderNote(unpitched ? pitch : sourcePitch, duration, divisions, {
             chord: index > 0,
             unpitched,
             instrumentId: unpitched
               ? (part.percussionInstruments?.[instrumentKey]?.id ?? part.instrumentId)
               : undefined,
+            velocity,
           });
         })
         .join('');

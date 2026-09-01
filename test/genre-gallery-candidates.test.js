@@ -75,6 +75,15 @@ const percussionSteps = (measure, instrumentId) => {
   });
 };
 
+const percussionVelocities = (measure, instrumentId) =>
+  asArray(measure.note).flatMap((note) => {
+    if (note.instrument?.['@_id'] !== instrumentId) return [];
+    const velocity = note.play?.['other-play'];
+    return velocity === undefined
+      ? []
+      : [Number(typeof velocity === 'object' ? velocity['#text'] : velocity)];
+  });
+
 describe('genre gallery candidates', () => {
   it('keeps fourteen locally valid 2.5-3 minute scores off the live gallery', () => {
     const slugs = fs
@@ -119,6 +128,7 @@ describe('genre gallery candidates', () => {
         assert.deepEqual(pitchedNotes(measure(parsed, 'P2', 49)), ['G4:4', 'B4:4', 'E5:8']);
         assert.deepEqual(pitchedNotes(measure(parsed, 'P3', 49)), ['B4:4', 'D5:4', 'G5:8']);
         assert.deepEqual(pitchedNotes(measure(parsed, 'P3', 50)), ['D5:4', 'F#5:4', 'B5:8']);
+        assert.deepEqual(pitchedNotes(measure(parsed, 'P3', 51)), ['C5:4', 'F#5:4', 'A5:8']);
       }
       if (slug === '10-country')
         assert.ok(
@@ -134,6 +144,7 @@ describe('genre gallery candidates', () => {
           const drop = measure(parsed, 'P4', number);
           assert.deepEqual(percussionSteps(drop, 'P4-I1'), [1, 10], 'DnB kick steps');
           assert.deepEqual(percussionSteps(drop, 'P4-I2'), [3, 5, 11, 13], 'DnB snare steps');
+          assert.deepEqual(percussionVelocities(drop, 'P4-I2'), [48, 96, 48, 96], 'DnB ghost velocity');
         }
     }
   });
