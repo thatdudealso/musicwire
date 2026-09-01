@@ -236,7 +236,7 @@ const metalOpen = [
   '[C2,G2,C3]:8 [C2,G2,C3]:8',
 ];
 const metalHarmonyLow = ['G4:4 B4:4 E5:8', 'B4:4 D5:4 G5:8', 'A4:4 D5:4 F#5:8', 'G4:4 C5:4 E5:8'];
-const metalHarmonyHigh = ['B4:4 D5:4 G5:8', 'D5:4 F5:4 B5:8', 'C5:4 F5:4 A5:8', 'B4:4 E5:4 G5:8'];
+const metalHarmonyHigh = ['B4:4 D5:4 G5:8', 'D5:4 F#5:4 B5:8', 'C5:4 F5:4 A5:8', 'B4:4 E5:4 G5:8'];
 const metalKit =
   'UKC4,UHG5:2 UKC4:1 UKC4:1 USC5,UHG5:2 UKC4:1 UKC4:1 UKC4,UHG5:2 UKC4:1 UKC4:1 USC5,UHG5:2 UKC4:1 UKC4:1';
 const metalCrash =

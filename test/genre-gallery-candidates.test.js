@@ -58,7 +58,10 @@ const measure = (score, partId, number) =>
 const pitchedNotes = (measure) =>
   asArray(measure.note)
     .filter((note) => note.pitch)
-    .map((note) => `${note.pitch.step}${note.pitch.alter ?? ''}${note.pitch.octave}:${note.duration}`);
+    .map((note) => {
+      const accidental = { '-1': 'b', 1: '#' }[note.pitch.alter] ?? '';
+      return `${note.pitch.step}${accidental}${note.pitch.octave}:${note.duration}`;
+    });
 
 const hasClosedHat = (measure) =>
   asArray(measure.note).some((note) => note.instrument?.['@_id'] === 'P4-I3');
@@ -106,6 +109,7 @@ describe('genre gallery candidates', () => {
       if (slug === '08-metal') {
         assert.deepEqual(pitchedNotes(measure(parsed, 'P2', 49)), ['G4:4', 'B4:4', 'E5:8']);
         assert.deepEqual(pitchedNotes(measure(parsed, 'P3', 49)), ['B4:4', 'D5:4', 'G5:8']);
+        assert.deepEqual(pitchedNotes(measure(parsed, 'P3', 50)), ['D5:4', 'F#5:4', 'B5:8']);
       }
       if (slug === '10-country')
         assert.ok(
